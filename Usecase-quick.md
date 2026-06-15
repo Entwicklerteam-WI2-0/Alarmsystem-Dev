@@ -155,4 +155,22 @@ Aus widersprüchlichem/unentschiedenem Material — **bewusst nicht** als feste 
 
 
 
-## Aufgabe: Konflikte in und zwischen den Technischen Anforderungen erkennen 
+## 4. Konflikte in und zwischen den Anforderungen
+
+> §1 nennt die Zielkonflikte auf **Stakeholder-Ebene**. Dieser Abschnitt zeigt, wie sie sich als **Spannungen zwischen konkreten Anforderungen** niederschlagen — inkl. solcher *innerhalb* einer Anforderung. **intra** = Konflikt steckt in einer Anforderung selbst · **inter** = zwischen mehreren.
+
+| ID | Beteiligte Anforderungen | Art | Spannung | Auflösungsrichtung |
+|---|---|---|---|---|
+| **K1** | FA-05 · NF-04 · NF-05 | intra/inter | Höhere Sensitivität senkt **Auslassungen** (Sicherheit ↑), erhöht aber **Fehlalarme** (Verfügbarkeit ↓) — beide nicht gleichzeitig minimierbar | NF-05 macht den Betriebspunkt parametrierbar; Schwelle bewusst wählen + im Entscheidungslogbuch begründen (steuert den Konflikt, löst ihn nicht) |
+| **K2** | FA-06 ↔ NF-04 · FA-05 | inter | ≥ 30-min-**Prognose** ist prinzipiell ungenauer und schwerer **erklärbar** als die Ist-Messung | Prognose mit **Konfidenz/Unsicherheit** ausgeben; Nachvollziehbarkeit (FA-05) auch für die Prognose fordern |
+| **K3** | FA-01 · NF-04 ↔ NF-10 | inter | Mehr/bessere Messgrößen & Sensoren (WX-500 ~4.800 €, „zehn") gegen **Budget** | Sensoranzahl/-auswahl per Kosten-Nutzen begründen; ggf. gestufter Ausbau |
+| **K4** | FA-01 ↔ NF-06 | inter | Präzise **Oberflächensensoren** sind empfindlich und werden am Vorfeld **beschädigt** (Genauigkeit vs. Robustheit) | Robuste Bauform/Schutz, Redundanz, einfacher Tausch (NF-06) |
+| **K5** | NF-01 ↔ NF-03 · FA-05 | intra/inter | „Definierter **sicherer Zustand**" bei Ausfall ist konservativ (Risiko annehmen/alarmieren) → senkt **Verfügbarkeit** / erhöht Fehlalarme | Sicheren Zustand explizit definieren (vermutlich „Risiko anzeigen + manuelle Kontrolle"), Verfügbarkeitsfolge akzeptieren |
+| **K6** | FA-11 · AE-02 ↔ NF-07 | inter | **Konfigurierbarkeit** der Schwellwerte + **Fernzugriff** vergrößern die Angriffs-/Fehlbedienfläche vs. **Zugriffsschutz** | Rollenbasierte Rechte, Audit-Trail (FA-12), Fernzugriff nur abgesichert |
+| **K7** | NF-02 ↔ NF-06 · NF-10 · AE-01 | inter | Häufige, **latenzarme** Daten (für FA-06 nötig) vs. **robuste/günstige** Sensorik & lokaler Betrieb | Messintervall an Prognosehorizont koppeln; NF-02-Zielwert festlegen |
+| **K8** | FA-05 · FA-07 ↔ NF-08 | inter | **Detail/Nachvollziehbarkeit** (auslösende Messgröße, viel Status) vs. **Eindeutigkeit** unter Zeitdruck | Gestufte UI: Ampel/Status zuerst, Details on demand |
+| **K9** | AE-01 ↔ AE-02 · NF-03 | inter (offen) | **Lokal** vs. **Fernzugriff** vs. **Verfügbarkeit** — lokaler Einzelbetrieb = Single Point of Failure | Offene Architekturentscheidung → Entscheidungslogbuch (vgl. §3.4) |
+
+> **RB-01** (keine automatische Freigabe) ist *kein* Konflikt, sondern eine harte Grenze: Sie deckelt, wie stark FA-06/FA-08 den Menschen entlasten dürfen — der Nutzen von Prognose/Alarm hängt damit von der menschlichen Reaktionszeit ab (organisatorisch, nicht technisch lösbar).
+>
+> Kernspannung quer über alle: **Sicherheit ↔ Verfügbarkeit ↔ Kosten** — kein Optimum für alle drei gleichzeitig; jede Anforderung mit Status „offen"/TBD ist ein bewusst offen gehaltener Punkt dieses Dreiecks. 
