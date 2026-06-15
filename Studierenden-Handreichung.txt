@@ -1,0 +1,100 @@
+Studierenden-Handreichung
+Projektkurs: Vereisungserkennung am Flughafen ANR
+1. Ausgangssituation
+Der Flughafen ANR hatte in den letzten Wintern wiederholt Probleme mit:
+ nicht erkannten Vereisungen
+ unnötigen Sperrungen der Startbahn
+ hohen Betriebskosten
+ unklaren Entscheidungsgrundlagen
+Ein neues technisches System soll diese Probleme adressieren.
+2. Ihre Rolle
+Sie arbeiten als externes Ingenieurteam, das beauftragt wurde:
+ein prototypisches System zur Erfassung und Bewertung von Vereisungsbedingungen zu
+entwickeln.
+3. Wichtiger Hinweis zur Aufgabenstellung
+Sie erhalten:
+ interne E-Mails
+ Chatverläufe
+ Meetingprotokolle
+ technische Notizen
+Diese Informationen sind:
+ unvollständig
+ teilweise widersprüchlich
+ nicht formalisiert
+Ihre Aufgabe ist es, daraus ein konsistentes Lastenheft zu erstellen.
+4. Projektziel
+Entwicklung eines prototypischen Systems bestehend aus:
+ Sensordatenerfassung
+ Datenverarbeitung
+ Backend-System
+ Visualisierung (Frontend)
+ Vereisungsbewertung
+5. Arbeitsorganisation
+Der Kurs ist in 3 Gruppen aufgeteilt:
+Gruppe 1 – Sensorik & Daten
+ Recherche realer Sensoren
+ Datenblätter analysieren
+ Sensorauswahl begründen
+ Prototypische Messung
+Gruppe 2 – Backend & Entscheidungslogik
+ Datenmodell
+ API
+ Speicherung
+ Vereisungsbewertung
+Gruppe 3 – Frontend & Integration
+ Nutzeroberfläche
+ Visualisierung
+ Alarmierung
+ Gesamtsystemintegration
+6. Arbeitsweise
+Es werden zwei Vorgehensmodelle genutzt:
+ Gruppe 1: Wasserfall
+ Gruppe 2: Wasserfall
+ Gruppe 3: Scrum (agil)
+Ziel ist der Vergleich der Methoden im echten Projektkontext.
+7. Erwartete Ergebnisse
+Am Ende des Projekts müssen Sie liefern:
+Technische Ergebnisse
+ funktionierender Prototyp
+ Sensor-/Backend-/Frontend-Komponenten
+ integriertes Gesamtsystem
+Dokumentation
+ Lastenheft (Versioniert)
+ Architekturdiagramm
+ API-Beschreibung
+ Sensordatenanalyse
+ Entscheidungslogbuch
+Analyse & Entscheidungen
+Sie müssen dokumentieren:
+ welche Alternativen Sie geprüft haben
+ warum Sie Entscheidungen getroƯen haben
+ welche Unsicherheiten bestehen
+8. Wichtige Bewertungskriterien
+Bewertet werden insbesondere:
+ Nachvollziehbarkeit technischer Entscheidungen
+ Qualität der Datenanalyse
+ Umgang mit widersprüchlichen Anforderungen
+ technische Umsetzung
+ Teamorganisation
+ Reflexion
+9. Meilensteine
+M1 – Ende Woche 1
+ Stakeholderanalyse
+ erste Anforderungen
+ Sensorkandidaten + Datenblätter
+ Architekturideen
+M2 – Ende Woche 2
+ funktionierende Teilmodule
+ API & Datenmodell
+ erste Integration
+M3 – Ende Woche 3
+ vollständiger Prototyp
+ Live-Demonstration
+ Abschlusspräsentation
+ Reflexion
+10. Zentrale Lernziele
+ Umgang mit unklaren Anforderungen
+ technische Entscheidungsfindung
+ Datenblatt- und Quellenanalyse
+ Systemdenken
+ Teamarbeit in hybriden Methoden (Wasserfall vs. agil)

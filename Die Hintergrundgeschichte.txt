@@ -1,0 +1,174 @@
+Die Hintergrundgeschichte
+Flughafen ANR (Airport North Regional)
+Der Flughafen liegt in einer Mittelgebirgsregion.
+Während der Wintermonate treten häufig auf:
+ Nebel
+ gefrierender Regen
+ Schneefall
+ starke Temperaturschwankungen
+In den letzten Jahren wurden mehrere Probleme festgestellt.
+Vorfall 1: Der Fehlalarm
+Interner Untersuchungsbericht
+Datum: 17. Januar
+Uhrzeit: 04:42 Uhr
+Die Wetterstation meldete:
+ Lufttemperatur: -2,1 °C
+ Luftfeuchtigkeit: 92 %
+Daraufhin wurde vorsorglich die Startbahn gesperrt.
+Der Winterdienst rückte aus.
+Nach manueller Kontrolle wurde festgestellt:
+ keine Eisbildung
+ keine kritischen Bedingungen
+Die Bahn blieb dennoch 87 Minuten gesperrt.
+Folgen:
+ 11 verspätete Flüge
+ Kosten durch Bereitschaftseinsatz
+ Beschwerden zweier Airlines
+Kommentar der Betriebsleitung
+Wir dürfen die Bahn nicht unnötig schließen.
+Kommentar der Sicherheitsabteilung
+Lieber zehn Fehlalarme als ein vereistes Flugzeug.
+Vorfall 2: Die nicht erkannte Eisbildung
+Ereignisbericht
+Datum: 03. Februar
+Uhrzeit: 06:18 Uhr
+Die Wetterstation meldete:
+ Temperatur: +1,2 °C
+ keine Warnung
+Bei der morgendlichen Kontrolle stellte der Winterdienst fest:
+ dünne Eisschicht
+ vereiste Randbereiche
+Der Start verzögerte sich um 40 Minuten.
+Kommentar des Winterdienstes
+Wir verlassen uns nicht auf die aktuelle Wetterstation.
+Kommentar IT
+Die Sensoren funktionieren laut Hersteller korrekt.
+Kommentar externer Gutachter
+Die gemessene Lufttemperatur war nicht das Problem. Relevant wäre die
+Oberflächentemperatur gewesen.
+E-Mail-Kette: Wer ist verantwortlich?
+Von: Flughafenleitung
+An: Winterdienst, IT
+Wir müssen klären, warum die Eisbildung nicht erkannt wurde.
+Antwort Winterdienst
+Weil wir die falschen Daten messen.
+Antwort IT
+Das ist nicht belegt.
+Antwort Winterdienst
+Dann erklären Sie bitte die Eisbildung.
+Antwort IT
+Vielleicht war der Sensor defekt.
+Antwort Winterdienst
+Oder wir haben den falschen Sensor.
+Protokoll einer Budgetbesprechung
+Teilnehmer:
+ Geschäftsführung
+ Controlling
+ Winterdienst
+Controlling:
+Wir können keine 100.000 € für ein Experiment ausgeben.
+Winterdienst:
+Was kostet ein gesperrter Flughafen?
+Geschäftsführung:
+Wir benötigen belastbare Zahlen.
+Controlling:
+Vielleicht reicht eine zusätzliche Wetterstation.
+Winterdienst:
+Vielleicht brauchen wir zehn.
+Technische Notiz eines Beraters
+Aus meiner Sicht werden aktuell folgende Daten nicht erfasst:
+ Oberflächentemperatur
+ Oberflächenfeuchte
+ Taupunkt
+ Niederschlagsart
+Ohne diese Informationen erscheint eine zuverlässige Vereisungsprognose schwierig.
+Chatprotokoll der Fluglotsen
+Daniel:
+Wir brauchen die Daten direkt.
+Sandra:
+Warum?
+Daniel:
+Wir müssen wissen, ob die Bahn kritisch wird.
+Sandra:
+Dafür ist doch der Winterdienst zuständig.
+Daniel:
+Wenn wir erst kurz vor dem Start informiert werden, hilft uns das wenig.
+Sandra:
+Also möchtest du Vorhersagen?
+Daniel:
+Mindestens 30 Minuten.
+Interner Bericht: Vergleich anderer Flughäfen
+Flughafen A:
+ misst Lufttemperatur
+ misst Oberflächentemperatur
+Flughafen B:
+ misst Lufttemperatur
+ Feuchtigkeit
+ Wind
+ Oberflächenzustand
+Flughafen C:
+ verwendet kommerzielles System
+ Kosten unbekannt
+Anmerkung:
+Keine Informationen zur tatsächlichen Genauigkeit verfügbar.
+Mail eines Wartungstechnikers
+Ich möchte darauf hinweisen, dass Sensoren auf dem Vorfeld regelmäßig beschädigt werden.
+Ursachen:
+ Schneeräumfahrzeuge
+ Streufahrzeuge
+ Flugzeugbetrieb
+Daher sollte die Wartbarkeit berücksichtigt werden.
+Auszug aus einer Risikoanalyse
+Mögliche Risiken:
+R1:
+Sensor liefert falsche Daten
+R2:
+Kommunikationsausfall
+R3:
+Stromausfall
+R4:
+Vereisung wird nicht erkannt
+R5:
+Zu viele Fehlalarme
+Teams-Chat der IT-Abteilung
+Laura:
+Sollen wir alles lokal betreiben?
+Sebastian:
+Ja.
+Laura:
+Warum?
+Sebastian:
+Cloud macht nur Probleme.
+Laura:
+Aber die Wartung wäre einfacher.
+Sebastian:
+Vielleicht.
+Laura:
+Und FernzugriƯ?
+Sebastian:
+Wäre praktisch.
+Externe E-Mail eines Sensorherstellers
+Vielen Dank für Ihre Anfrage.
+Für die Messung von Oberflächenbedingungen empfehlen wir unsere Sensorserie WX-500.
+Messgrößen:
+ Oberflächentemperatur
+ Feuchtigkeit
+ Eisindikator
+Kosten:
+ab 4.800 € pro Sensor
+Antwort Controlling
+4.800 € pro Sensor erscheint sehr teuer.
+Antwort Winterdienst
+Kommt darauf an, wie viele Fehlalarme wir dadurch vermeiden.
+Gesprächsnotiz Sicherheitsbeauftragte
+Das System darf niemals eine automatische Freigabe der Startbahn erteilen.
+Die Verantwortung muss beim Menschen bleiben.
+Entwurf eines Lastenhefts (unvollständig)
+Anforderung 1:
+Das System soll Wetterdaten erfassen.
+Anforderung 2:
+Das System soll Vereisungsrisiken erkennen.
+Anforderung 3:
+Das System soll Daten visualisieren.
+Kommentar eines Reviewers:
+"Zu ungenau. Was bedeutet erkennen?"

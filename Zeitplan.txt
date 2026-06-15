@@ -1,0 +1,57 @@
+Woche 1 – Analyse & Anforderungen
+Tag Format Inhalt Ergebnis / Deliverable
+Mo Präsenz KickoƯ, Szenario, Einzelanalyse
+Stakeholder & Probleme
+Individuelle Stakeholderanalyse +
+erste Anforderungen
+Mo Präsenz Gruppendiskussion +
+Systemkontext
+konsolidierte Anforderungen (Draft) +
+Systemkontextdiagramm
+Mo Eigenarbeit Recherche Vereisung, Sensorik,
+Systeme
+Quellenliste + erste technische
+Notizen
+Di Online Gruppenbildung + Rollen +
+Projektstruktur 3 Gruppen + Rollen + Arbeitspakete
+Di Online Start Requirements Engineering
+in Gruppen
+strukturierter Backlog / Lastenheft
+(Version 0.1)
+Di Eigenarbeit Vertiefte Recherche je Gruppe Sensorkandidaten / Architekturideen /
+UI-Ideen
+Do Online (optional
+Präsenz)
+Review & Coaching + Konflikte
+diskutieren
+Requirements-Konsolidierung + oƯene
+Punkteliste
+Do Online Präsentation Zwischenstand Requirements Set v1 + oƯene Risiken
+蚘蚓蚔蚕蚖蚗 Meilenstein M1 (Ende Woche 1)
+ Datenblatt-basierte Sensoranalyse
+ erste Architektur-/Systementwürfe
+ Nutzer- & Stakeholdermodell
+ dokumentierte Konflikte & oƯene Anforderungen
+Woche 2 – Entwicklung & Prototyping
+Tag Format Inhalt Ergebnis / Deliverable
+Mo Präsenz Review M1 + Feedback + Start
+Umsetzung
+freigegebene Anforderungen + Start
+Implementierung
+Mo Präsenz technische Arbeit in Gruppen erste Prototypen (Sensor/Backend/UI)
+Mo Eigenarbeit Entwicklung Code / Hardware / UI Fortschritt
+Di Online Technical Deep Dive Workshops funktionierende Teilmodule
+(Sensor/API/UI)
+Di Online Integration vorbereiten definierte Schnittstellen (API Spec
+final)
+Di Eigenarbeit Implementierung lauƯähige Komponenten
+Do Präsenz
+(empfohlen)
+Zwischenintegration +
+Debugging Teilintegriertes System
+Do Präsenz Systemtests Testprotokolle + Fehlerliste
+蚘蚓蚔蚕蚖蚗 Meilenstein M2 (Ende Woche 2)
+ funktionierende Einzelmodule
+ dokumentierte API / Datenmodell
+ erste End-to-End Teilintegration
+ getestete Sensor-/Datenpipeline

@@ -1,0 +1,41 @@
+Individuelle Prüfungsleistung (40 %)
+Analyse und Reflexion einer Projektentscheidung
+Im Rahmen der individuellen Prüfungsleistung analysiert jede Studierende bzw. jeder
+Studierende eine im Projekt getroffene technische oder organisatorische Entscheidung.
+Ziel der Prüfungsleistung ist die Bewertung des individuellen Verständnisses der im Projekt
+durchgeführten Anforderungsanalyse, Entscheidungsfindung und Systementwicklung.
+Die ausgewählte Entscheidung muss einen wesentlichen Einfluss auf das Projekt besitzen.
+Beschreiben Sie:
+1. Welche Entscheidung getroffen wurde.
+2. Welche Alternativen diskutiert wurden.
+3. Wie die Entscheidung zustande kam.
+4. Welche Anforderungen, Randbedingungen und Stakeholder die Entscheidung
+beeinflusst haben.
+5. Welche Vor- und Nachteile die gewählte Lösung besitzt.
+6. Welche Alternative Sie heute bevorzugen würden und warum.
+Umfang: 4–6 Seiten
+Wichtig:
+Die Bewertung erfolgt nicht danach, ob die Entscheidung „richtig“ war.
+Bewertet wird, ob Sie den Entscheidungsprozess nachvollziehen, begründen und kritisch
+reflektieren können.
+Hierbei spielt die Beschreibung der Entscheidungsprozesse eine ganz wesentliche Rolle, da
+diese nicht von einer KI im vollen Umfang nachvollzogen werden können
+Grupppenprüfungsleistung (60 %)
+Übersicht der zu erstellende Dokumente:
+Dokument Verantwortlich Zeitpunkt
+Stakeholderanalyse Alle Woche 1
+Lastenheft Alle Woche 1
+Systemkontext Alle Woche 1
+Sensorstudie Gruppe 1 Woche
+1–2
+Sensorauswahl Gruppe 1 Woche 2
+Messkonzept Gruppe 1 Woche 2
+Datenmodell Gruppe 2 Woche 2
+API-Dokumentation Gruppe 2 Woche 2
+Vereisungslogik Gruppe 2 Woche 2
+UI-Konzept Gruppe 3 Woche 2
+Alarmkonzept Gruppe 3 Woche 2
+Integrationskonzept Gruppe 3 Woche 2
+Entscheidungslogbuch Alle laufend
+Testprotokoll Alle Woche 3
+Abschlusspräsentation Alle Woche 3
