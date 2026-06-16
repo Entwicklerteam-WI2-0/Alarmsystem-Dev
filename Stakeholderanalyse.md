@@ -103,6 +103,56 @@ Einfluss│  B) Keep satisfied        │  D) Monitor                      │ E
 
 ---
 
+## F) Priorisierung für M1 — Notwendige vs. optionale Stakeholder
+
+Für eine schlanke Anforderungs- und Projektplanung lassen sich die identifizierten Stakeholder in drei Gruppen einteilen.
+
+### A — Unbedingt notwendig (im Fokus behalten)
+
+Direkt am System beteiligt, mit Entscheidungsmacht oder als primärer Nutzer.
+
+| Stakeholder | Begründung |
+|---|---|
+| Flughafenleitung | Auftraggeberin, treibt das Projekt voran |
+| Betriebsleitung | Entscheidet operativ über Bahnverfügbarkeit/Sperrung |
+| Sicherheitsabteilung / Sicherheitsbeauftragte | Vetomacht, harte Sicherheitsvorgaben |
+| Winterdienst | Primärnutzer des Systems |
+| Fluglotsen | Endabnehmer der Vorhersagedaten |
+| IT-Abteilung | Architektur-Ownership, Betrieb, Wartung |
+| Ingenieurteam (intern) | Realisiert den Prototypen |
+
+### B — Wichtig, aber sekundär (kurz berücksichtigen)
+
+Beeinflussen Anforderungen oder Rahmenbedingungen, haben aber keine direkte Projektmacht im fiktiven Szenario.
+
+| Stakeholder | Begründung |
+|---|---|
+| Geschäftsführung | Budgetfreigabe, aber wenig operatives Interesse |
+| Controlling | Kostenrestriktionen |
+| Externer Gutachter | Fachliche Ursachenklärung |
+| Technischer Berater | Fehlende Messgrößen benennen |
+| Wartungstechniker | Wartbarkeit/Robustheit |
+| Generelle Luftfahrtbehörden (z. B. LBA/EASA) | Regulatorischer Rahmen für sicherheitskritische Systeme |
+| Aeroclub Coburg | Betroffener Nutzer des Flugplatzes |
+
+### C — Optional / weglassbar (nur bei Bedarf)
+
+Geringer oder indirekter Einfluss auf das System im Projektkontext.
+
+| Stakeholder | Begründung |
+|---|---|
+| Sensorhersteller | Reiner Lieferant, kein Projektinteresse |
+| Airlines | Indirekt betroffen, kein direkter Einfluss |
+| Reviewer (Lastenheft) | Prozessrolle, kein eigentlicher Interessenträger |
+| Stadt Coburg | Nur indirekt über Flugplatz-/Gemeindeinteressen betroffen |
+| Staat Deutschland | Genereller regulatorischer Rahmen, nicht projektspezifisch |
+| Regional ansässige Unternehmen | Indirekte wirtschaftliche Betroffenheit |
+| Anwohner | Kein direkter Bezug zum Vereisungssystem |
+
+**Empfehlung:** Für M1 reichen die **7 Stakeholder aus Gruppe A** als Kerngruppe. Gruppe B kann als „weitere relevante Akteure" kurz erwähnt werden, Gruppe C lässt sich weglassen oder nur als Fußnote aufführen.
+
+---
+
 ## E) Offene Punkte für M1
 
 - Leitungs-Labels konsolidieren — eine Instanz oder drei?
