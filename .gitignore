@@ -1,0 +1,22 @@
+# ── Python / uv ──────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# ── Claude Code: persönlich / lokal (E-03) ────────────────────
+# Die GETEILTE Agent-Config reist als `claude-sync.md` (committet) und wird
+# beim `/setup` lokal nach CLAUDE.md kopiert. Persönliche/lokale Dateien
+# gehören NICHT in die Historie:
+CLAUDE.md
+AGENTS.md
+.claude/settings.local.json
+
+# ── OS-Müll ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
