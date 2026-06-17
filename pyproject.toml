@@ -12,6 +12,11 @@ dependencies = [
 
 # SQLite ist Teil der Python-Standardbibliothek (Modul `sqlite3`) → keine Extra-Abhängigkeit.
 
+[tool.uv]
+# T0: noch kein installierbares Paket (kein `src/`-Layout) → nur Umgebung + Deps bereitstellen,
+# Projekt selbst NICHT bauen. Sobald importierbarer Code nötig ist: `[build-system]` + `src/` ergänzen.
+package = false
+
 [dependency-groups]
 dev = [
     "pytest>=8.2",

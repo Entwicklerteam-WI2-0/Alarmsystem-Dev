@@ -10,6 +10,8 @@ Write-Host "G2-Setup startet in: $(Get-Location)"
 # 1) uv sicherstellen
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Host "uv nicht gefunden - installiere uv ..."
+    # Offizieller Astral-Installer (fuehrt Remote-Code aus - nur bei Vertrauen ins Repo ausfuehren).
+    # Version pinnen fuer reproduzierbares Setup:  irm https://astral.sh/uv/<VERSION>/install.ps1 | iex
     powershell -ExecutionPolicy Bypass -Command "irm https://astral.sh/uv/install.ps1 | iex"
     $env:Path = "$env:USERPROFILE\.local\bin;$env:Path"
 } else {

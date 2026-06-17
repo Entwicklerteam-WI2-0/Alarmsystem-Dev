@@ -12,6 +12,8 @@ echo "▶ G2-Setup startet in: $(pwd)"
 # 1) uv (Python-Paket-/Umgebungs-Manager) sicherstellen
 if ! command -v uv >/dev/null 2>&1; then
   echo "▶ uv nicht gefunden — installiere uv …"
+  # Offizieller Astral-Installer (führt Remote-Code aus — nur bei Vertrauen ins Repo ausführen).
+  # Version pinnen für reproduzierbares Setup:  curl -LsSf https://astral.sh/uv/<VERSION>/install.sh | sh
   curl -LsSf https://astral.sh/uv/install.sh | sh
   # uv landet in ~/.local/bin — für diese Session verfügbar machen
   export PATH="$HOME/.local/bin:$PATH"

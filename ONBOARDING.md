@@ -23,6 +23,10 @@ powershell -ExecutionPolicy Bypass -File setup.ps1
 ```
 Das Skript installiert `uv` (falls nötig), baut die Python-Umgebung und legt deine lokale `CLAUDE.md` an.
 
+> **Vertrauenshinweis:** Das Setup lädt `uv` über den offiziellen Astral-Installer aus dem Netz und führt
+> ihn aus. Nur ausführen, wenn du diesem Repo / Lucas vertraust. Die uv-Version lässt sich pinnen
+> (siehe Kommentar in `setup.sh` / `setup.ps1`).
+
 ## Danach — arbeiten
 1. Ordner in **VS Code** öffnen.
 2. Im integrierten Terminal **`claude`** starten.
