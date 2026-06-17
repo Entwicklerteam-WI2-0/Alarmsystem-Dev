@@ -64,12 +64,56 @@ Alarmsystem-Dev/
 │   ├── test.yml
 │   └── deploy.yml
 │
-├── CLAUDE.md                            # Claude-spezifische Anleitung (gitignored)
-├── Agents-gpt-gemini.md                 # KI-Onboarding für ChatGPT/Gemini (gitignored)
+├── .claude/                             # Geteilte Claude-Code-Config (committet)
+│   ├── settings.json                    # Hooks (SessionStart; Enforcement folgt in Phase 2)
+│   ├── commands/                        # /setup, /start
+│   └── hooks/                           # Standalone-Hook-Skripte (Phase 2)
+├── erinnerung/                          # Geteiltes Projektgedächtnis (/start liest es)
+│   ├── README.md
+│   └── stand.md
+├── setup.sh  /  setup.ps1               # Einmal-Setup (macOS / Windows)
+├── pyproject.toml                       # uv-Umgebung (FastAPI, pytest, ruff)
+├── claude-sync.md                       # Geteilte Agent-Config → wird lokal zu CLAUDE.md
+├── ONBOARDING.md                        # 3-Schritt-Schnellstart
+├── CLAUDE.md                            # Persönliche Agent-Config (gitignored; lokal aus claude-sync.md)
+├── AGENTS.md                            # Agent-Onboarding (gitignored)
+├── Agents-gpt-gemini.md                 # KI-Onboarding für ChatGPT/Gemini
 ├── README.md                            # Diese Datei
 └── .gitignore
 
 ```
+
+---
+
+## ⚙️ Setup & Onboarding (in 3 Schritten)
+
+> Vom blanken Rechner zur fertig konfigurierten Agenten-Umgebung — **ohne** manuelles Gefummel.
+> Funktioniert auf **macOS** und **Windows**. Ausführlich: [`ONBOARDING.md`](ONBOARDING.md).
+
+**1. Claude Code installieren** (einmalig) — offizielle CLI. Test: `claude --version`.
+
+**2. Repo klonen**
+```bash
+git clone https://github.com/Entwicklerteam-WI2-0/Alarmsystem-Dev.git
+cd Alarmsystem-Dev
+```
+
+**3. Setup-Skript ausführen**
+```bash
+bash setup.sh                                        # macOS / Linux
+powershell -ExecutionPolicy Bypass -File setup.ps1   # Windows
+```
+Installiert `uv` (falls nötig), baut die Python-Umgebung (`uv sync`) und legt deine lokale `CLAUDE.md` aus `claude-sync.md` an.
+
+**Danach arbeiten:** Ordner in **VS Code** öffnen → im Terminal **`claude`** starten → einmal **„Projekt vertrauen"** → **`/start`** tippen (lädt Kontext, Stand & Regeln).
+
+### Was das Repo automatisch mitbringt
+- **Skills/Commands** (`/setup`, `/start`, …) und **Standard-Checks** (Hooks) — direkt aus `.claude/`, keine Einzelkonfiguration nötig.
+- **Identische Python-Umgebung** für alle via `uv` + `pyproject.toml`.
+- **Geteiltes Gedächtnis** in `erinnerung/` (wird von `/start` gelesen).
+- **Gemeinsame Regeln** in `claude-sync.md` → lokal als `CLAUDE.md`.
+
+> Gemeinsame Regeln immer in **`claude-sync.md`** ändern (per PR) — **nicht** in der lokalen `CLAUDE.md`, sonst driften die Stände auseinander.
 
 ---
 
@@ -230,26 +274,23 @@ cd Alarmsystem-Dev
 5. 02-Arbeitsdokumente/Team-Organisation+Regeln.md # Wie arbeiten wir zusammen?
 ```
 
-### 3. Umgebung aufsetzen (sobald Code da ist)
+### 3. Umgebung aufsetzen
 ```bash
-# Python 3.9+ vorausgesetzt
-python -m venv .venv
-source .venv/bin/activate          # Linux/Mac
-# oder
-.venv\Scripts\activate             # Windows
-
-pip install -r requirements.txt
+# Einmal-Setup übernimmt alles (uv, Python-Umgebung, lokale CLAUDE.md):
+bash setup.sh                                        # macOS / Linux
+powershell -ExecutionPolicy Bypass -File setup.ps1   # Windows
 ```
+> Erstmaliges Onboarding: siehe **⚙️ Setup & Onboarding** oben. Manuell geht auch: `uv sync` (nutzt `pyproject.toml`).
 
 ### 4. Server starten
 ```bash
-# T0-Ziel: python src/main.py → GET /health → 200 OK
-python src/main.py
+# T0-Ziel: GET /health → 200 OK
+uv run python src/main.py
 ```
 
 ### 5. Tests schreiben & laufen
 ```bash
-pytest tests/ -v --cov=src --cov-report=html
+uv run pytest tests/ -v --cov=src --cov-report=html
 # Bewertungslogik-Tests = Priorität 1 (≥ 80 % Coverage)
 ```
 
@@ -380,7 +421,8 @@ tests/
 |---|---|---|
 | Teilprojektleiter | Landmann, Lucas | Scope, Blocker, Außenkontakt |
 | **Systemarchitekt** | **Vöhringer, Lucas** + Petzold, Johannes | API, Datenmodell, Schnittstellen |
-| Backend-Lead | Hartling, Leon | Code-Quality, Reviews |
+| **Backend-Lead** | **Vöhringer, Lucas** | Code-Quality, Reviews, Backend-Koordination |
+| Backend-Devs | Hartling, Leon · Ganter, Luca · Moritz, Andreas · Sarkhab, Arash | Ingest, Persistenz, Bewertungslogik, API |
 | Test-Lead | Mohammadi, Azezoo | Definition of Done, Testprotokoll |
 | Dokumentation | Reisi, Maryam + Ilchyshyn, Vladyslav | Entscheidungslogbuch, API-Doku |
 
@@ -419,4 +461,4 @@ tests/
 
 **Viel Erfolg bei der Implementierung!** 🚀
 
-*Letzte Aktualisierung: 16.06.2026 — G2 Backend & Entscheidungslogik*
+*Letzte Aktualisierung: 17.06.2026 — G2 Backend & Entscheidungslogik*

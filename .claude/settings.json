@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"Tipp: mit /start beginnen - laedt Kontext, Stand und Regeln.\""
+          }
+        ]
+      }
+    ]
+  }
+}
