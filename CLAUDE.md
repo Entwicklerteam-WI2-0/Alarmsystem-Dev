@@ -8,6 +8,11 @@ Dies ist das **Arbeits-Repository der Backend-Gruppe (G2)** für den Projektkurs
 Flughafen ANR". Es enthält das Briefing-Rohmaterial (Text-Extrakte), die erarbeiteten Requirements-/
 Design-Artefakte **und** (zunehmend) den **Backend-Code**. Die konkrete Stack-Wahl ist bewusst offen.
 
+> **Repo-Rollen-Trennung (wichtig):** Dieses Repo ist die **Code-/Use-Case-Source** (Doku, Requirements,
+> Backend-Code). Das **gesamte Claude-Tooling** — Skills, Commands, Hooks, das Team-OS — lebt
+> **ausschließlich** im separaten Repo **`devteam-vibecodes`** und wird von dort via Setup/`git pull`
+> verteilt. **Hierher kommt KEIN Skill, KEIN Command, KEIN Plugin, KEIN Tooling.**
+
 Versioniert mit **Git**; Remote: **`Entwicklerteam-WI2-0/Alarmsystem-Dev`** (GitHub, Team-Org), Branch `main`.
 Lokaler Ordner: `C:\Users\LucasVöhringer\Desktop\Alarmsystem-Dev`.
 Vor `push`/PR/`force-push`/destruktiven Git-Aktionen: **vorher Genehmigung einholen.**
