@@ -107,6 +107,7 @@ Entwicklung eines **prototypischen Systems zur Erfassung und Bewertung von Verei
 | **FA-10** | _(NEU)_ Mensch **quittiert Alarme**; die getroffene **manuelle Entscheidung** (Kontrolle/Sperrung) wird erfasst. | Muss | Annahme | Sicherheitsbeauftragte (Z. 163–165) + Entscheidungslogbuch (Z. 66). |
 | **FA-11** | _(NEU)_ **Schwellwerte/Parameter** der Bewertungslogik sind im System konfigurierbar (Bedien-Gegenstück zu NF-05). | Soll | Annahme | Zielkonflikt Fehlalarm ↔ Sicherheit (Z. 27–30). |
 | **FA-12** | _(NEU)_ Protokolliert Messwerte, Bewertungen, Alarme und Quittierungen (**Audit-Trail**). | Muss | Annahme | Entscheidungslogbuch (Z. 66); Haftung/Sicherheit. |
+| **FA-13** | _(NEU)_ Jede **Wetterstation hat eine hinterlegte Geoposition** (GPS-Koordinaten lat/lon, optional als Geohash kodiert); das **Frontend zeigt den Stationsstandort** an. | Kann | Annahme | Seam-Sync mit G3 (18.06.2026); UI-Enabler für Multi-Standort-Betrieb (NF-11). _Offen:_ Position als Stations-Stammdatum (ortsfest) vs. pro Reading; Liefer-/Anzeigeweg (Text vs. Karte) im Seam-Sync zu klären. |
 
 ### 3.2 Nicht-funktionale Anforderungen (NFA)
 
