@@ -91,19 +91,7 @@ Alarmsystem-Dev/
 
 > **Hinweis zur Struktur:** `src/`, `tests/`, `config/` und `.github/` sind **geplant** (Zielzustand nach `Backend-Konzept §7`) und noch nicht im Repo.
 
-## ⚙️ Setup & Tooling
 
-> **Setup, Agenten-Config und Onboarding-Tooling leben getrennt im Vibecoding-Stack `Devteam-vibecodes`.**
-> Dieses Repo ist für **Produktcode + Pflichtdokumentation** — es enthält bewusst **keine** Setup-Skripte mehr.
-
-**Repo klonen & Code lauffähig machen** (sobald Backend-Code existiert):
-```bash
-git clone https://github.com/Entwicklerteam-WI2-0/Alarmsystem-Dev.git
-cd Alarmsystem-Dev
-uv sync          # Python-Umgebung reproduzierbar aus pyproject.toml
-```
-
----
 
 ## 🎯 Kernauftrag & Scope (G2)
 
