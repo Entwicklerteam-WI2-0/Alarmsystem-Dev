@@ -1,18 +1,23 @@
 # Aktueller Stand
 
-> Stand: 2026-06-17 · Pflege: Lucas. Beim Sitzungsstart von `/start` gelesen.
+> Stand: 2026-06-21 · Pflege: Lucas (Architekt). Beim Sitzungsstart von `uni:start` gelesen.
 
 ## Woran wir gerade arbeiten
-- **Team-OS / Onboarding** (Branch `feat/agenten-onboarding`): Bootstrap-Schicht angelegt
-  (`setup.sh`/`setup.ps1`, `pyproject.toml`, `claude-sync.md`, `.claude/`, `ONBOARDING.md`).
-- Entschieden: **Claude Code + Claude Pro** als Standard (Detail: Entscheidungslog **E-24…E-27**).
+- **G2 Backend (Alarmsystem ANR):** Übergang Woche 2. **Projektplan + Jira-Backlog (Projekt DTB)** steht:
+  9 Epics / 43 Tasks (DTB-1..DTB-52) + 43 "Blocks"-Abhängigkeitslinks. Begleitdoc:
+  `02-Arbeitsdokumente/Projektplan-Jira-Backlog-G2.md`.
+- Stack **T0 (FastAPI/SQLite/HTTP) als gesetzt** behandelt (E-08 formal nachziehen → DTB-2). Noch **kein `src/`** —
+  Scaffolding (P0 / Epic E-01) ist überfällig.
 
-## Als Nächstes
-1. Bootstrap testen (klonen → `setup` → `claude` → `/start`) und Branch via PR mergen.
-2. Phase 2: die Workflow-Skills (Repo-Arbeit, Convention-Kontrolle, Entwickler-Aufsicht) + Enforcement-Hooks bauen.
-3. Backend: **Contract-first** (API + Datenmodell als Naht, P1) einfrieren — kritischer Pfad.
+## Als Nächstes (kritischer Pfad)
+1. **P0/Scaffolding heute** abschließen (DTB-1: DTB-2/50/51/52).
+2. **Contract-first**: API + Datenmodell (E-02 / DTB-7) + Seam-Sync mit G1+G3 bis Di → M2.
+3. **T0 Vertical Slice** (E-03 / DTB-8): assessment-Kern + beide Vorfall-Tests + Fail-safe (≥80 % Coverage).
 
 ## Offene Punkte / Blocker
-- Dev 2: ChatGPT **Go** oder **Plus**? (entscheidet Codex-Fallback vs. Claude Pro)
-- Tracked `CLAUDE.md`/`AGENTS.md` noch per `git rm --cached` aus der Versionierung nehmen (E-03 jetzt in `.gitignore`).
-- Stack final bestätigen (T0-Empfehlung: FastAPI + SQLite + HTTP).
+- **M2 (Ende Woche 2) kritisch:** nur 1 echter Backend-Dev (Lucas) auf 7 kritischen Tasks → Petzold früh
+  einbinden, P3 bewusst nach Woche 3.
+- **Echte Schwellenwerte von G1** ausstehend (~2 Tage) → `config/` parametrierbar halten, NIE hardcoden.
+- **Review-Lücken (offen):** Systemkontext-Diagramm (Pflicht W1) ohne Task; NF-07-Auth für `POST /config`
+  ohne Task; Config-Redundanz (E-05/E-07/E-09) konsolidieren.
+- **Working-Tree uncommitted** (Plan-Doc + Entscheidungslog) — Push/PR nur nach Freigabe.
