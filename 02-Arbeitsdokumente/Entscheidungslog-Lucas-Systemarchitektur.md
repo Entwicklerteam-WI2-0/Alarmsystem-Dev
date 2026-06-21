@@ -114,6 +114,24 @@
 
 ---
 
+## H. Tooling-Fixes ( nachvollziehbar für Wiederholung)
+
+**E-28 — Atlassian MCP Server: korrekter Endpoint `…/v1/mcp/authv2` + `mcp-remote@latest`, Auth-Cache bei Account-Wechsel löschen**
+- *Entscheidung:* Kimi spricht den Atlassian-MCP-Server nicht direkt als HTTP-Entry an, sondern über den Node.js-Proxy `mcp-remote@latest` mit der URL `https://mcp.atlassian.com/v1/mcp/authv2`.
+- *Begründung:* Der ältere `/v1/mcp`-Endpoint ohne `/authv2` und ohne `@latest` führte zu „Internal Server Error" bzw. sofortigem `Connection closed` nach dem OAuth-Redirect. Die offizielle Atlassian-Doku für lokale Clients (Juni 2026) verlangt `/v1/mcp/authv2`.
+- *Lösung:*
+  1. `C:/Users/luceb/.kimi-code/mcp.json`:
+     ```json
+     "atlassian": {
+       "command": "npx",
+       "args": ["-y", "mcp-remote@latest", "https://mcp.atlassian.com/v1/mcp/authv2"]
+     }
+     ```
+  2. Kimi neu starten → Browser öffnet OAuth-Einwilligung.
+  3. Falls falscher Account/Zugriff nur auf „Steinzisterne": Kimi beenden, `~/.mcp-auth/mcp-remote-0.1.37/*` löschen, Kimi neu starten und im Browser den **richtigen Atlassian-Account** wählen.
+- *Alternative:* direkter HTTP-Entry mit Kimi-internem OAuth — verworfen, lieferte bei diesem Setup reproduzierbar Fehler; API-Token-Auth — nur falls Admin es explizit freigibt.
+- *Bezug:* Offizielle Doku https://github.com/atlassian/atlassian-mcp-server / Atlassian Support „Setting up IDEs".
+
 ## G. Offene Entscheidungen (bewusst vertagt)
 
 | Offen | Bezug | Warum vertagt |

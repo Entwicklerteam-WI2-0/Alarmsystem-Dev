@@ -16,6 +16,11 @@ Erfassung und Bewertung von Vereisungsbedingungen** am fiktiven Flughafen **ANR 
 Backend-Konzept, Projektplan liegen vor). Das Repo geht in die **Implementierungsphase** über — Quellcode
 (`src/`, `tests/`) entsteht hier. Der konkrete Technologiestack ist noch nicht final festgelegt.
 
+> **Repo-Rollen-Trennung (wichtig):** Dieses Repo ist die **Code-/Use-Case-Source** (Doku, Requirements,
+> Backend-Code). Das **gesamte Claude-Tooling** — Skills, Commands, Hooks, das Team-OS — lebt
+> **ausschließlich** im separaten Repo **`devteam-vibecodes`** und wird von dort via Setup/`git pull`
+> verteilt. **Hierher kommt KEIN Skill, KEIN Command, KEIN Plugin, KEIN Tooling.**
+
 ### Kernziele
 
 - Erfassung relevanter Wetter-/Oberflächendaten (Oberflächentemperatur, Feuchte, Taupunkt, Niederschlagsart, Luftdruck).
@@ -23,6 +28,26 @@ Backend-Konzept, Projektplan liegen vor). Das Repo geht in die **Implementierung
 - Backend zur Datenverarbeitung und Entscheidungsunterstützung (**unser Fokus, G2**).
 - Visualisierung/Alarmierung über ein Frontend (G3), Sensorik (G1).
 - Funktionierender Gesamtprototyp.
+
+### Zentrale Eigenheit
+
+Es existiert **keine saubere Spezifikation**. Das Lastenheft muss aus dem widersprüchlichen Material in
+`01-quellen/Die Hintergrundgeschichte.txt` erst hergeleitet werden — das ist ausdrücklich Teil der Aufgabe
+und der Bewertung. Das Briefing nie als fertige Spec behandeln.
+
+### Harte Randbedingungen (aus der Hintergrundgeschichte abgeleitet)
+
+- **Sicherheitskritisch — keine Automatik-Freigabe:** Das System darf die Startbahn NIE automatisch
+  freigeben oder sperren. Die Verantwortung bleibt beim Menschen. Entscheidungs*unterstützung*, kein Aktor. (→ RB-01)
+- **Lufttemperatur reicht nicht:** Beide Vorfälle scheiterten an reiner Lufttemperatur — Fehlalarm bei
+  −2,1 °C (kein Eis) und übersehene Eisbildung bei +1,2 °C. Relevant: **Oberflächentemperatur, Feuchte,
+  Taupunkt, Niederschlagsart** (umgesetzt in `Schwellenwerte.md`).
+- **Zielkonflikt Fehlalarm vs. Sicherheit:** „Lieber zehn Fehlalarme als ein vereistes Flugzeug" — Kern der
+  Bewertungslogik, bewusst parametrierbar. (→ K1)
+- **Vorhersage statt Momentaufnahme:** Fluglotsen brauchen ≥ 30 min Vorlaufzeit.
+- **Wartbarkeit der Sensoren:** Vorfeld-Sensoren werden beschädigt — Robustheit/Austauschbarkeit einplanen.
+- **Betriebsmodell offen:** lokal vs. Cloud + Fernzugriff begründet dokumentieren. (→ AE-01/AE-02)
+- **Budgetdruck:** Referenzsensor WX-500 ~4.800 €/Stück; Sensoranzahl/-auswahl begründen.
 
 ### Rahmenbedingungen (bewusst widersprüchlich)
 
@@ -52,7 +77,8 @@ Repo `Alarmsystem-Dev` (Remote `Entwicklerteam-WI2-0/Alarmsystem-Dev`, Branch `m
 | `02-Arbeitsdokumente/Schwellenwerte.md` | **Vereisungslogik + konkrete Schwellenwerte** (4 Stufen) + Kalibriervorgaben je FA/NFA |
 | `02-Arbeitsdokumente/Backend-Konzept.md` | Architektur der Backend-Gruppe: Module, Datenmodell, Tech-Stack-Optionen, Code-Struktur |
 | `02-Arbeitsdokumente/Tasks+Projektplan.md` | Phasen P0–P6, Meilensteine M1–M3, Kanban-Tasks (Owner/DoD/Größe) |
-| `02-Arbeitsdokumente/Team-Organisation+Regeln.md` | Rollen/DRI, Zusammenarbeit, Teamregeln |
+| `02-Arbeitsdokumente/Team-Organisation+Regeln.md` | Rollen/DRI, Zusammenarbeits-Map, Teamregeln |
+| `02-Arbeitsdokumente/teamstruktur-final.md` | **Finale Rollenaufteilung** des aktiven Entwicklerteams inkl. Begründung |
 | `02-Arbeitsdokumente/assets/` | Architekturskizze (WhatsApp-Bild) + Rollen-/Gruppeneinteilungsbilder |
 | `03-abgaben/Nutzer und Stakeholdermodel 1.md` / `2.md` | Stakeholder-/Nutzermodell (abgabefertig) |
 | `Agents-gpt-gemini.md` (Root) | KI-Onboarding (einfügbares Briefing für ChatGPT/Gemini) |
@@ -66,11 +92,36 @@ Repo `Alarmsystem-Dev` (Remote `Entwicklerteam-WI2-0/Alarmsystem-Dev`, Branch `m
 
 Vereisungslogik + Schwellenwerte konkretisiert, Backend-Konzept (G2) und Projektplan/Kanban erstellt,
 KI-Onboarding für ChatGPT/Gemini, Rolle/Gruppe bestätigt (G2 Backend; Lucas = Systemarchitekt),
-Repo auf `Alarmsystem-Dev` konsolidiert.
+Repo auf `Alarmsystem-Dev` konsolidiert, finale Teamstruktur in `teamstruktur-final.md` dokumentiert.
 
 ---
 
-## 3. Technologiestack
+## 3. Team & Rollen
+
+Aktive Rollenaufteilung (final) gemäß `02-Arbeitsdokumente/teamstruktur-final.md`:
+
+| Sub-Team / Rolle | Personen | Kernverantwortung (DRI) |
+|---|---|---|
+| **Backend-Developer** | Arash · Luca | Ingest, Geschäftslogik, **Vereisungs-Bewertungslogik**, API-Implementierung |
+| **Datenbank-Engineers** | Andreas · Leon | Datenbankschema, Repository-Pattern, Persistenz, Datenintegrität, Abfrageoptimierung |
+| **Architekten** | Lucas · Johannes | API-Design, Datenmodell (Naht zu G1/G3), Architekturentscheidungen, technische Unterstützung der aktiven Entwickler |
+| **Test & Code-Review** | Arezo · Amelie | Testfälle, Testprotokoll, Definition-of-Done, Code-Review |
+
+**Lucas (ArchiDox) = Systemarchitekt** (primär). Damit gehört ihm fachlich die **API/Datenmodell-Naht**
+und das `Backend-Konzept.md`. Gruppe = Backend/G2.
+
+### Arbeitsorganisation (3 Gruppen, bewusster Methodenvergleich)
+
+- **Gruppe 1 — Sensorik & Daten** (Wasserfall): Sensoren recherchieren, Datenblätter, Auswahl, Messung
+- **Gruppe 2 — Backend & Entscheidungslogik** (Wasserfall, **= dieses Team**): Datenmodell, API, Speicherung, Vereisungsbewertung
+- **Gruppe 3 — Frontend & Integration** (Scrum): Nutzeroberfläche, Visualisierung, Alarmierung, Integration
+
+Die Schnittstelle zwischen den Gruppen ist die **API/das Datenmodell** (Gruppe 2) — laut Zeitplan bis Ende
+Woche 2 final. In `Backend-Konzept.md` ist dies als die *einzige* Naht herausgearbeitet, die früh einzufrieren ist.
+
+---
+
+## 4. Technologiestack
 
 Der konkrete Stack ist **noch nicht final** und gehört begründet ins Entscheidungslogbuch.
 Optionen + Empfehlung in **`Backend-Konzept.md` §6**:
@@ -85,7 +136,7 @@ Protokoll (HTTP/MQTT), DB-/Framework-Wahl.
 
 ---
 
-## 4. Code-Organisation (Backend, G2)
+## 5. Code-Organisation (Backend, G2)
 
 Modul-/Ordnerstruktur s. **`Backend-Konzept.md` §7**:
 
@@ -106,7 +157,7 @@ Zentrale Schnittstelle aller Gruppen = **API/Datenmodell der Gruppe 2**, bis End
 
 ---
 
-## 5. Build- und Testbefehle
+## 6. Build- und Testbefehle
 
 **Noch nicht final** (Stack offen). Nach Stack-Entscheidung hier ergänzen:
 
@@ -116,21 +167,24 @@ Zentrale Schnittstelle aller Gruppen = **API/Datenmodell der Gruppe 2**, bis End
 
 ---
 
-## 6. Code-Style und Entwicklungskonventionen
+## 7. Code-Style und Entwicklungskonventionen
 
 - **Sprache:** alle Artefakte, Doku, Kommentare auf **Deutsch**.
+- **Versionskontrolle:** Git, Remote `Entwicklerteam-WI2-0/Alarmsystem-Dev` (GitHub), Branch `main`.
+  **Workflow:** Feature-Branch → PR → Review → `main` (main bleibt lauffähig). **Ausgehende/destruktive
+  Git-Aktionen (push, PR, merge, force-push) nur nach expliziter Genehmigung.** Keine Secrets committen.
 - **Dokumentationspflicht:** jedes technische Ergebnis nachvollziehbar dokumentieren.
 - **Entscheidungen begründen** (Alternativen/Gründe/Unsicherheiten) → **Entscheidungslogbuch**.
 - **Lastenheft versioniert**, iterativ verfeinert.
 - **Hybride Methodik:** G1/G2 Wasserfall, G3 Scrum; Schnittstellen früh definieren.
 - **Sicherheitskritikalität:** jede Entscheidung gegen Fehlalarme/nicht erkannte Vereisung abwägen.
-- **Git:** Feature-Branch → PR → Review → `main`; keine Secrets; ausgehende/destruktive Aktionen nur nach Genehmigung.
-- **Vereisungslogik/Schwellenwerte ausschließlich aus `Schwellenwerte.md`** — nichts dazuerfinden.
+- **Vereisungslogik/Schwellenwerte ausschließlich aus `Schwellenwerte.md`** — nichts dazuerfinden; Defaults parametrierbar.
+- Funktionale Vorgehensweise: **vom Kernpfad (T0) ausgehen**, Features als T1–T3 aufsetzen (s. `Backend-Konzept.md` / `Tasks+Projektplan.md`).
 - Abweichungen vom Plan als **[DEVIATION]** markieren und begründen.
 
 ---
 
-## 7. Teststrategie
+## 8. Teststrategie
 
 - **Entscheidungslogik:** gegen die zwei dokumentierten Vorfälle (−2,1 °C → kein Eis, +1,2 °C → Eis) prüfen; Coverage ≥ 80 %.
 - **Plausibilität/Ausfall:** Stale-/Defekt-Erkennung und Fail-safe (Ausfall → nie GRÜN) testen.
@@ -140,7 +194,7 @@ Zentrale Schnittstelle aller Gruppen = **API/Datenmodell der Gruppe 2**, bis End
 
 ---
 
-## 8. Sicherheits-Betrachtungen
+## 9. Sicherheits-Betrachtungen
 
 - **Keine automatische Freigabe der Startbahn** — Mensch ist letzte Instanz (RB-01).
 - **Redundanz/Ausfallabsicherung:** Sensoren werden beschädigt → Wartbarkeit/Ersatz.
@@ -150,7 +204,7 @@ Zentrale Schnittstelle aller Gruppen = **API/Datenmodell der Gruppe 2**, bis End
 
 ---
 
-## 9. Meilensteine & Pflichtdokumente
+## 10. Meilensteine & Pflichtdokumente
 
 | Meilenstein | Zeitpunkt | Zentrale Deliverables |
 |---|---|---|
@@ -164,11 +218,11 @@ UI-/Alarm-/Integrationskonzept (G3), Entscheidungslogbuch (laufend), Testprotoko
 
 ---
 
-## 10. Hinweise für Agenten
+## 11. Hinweise für Agenten
 
 - **Scope respektieren:** G2 = Backend. Sensorik/Frontend **nicht** mitkonzipieren — nur die API-Schnittstelle definieren.
 - **Anforderungs-/Konzeptdokumente beachten:** `Usecase-quick.md`, `Schwellenwerte.md`, `Backend-Konzept.md`,
-  `Tasks+Projektplan.md` (gemeinsame IDs FA/NF/RB/AE/K, Tasks P#.#).
+  `Tasks+Projektplan.md`, `teamstruktur-final.md` (gemeinsame IDs FA/NF/RB/AE/K, Tasks P#.#).
 - **Belegbasiert arbeiten:** keine erfundenen Schwellenwerte/Quellen; Unsicheres kennzeichnen; bei Bedarf nachfragen.
 - **Session-Recap:** Claude Code → `/ck:resume`; Kimi → aktuellste `recap_YYYY-MM-DD.md` unter `C:\Users\LucasVöhringer\.kimi\.recap\`.
 - **Deutsch verwenden.** Sicherheitskritisches Ingenieursprojekt, kein normales Webprojekt.
