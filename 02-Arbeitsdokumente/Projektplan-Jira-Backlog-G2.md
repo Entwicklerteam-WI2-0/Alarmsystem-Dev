@@ -1,6 +1,6 @@
 # G2 Backend — Projektplan & Jira-Backlog (internes Arbeitsdokument)
 
-> **Zweck:** Grundlage zum Aufziehen des Jira-Projekts **DTB** (Dev-Team-Backend) und zum Verteilen der Tasks. Internes Arbeitsdokument — **nicht** committet, kein benotetes Deliverable.
+> **Zweck:** Grundlage zum Aufziehen des Jira-Projekts **DTB** (Dev-Team-Backend) und zum Verteilen der Tasks. Internes, **versioniertes** Arbeitsdokument (im Repo unter Versionskontrolle; kein benotetes Deliverable).
 > **Stand:** 2026-06-21 (Übergang Woche 2) · **Quelle:** Ultracode-Workflow `g2-jira-plan` (11 Agenten, ~849k Tokens, ~20,6 Min) · Analyse → Architektur-Scan → Synthese → Verifikation.
 > **DUMMY-SCHWELLEN:** Alle Schwellenwerte bleiben Platzhalter bis G1 liefert — ausnahmslos über `config/` parametrierbar, NIE hardcoden.
 > **Owner = Empfehlung** (skill-bewusst), kein harter Assignee. Tasks gehören in den Backlog; Owner-Hinweis je Task unten.
@@ -139,7 +139,7 @@ E2E-Integration mit G1 (echte/sim Daten) + G3 (Frontend konsumiert API), Testpro
 |---|---|---|
 | M2-Deadline Einhaltung | 100% | P0–P3 Abschluss bis 2026-06-26 17:00 (Einfrieren main-Branch für M2-Abgabe) |
 | API/Datenmodell-Naht eingefroren | P1.4 bis 2026-06-24 | Contract v1 getaggt in Git, schriftliche Bestätigung von G1/G3, PR gemergt auf main |
-| Bewertungsmodul mit Vorfällen | Beide Testfälle (VF-1: −2,1 °C trocken→GELB; VF-2: +1,2 °C Luft, T_s<0→ORANGE/ROT) grün | pytest test_vorfall_1_* und test_vorfall_2_* bestanden, Coverage ≥80% |
+| Bewertungsmodul mit Vorfällen | Beide Testfälle (VF-1: −2,1 °C trocken→GELB; VF-2: +1,2 °C Luft, T_s<0→ROT) grün | pytest test_vorfall_1_* und test_vorfall_2_* bestanden, Coverage ≥80% |
 | Fail-safe-Test vorhanden | P3.7 definiert + implementiert: 5 Szenarios (stale, out-of-range, flatline, no-data, network-delay) → alle GELB/nie GRÜN | pytest test_fail_safe_* bestanden |
 | Code Coverage assessment/ | ≥80% | pytest --cov=src/assessment --cov-report=term-missing zeigt ≥80% line coverage |
 | Schwellen parametrierbar | Alle Schwellwerte aus config/thresholds.json geladen, keine Hardcodes | grep -r '>\s*[0-9.]+' src/ zeigt keine Literal-Schwellen in Bewertungslogik |
@@ -311,7 +311,9 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 | E-06 Integration, Test & Demo | M3 | 6 |
 | E-07 Schwellenwerte-Parametrierung (Config/Environment) | M2 | 2 |
 | E-08 Testing & CI/CD Pipeline | M2 | 2 |
-| **Summe** |  | **36** |
+| **Summe (Synthese-Epics E-01–E-08)** |  | **36** |
+
+> **Gesamtzahl:** 36 (Synthese-Epics) + 6 Nachträge (§9 / Jira-Epic E-09) + 1 aus dem P5.4-Split = **43 Tasks in Jira** (DTB-1…DTB-52, 9 Epics).
 
 ---
 
@@ -445,7 +447,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Task · High · S
 - **Owner (Empfehlung):** Petzold oder Backend-Dev
 - **Abhängig von:** P0.2
-- **Beschreibung:** Implementiere Magnus-Formel (a=17.62, b=243.12) zur Berechnung T_d aus T_a + RH. Unit-Tests gegen Referenzwerte (z.B. T_a=20°C, RH=60% → T_d≈11,9°C). Funktion als reine Funktion in src/assessment/utils.py.
+- **Beschreibung:** Implementiere Magnus-Formel (a=17.62, b=243.12 — über flüssigem Wasser; Quelle: Alduchov & Eskridge 1996. Im Vereisungsbereich ggf. Eis-Konstanten a=22.46, b=272.62 prüfen — Quelle/Variante als Code-Kommentar festhalten) zur Berechnung T_d aus T_a + RH. Unit-Tests gegen Referenzwerte (z.B. T_a=20°C, RH=60% → T_d≈11,9°C). Funktion als reine Funktion in src/assessment/utils.py.
 - **DoD:**
   - Funktion calculate_dew_point(T_a, RH) → T_d vorhanden
   - ≥3 Unit-Tests gegen bekannte Referenzwerte
@@ -455,8 +457,8 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Story · Highest · L
 - **Owner (Empfehlung):** Lucas Voehringer (Backend+Architekt, DRI kritischer Pfad)
 - **Anforderungen:** FA Risikobewertung, Schwellenwerte.md §2
-- **Abhängig von:** P2.3, P4.3
-- **Beschreibung:** Implementiere Vereisungslogik aus Schwellenwerte.md §2: 4 Stufen (GRÜN/GELB/ORANGE/ROT) basierend auf T_s, T_d, RH, Niederschlag. Hysterese + Entprellung. KRITISCH: beide Vorfälle (−2,1 °C trocken→GELB; +1,2 °C Luft, T_s<0→ORANGE/ROT) als benannte grüne Testfälle. Schwellen aus config/ laden, keine Hardcodes. Reine Funktion (testbar). Coverage ≥80%.
+- **Abhängig von:** P2.3, P0.5 (Config-Infrastruktur: config/thresholds.json + loader, E-09; ENABLER, M1) — NICHT der Laufzeit-Endpunkt P4.3
+- **Beschreibung:** Implementiere Vereisungslogik aus Schwellenwerte.md §2: 4 Stufen (GRÜN/GELB/ORANGE/ROT) basierend auf T_s, T_d, RH, Niederschlag. Hysterese + Entprellung. KRITISCH: beide Vorfälle (−2,1 °C trocken→GELB; +1,2 °C Luft, T_s<0→ROT) als benannte grüne Testfälle. Schwellen aus config/ laden, keine Hardcodes. Reine Funktion (testbar). Coverage ≥80%.
 - **DoD:**
   - Reine Funktion assess_ice_risk(T_s, T_d, RH, precip_type, config) → Assessment in src/assessment/core.py
   - Config-Loader lädt thresholds aus config/thresholds.json (YAML oder JSON mit Dummy-Werten)
@@ -479,7 +481,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Owner (Empfehlung):** Mohammadi oder Berger (Test & QA), mit Lucas Code-Input
 - **Anforderungen:** NF-01
 - **Abhängig von:** P2.4, P3.1, P3.2
-- **Beschreibung:** Schreibe umfassende Unit-Tests für assessment/core.py: ≥15 Test-Cases inkl. (1) Vorfall 1 (−2,1 °C, trocken → GELB), (2) Vorfall 2 (+1,2 °C Luft, T_s<0 → ORANGE/ROT), (3) Grenzfälle (T_s=0°C, RH=90%, ΔT=0), (4) Hysterese-Schaltungen, (5) Fail-safe (Stale/Defekt → GELB/rot). pytest --cov ≥80%.
+- **Beschreibung:** Schreibe umfassende Unit-Tests für assessment/core.py: ≥15 Test-Cases inkl. (1) Vorfall 1 (−2,1 °C, trocken → GELB), (2) Vorfall 2 (+1,2 °C Luft, T_s<0 → ROT), (3) Grenzfälle (T_s=0°C, RH=90%, ΔT=0), (4) Hysterese-Schaltungen, (5) Fail-safe (Stale/Defekt → GELB/rot). pytest --cov ≥80%.
 - **DoD:**
   - tests/test_assessment_core.py mit ≥15 Testfällen
   - test_vorfall_1_false_alarm_dry_cold() grün
@@ -488,6 +490,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
   - Alle Tests grün vor PR-Merge
 
 #### P3.7: Fail-safe-Test (Stale/Defekt → nie GRÜN)
+> _Hinweis: gehört logisch zu Epic E-04 (T1), da abhängig von P3.1/P3.2; in Jira aktuell unter E-03 angelegt — bei Bedarf in Jira umhängen._
 - **Typ / Prio / Schätzung:** Task · Highest · S
 - **Owner (Empfehlung):** Mohammadi oder Berger (Test & QA)
 - **Anforderungen:** NF-01
@@ -579,6 +582,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 **Anforderungen:** FA-10, FA-12, FA-11, NF-05
 
 #### P4.3: Schwellen-Config (Laufzeit-Parametrierbarkeit)
+> _Hinweis: Dies ist der Laufzeit-Config-ENDPUNKT (GET/POST /config). Der M2-Enabler für P2.4 ist die Config-Infrastruktur (thresholds.json + loader, Task P0.5 / Epic E-09) — nicht dieser Endpunkt._
 - **Typ / Prio / Schätzung:** Story · High · M
 - **Owner (Empfehlung):** Petzold oder Backend-Dev
 - **Anforderungen:** NF-05, FA-11
@@ -673,7 +677,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Story · Highest · M
 - **Owner (Empfehlung):** Mohammadi + Berger (Test & QA)
 - **Abhängig von:** P3.7, P5.1, P5.2
-- **Beschreibung:** Dokumentiere Abnahmetest-Checkliste aus Schwellenwerte.md §3 + NFA. Testfälle: Vorfall 1 (trocken −2,1 °C → GELB), Vorfall 2 (Eisbildung +1,2 °C → ORANGE/ROT), Green (T_s > 1 °C), Alarm bei ORANGE, Quittierung, Audit-Log-Einträge, Fail-safe (Stale/Defekt).
+- **Beschreibung:** Dokumentiere Abnahmetest-Checkliste aus Schwellenwerte.md §3 + NFA. Testfälle: Vorfall 1 (trocken −2,1 °C → GELB), Vorfall 2 (Eisbildung +1,2 °C → ROT), Green (T_s > 1 °C), Alarm bei ORANGE, Quittierung, Audit-Log-Einträge, Fail-safe (Stale/Defekt).
 - **DoD:**
   - docs/TESTPROTOKOLL.md mit ≥12 Testfällen
   - Jeder Test: Vorbedingung, Schritt, Erwartetes Ergebnis, Status (Pass/Fail)
