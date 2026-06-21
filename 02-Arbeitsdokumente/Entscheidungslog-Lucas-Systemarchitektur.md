@@ -4,7 +4,7 @@
 > Vorgehen) aus Sicht des Systemarchitekten — Pflichtdeliverable „Entscheidungslogbuch" und Grundlage
 > für die Bewertung (Kriterium *Nachvollziehbarkeit technischer Entscheidungen*).
 > **Format:** je Eintrag *Entscheidung · Begründung · verworfene Alternative · Bezug*. Lebendes Dokument.
-> **Stand:** 17.06.2026 · **Bezug:** `Backend-Konzept.md`, `Schwellenwerte.md`, `Tasks+Projektplan.md`, `Usecase-quick.md`.
+> **Stand:** 21.06.2026 · **Bezug:** `Backend-Konzept.md`, `Schwellenwerte.md`, `Tasks+Projektplan.md`, `Usecase-quick.md`.
 
 ---
 
@@ -143,3 +143,47 @@
 
 > **Pflege:** Bei jeder neuen Festlegung einen `E-xx`-Eintrag ergänzen; offene Punkte aus G nach Entscheidung
 > nach oben überführen. So bleibt der rote Faden „Warum haben wir das so gebaut?" jederzeit nachvollziehbar.
+
+---
+
+## P. Projektplanung & Jira-Backlog (Session 2026-06-21)
+
+> Diese **EP-Einträge** dokumentieren in dieser Session getroffene **Prozess-/Architektur-Entscheidungen**
+> (KI-gestützt strukturiert, belegbasiert). Die **benotete persönliche Entscheidungsreflexion (40 %)
+> formuliert der Mensch selbst** — siehe Jira-Tasks **DTB-40** (Individualreflexion je Person) und **DTB-45**
+> (Zuordnung). Quelle/Begleitdokument: `02-Arbeitsdokumente/Projektplan-Jira-Backlog-G2.md`.
+
+**EP-01 — Projektplan + Jira-Backlog (DTB) strukturiert angelegt (9 Epics, 43 Tasks)**
+- *Entscheidung:* Phasen P0–P6, KPIs, Risiken und ein vollständiges Backlog (Epics E-01..E-09 → DTB-1..DTB-52) mit DoD je Task im Jira-Projekt DTB erstellt.
+- *Begründung:* Mit nur einem echten Backend-Dev + Anfängerteam schafft ein abgegrenztes Backlog mit klaren DoD/Owner-Empfehlungen Steuerbarkeit und prüfbare Anforderungsabdeckung; Contract-first + Vertical-Slice-Reihenfolge sichert M2.
+- *Alternative:* Tasks ad hoc/manuell pflegen — verworfen: keine prüfbare Abdeckung, Drift-Gefahr.
+- *Bezug:* alle FA/NF/RB; `Tasks+Projektplan.md`; DTB-1..DTB-52.
+
+**EP-02 — Owner als Empfehlung (kein harter Assignee), skill-bewusste Verteilung**
+- *Entscheidung:* Owner-Vorschlag steht in der Task-Beschreibung. Lucas = kritischer Pfad; Petzold = Stories 2. Ordnung; Hartling/Ganter = kleine, unabhängige Endpoints; Arash/Andreas = Zuarbeit unter Anleitung (nie Story-Owner); Mohammadi/Berger = Test; Reisi/Ilchyshyn = Doku.
+- *Begründung:* Reale Skill-Lage (nur ein echter Backend-Dev); harte Assignees wären verfrüht, das Backlog bleibt umverteilbar.
+- *Alternative:* feste Assignees / Roster gleichverteilt — verworfen: überschätzt Team-Kompetenz, Fehlzuteilungsrisiko.
+- *Bezug:* Owner-Realität (Vorgabe Session 2026-06-21).
+
+**EP-03 — T0-Stack für den Task-Zuschnitt als gesetzt behandelt**
+- *Entscheidung:* FastAPI + SQLite + HTTP-POST als Arbeitsannahme; formale Begründung in E-08 nachziehen (Task DTB-2 / P0.1).
+- *Begründung:* `.venv` enthält FastAPI/SQLite/pytest seit 17.06 → faktisch gewählt; der „offen"-Status (E-08) widerspricht der installierten Umgebung.
+- *Alternative:* Stack weiter offen halten — verworfen: blockiert den Bau; Korrektur durch CTO jederzeit möglich.
+- *Bezug:* E-08; DTB-2.
+
+**EP-04 — Korrekturen aus adversarialer Verifikation eingearbeitet**
+- *Entscheidung:* Config als M1-Enabler vorgezogen (zirkuläre Abhängigkeit P4.3↔P2.4 aufgelöst → nur P2.4 hängt an Config); FA-06-Prognose von Stretch → M3/Muss (vereinfachte 3-Punkt-lineare Regression); P5.4 in Gruppen- + Individualreflexion gesplittet; Vorfall-2-Testfall auf ROT präzisiert.
+- *Begründung:* Der Verifikations-Pass deckte echte Logik-/Abdeckungsfehler auf; FA-06 ist MUSS (nicht Stretch); die 40%-Einzelleistung erfordert Personen-Zuweisung.
+- *Alternative:* Rohsynthese 1:1 übernehmen — verworfen: enthielt zirkuläre Abhängigkeit + MUSS-Lücke.
+- *Bezug:* DTB-33, DTB-36, DTB-40, DTB-45; Epic E-09 (DTB-3).
+
+**EP-05 — Abhängigkeiten als „Blocks"-Links in Jira abgebildet**
+- *Entscheidung:* 43 dependsOn-Kanten als Jira-„Blocks"-Verknüpfungen angelegt; die zirkuläre Kante entfernt.
+- *Begründung:* Kritischen Pfad und Reihenfolge tool-seitig sichtbar und steuerbar machen (über die Textangabe hinaus).
+- *Alternative:* nur Textangabe in der Beschreibung — ergänzend belassen, Links zusätzlich.
+- *Bezug:* Sequencing-Abschnitt im Projektplan-Dokument.
+
+**EP-06 — Residuale Lücken offen dokumentiert (nicht stillschweigend gefüllt)**
+- *Entscheidung:* Systemkontext-Diagramm (Pflicht-Deliverable W1), NF-07-Auth für `POST /config` und die Config-Redundanz (E-05/E-07/E-09) als offene Punkte markiert, nicht automatisch „gefixt".
+- *Begründung:* Source-of-Truth + Team-Entscheidung; keine erfundenen Anforderungen, keine stillschweigende Lückenfüllung (claude-sync §2).
+- *Bezug:* Review-Befund Session 2026-06-21.
