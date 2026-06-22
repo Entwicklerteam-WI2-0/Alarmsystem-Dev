@@ -23,7 +23,7 @@
 ## 2. Tasks je Phase
 
 ### P0 — Setup & Fundament
-- **P0.1** Stack-Entscheidung treffen + begründen — `[Architektur&API]` Systemarchitekt · NF-05/NF-10 · DoD: Wahl im Entscheidungslogbuch begründet · **S**
+- **P0.1** Stack-Entscheidung treffen + begründen — `[Architektur&API]` Systemarchitekt · NF-05/NF-10 · DoD: Wahl im Entscheidungslogbuch begründet · **S** · *DB-Teil durch GL-Vorgabe gesetzt: **MySQL/MariaDB** (s. E-29 / `Surprise Anforderungen.txt`); offen bleiben nur noch Sprache/Framework/Protokoll.*
 - **P0.2** Repo-Struktur anlegen (`src/...` aus Backend-Konzept §7) + README — `[Architektur&API]` Systemarchitekt · DoD: Struktur gepusht · **S**
 - **P0.3** Lauffähiges Grundgerüst (Server startet, `GET /health`) — `[Backend-Impl]` Backend-Dev · DoD: `/health` → 200 · **S**
 - **P0.4** Branch/PR-Konventionen + Definition of Ready/Done festlegen — `[Dokumentation]` PL/Doku · DoD: im Repo dokumentiert · **S**

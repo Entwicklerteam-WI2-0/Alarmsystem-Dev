@@ -18,10 +18,9 @@
 3. **T0 Vertical Slice** (E-03 / DTB-8): assessment-Kern + beide Vorfall-Tests + Fail-safe (≥80 % Coverage).
 
 ## Offene Punkte / Blocker
-- **E-29-Begründung (40 % Einzelleistung):** von Lucas noch in eigenen Worten auszuformulieren
-  (aktuell Stichpunkt-Rohstoff im Entscheidungslog).
-- **Drift nachziehen:** `Tasks+Projektplan.md` P0.1 (DB jetzt GL-vorgegeben, nicht mehr „offen") +
-  `Raspberry-Pi-Hosting-Anleitung.md` (MariaDB als Dienst/Ressourcen auf dem Pi) noch offen.
+- **MySQL-Vorgabe vollständig eingearbeitet (22.06.):** Backend-Konzept §6/§6a, README, Entscheidungslog
+  E-29 (Begründung ausformuliert), Tasks P0.1 und Pi-Anleitung konsistent nachgezogen. PR #21 (mergebar).
+  G1-Schwellen/reale Last später gegen §6a plausibilisieren.
 - **M2 (Ende Woche 2) kritisch:** nur 1 echter Backend-Dev (Lucas) auf 7 kritischen Tasks → Petzold früh
   einbinden, P3 bewusst nach Woche 3.
 - **Echte Schwellenwerte von G1** ausstehend (~2 Tage) → `config/` parametrierbar halten, NIE hardcoden.

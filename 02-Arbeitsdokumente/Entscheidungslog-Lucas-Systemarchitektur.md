@@ -42,17 +42,12 @@
 **E-29 — Datenhaltung: MySQL durch GL vorgegeben → Umsetzung MySQL/MariaDB durchgängig ab T0 (dev = prod)**
 - *Kontext/Task:* P0.1 · E-08 · Vorgabe der Geschäftsleitung (`02-Arbeitsdokumente/Surprise Anforderungen.txt`, 22.06.2026). Die DB-Wahl ist damit **nicht mehr frei**, sondern extern gesetzt (MySQL). *Meine* Architektenentscheidung betrifft die **Umsetzungsvariante**.
 - *Entscheidung:* MySQL 8 / MariaDB als **einzige** DB **durchgängig ab T0** (dev = prod via Docker-Compose); Persistenz DB-agnostisch über SQLAlchemy + Repository-Pattern; Alembic-Migrationen.
-- *Begründung* — ⚠️ **noch in eigenen Worten auszuformulieren (40 % Einzelleistung); folgende Belege sind nur Rohstoff:*
-  - GL gewichtet Wartbarkeit/Betrieb über neue Tech (Vorgabe verbindlich); für die erwartete Last **kein** schwerwiegender technischer Gegengrund (Backend-Konzept §6a).
-  - „dev = prod" vermeidet SQL-Dialekt-Drift, der bei SQLite-dev + MySQL-prod erst spät bricht.
-  - Repository-Pattern war bereits gesetzt (E-04, §7) → DB hinter `storage/` gekapselt, geringe Umsetzungskosten.
-  - Bewertungslogik bleibt DB-frei (reine Funktion) → kritischer Pfad/Coverage unberührt.
-  - Bewusst akzeptierter Tradeoff: Docker-Setup-Hürde fürs Anfänger-Team (Mitigation: Compose + Kurzanleitung).
+- *Begründung:* Die Geschäftsleitung gewichtet langfristige Wartbarkeit und zuverlässigen Betrieb höher als die Einführung neuer Technologien und gibt MySQL verbindlich vor; da für die erwartete Last eines Regional-Flughafen-Prototyps (moderate Sensordatenrate) **kein schwerwiegender technischer Gegengrund** gegen MySQL/MariaDB besteht (Analyse §6a), nehme ich die Vorgabe an, statt sie anzufechten. Innerhalb der Vorgabe wähle ich die Variante **„eine DB durchgängig, dev = prod"**: Entwicklung, Tests und Betrieb laufen alle gegen MySQL/MariaDB (lokal via Docker-Compose bereitgestellt). Das vermeidet den **SQL-Dialekt-Drift**, der bei der Alternative „SQLite im Dev, MySQL erst im Betrieb" typischerweise erst spät und teuer auffällt (AUTO_INCREMENT, JSON-Typ, DATETIME-Semantik). Die Umsetzungskosten bleiben gering, weil die Persistenz ohnehin hinter dem **Repository-Pattern** (E-04, §7) gekapselt und über SQLAlchemy DB-agnostisch ist; die sicherheitskritische **Bewertungslogik bleibt eine reine, DB-freie Funktion** und ist vom DB-Wechsel nicht betroffen (kritischer Pfad und ≥ 80 % Coverage unberührt). Den einzigen relevanten Nachteil — die **Docker-/MariaDB-Einstiegshürde** für ein 2.-Semester-Team — nehme ich bewusst in Kauf und mildere ihn durch ein fertiges `docker compose up db` samt Kurzanleitung; der Gewinn an Realitätsnähe (dev = prod, kein Migrationsbruch mitten im 3-Wochen-Projekt) wiegt schwerer.
 - *Alternativen (verworfen):*
   - **SQLite durchgängig** — widerspricht der GL-Vorgabe; nicht für Server-/Mehrbenutzerbetrieb gedacht.
   - **SQLite-dev + MySQL-prod (gekapselt)** — pragmatisch, aber Dialekt-Drift-Risiko; weicht von „grundsätzlich MySQL" ab.
   - **PostgreSQL/TimescaleDB** — technisch stark bei Zeitreihen, aber im Haus nicht etabliert (GL-Kriterium „bestehende Kompetenz wiederverwenden").
-- *Ergebnis/Status:* umgesetzt in `Backend-Konzept.md §6/§6a` + `README.md` (22.06.2026, Branch `docs/mysql-vorgabe-einarbeiten`). Offen: §6a-Analyse vom Team prüfen lassen; `Tasks+Projektplan.md` P0.1 + `erinnerung/stand.md` nachziehen.
+- *Ergebnis/Status:* vollständig umgesetzt in `Backend-Konzept.md §6/§6a`, `README.md`, `Tasks+Projektplan.md` P0.1 und `Raspberry-Pi-Hosting-Anleitung.md` (22.06.2026, PR #21). G1-Schwellen/reale Last bei Verfügbarkeit gegen §6a plausibilisieren.
 - *Bezug:* E-08 (DB-Teil überholt), `Surprise Anforderungen.txt`, NF-01 (Fail-safe bei DB-Ausfall), Backend-Konzept §6a.
 
 **E-09 — Sensorik-Pragmatik: ein günstiger echter Sensor für die Kerngröße + Simulator-Feed hinter *einer* Ingest-Schnittstelle**
