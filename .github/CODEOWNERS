@@ -1,0 +1,24 @@
+# CODEOWNERS — steuert die Review-Pflicht pro Pfad.
+#
+# Wirkprinzip (zusammen mit dem Branch-Ruleset "Main"):
+#   - main verlangt weiterhin einen Pull Request, aber 0 Pflicht-Reviews.
+#   - NUR die hier gelisteten (Code-)Pfade haben einen Code-Owner und
+#     brauchen dadurch ein Owner-Approval im PR.
+#   - Alles NICHT Gelistete (Doku: 01-quellen/, 02-Arbeitsdokumente/,
+#     03-abgaben/, erinnerung/, *.md im Root) hat KEINEN Owner
+#     -> kein Review nötig, Autor kann den PR selbst mergen.
+#
+# Owner anpassen/erweitern: weitere Personen (@handle) oder ein Team
+# (@Entwicklerteam-WI2-0/<team-slug>) mit Leerzeichen hinter den Pfad
+# schreiben. Letzter passender Eintrag gewinnt.
+
+# --- Backend-Code (sobald angelegt, Struktur s. Backend-Konzept.md §7) ---
+/src/                 @ArchiDoxx
+/tests/               @ArchiDoxx
+
+# --- Sicherheitsrelevante Konfiguration ---
+# Parametrierbare Schwellen / Fail-safe (NF-01) / RB-01 — bewusst review-pflichtig.
+/config/              @ArchiDoxx
+
+# --- CI/CD & Repo-Automation (inkl. dieser CODEOWNERS-Datei) ---
+/.github/             @ArchiDoxx
