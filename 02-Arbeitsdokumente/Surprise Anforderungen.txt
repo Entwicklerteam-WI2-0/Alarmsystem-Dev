@@ -1,0 +1,41 @@
+Airport North Regional (ANR)
+Interne Mitteilung der Geschäftsleitung
+BetreƯ: Vorgabe zur Datenhaltung im Projekt „Vereisungserkennung Startbahn“
+An:
+Projektteam Winterbetrieb
+IT-Abteilung
+Technische Entwicklung
+
+
+Technische Entwicklung
+Im Rahmen der laufenden Projektplanung wurde die Frage der zukünftigen Datenhaltung für das
+System zur Vereisungserkennung diskutiert.
+Das Unternehmen betreibt bereits mehrere betriebliche Anwendungen auf Basis von MySQLDatenbanken. Innerhalb der IT-Abteilung besteht hierfür umfangreiche Erfahrung hinsichtlich
+Installation, Betrieb, Wartung, Datensicherung und Fehleranalyse.
+Vor diesem Hintergrund hat die Geschäftsleitung entschieden, dass für die Speicherung der
+Mess- und Betriebsdaten im Rahmen des Projekts grundsätzlich eine MySQL-Datenbank
+eingesetzt werden soll.
+Für diese Entscheidung waren insbesondere folgende Aspekte ausschlaggebend:
+ vorhandene Fachkompetenz innerhalb der IT-Abteilung
+ etablierte Betriebs- und Backup-Prozesse
+ reduzierte Einarbeitungszeiten für Administratoren
+ geringerer Wartungsaufwand im laufenden Betrieb
+ bestehende Erfahrungen hinsichtlich Verfügbarkeit und Zuverlässigkeit
+Die Geschäftsleitung ist sich bewusst, dass alternative Technologien existieren und für einzelne
+Anwendungsfälle Vorteile bieten können. Dennoch wird die Wiederverwendung bestehender
+Kompetenzen und Infrastruktur als wichtiger Erfolgsfaktor für die spätere Einführung eines
+produktiven Systems betrachtet.
+Das Projektteam wird daher aufgefordert, das Backend so zu konzipieren, dass die Speicherung
+der Messdaten auf Basis einer MySQL-Datenbank erfolgt.
+Gleichzeitig wird erwartet, dass die Entscheidung im Rahmen der technischen Analyse kritisch
+betrachtet wird. Das Projektteam soll dokumentieren:
+ welche alternativen Datenhaltungskonzepte untersucht wurden,
+ welche Vor- und Nachteile diese besitzen,
+ welche Auswirkungen die Vorgabe auf Architektur und Implementierung hat,
+ welche Risiken oder Einschränkungen sich daraus ergeben könnten.
+Sollten im Projektverlauf schwerwiegende technische Gründe identifiziert werden, die gegen
+den Einsatz einer MySQL-Datenbank sprechen, sind diese nachvollziehbar zu dokumentieren
+und der Projektleitung vorzulegen.
+Die Geschäftsleitung weist ausdrücklich darauf hin, dass die langfristige Wartbarkeit und der
+zuverlässige Betrieb des Systems bei der Technologieauswahl höher gewichtet werden als die
+Einführung neuer oder experimenteller Technologien. 
