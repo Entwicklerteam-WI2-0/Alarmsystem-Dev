@@ -13,6 +13,17 @@ Sitzungsbeginn, damit jede:r mit demselben aktuellen Stand startet — auch nach
 
 > Diese Dateien **committen** (sie sind geteilt). Keine Secrets, keine personenbezogenen Bewertungen.
 
+## Nachtrag (2026-06-22) — Bearbeitung durch das gesamte Team freigegeben
+
+Per Absprache mit dem Admin (Lucas) dürfen **alle Teammitglieder (und ihre Agenten)** die Dateien in
+`erinnerung/` **bei Bedarf bearbeiten** — insbesondere `stand.md`. Die Pflege liegt weiterhin
+**primär bei Lucas**, ist aber nicht mehr exklusiv.
+
+Es gelten weiterhin:
+- **Das Journal (`journal/<datum>.md`) bleibt append-only** — nur unten anhängen, bestehende Blöcke nie
+  ändern oder löschen (hält Merges konfliktfrei).
+- Kurz, faktisch, Deutsch; veraltete Notizen ersetzen statt anhäufen.
+- Committen (geteilt); keine Secrets, keine personenbezogenen Bewertungen.
 ## Pflege-Regel: per Hand, append-only — fremde Einträge nie überschreiben
 
 Diese Dateien werden **von Hand** gepflegt (kein automatisches Überschreiben). Beim Bearbeiten gilt:
