@@ -1,0 +1,5 @@
+# ── Secrets / Config (NF-07) — scoped auf den Code-Ordner ─────
+# Reale DB-Zugangsdaten NIE committen. Vorlage = .env.example (Platzhalter).
+.env
+*.env
+!.env.example
