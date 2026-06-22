@@ -11,7 +11,8 @@ Dieses Repository enthält:
 
 - **Briefing-Material** (Aufgabenstellung, Hintergrundgeschichte, Vorfälle) → `01-quellen/`
 - **Erarbeitete Deliverables** (Requirements, Design, Projektplan) → `02-Arbeitsdokumente/`
-- **Backend-Code** (geplant) → `src/`, `tests/`
+- **Backend-Code** (FastAPI · MySQL/MariaDB · SQLAlchemy) → `04-Source-code/`
+- **Fortschrittslog** (Code-Stand + Commits/PRs) → `05-Fortschrittslog/`
 - **Entscheidungslogbuch** → `02-Arbeitsdokumente/Entscheidungslog-Lucas-Systemarchitektur.md` · **KI-Onboarding** → Root (`Agents-gpt-gemini.md`)
 
 **Remote:** GitHub-Org `Entwicklerteam-WI2-0` · **Branch:** `main` (PR-Workflow, kein direkter Push)  
@@ -46,28 +47,28 @@ Alarmsystem-Dev/
 │   ├── Nutzer und Stakeholdermodel 1.md
 │   └── Nutzer und Stakeholdermodel 2.md
 │
-├── src/                                 # Backend-Code (in Arbeit)
-│   ├── ingest/                          # REST-Endpoint, Eingangsvalidierung
-│   ├── model/                           # Datenklassen/Schemas (Pydantic)
-│   ├── assessment/                      # Vereisungslogik (Schwellenwerte) — Kernmodul
-│   ├── storage/                         # DB-Zugriff (Repository-Pattern, SQLAlchemy → MySQL/MariaDB)
-│   ├── api/                             # API-Endpoints für G3 (Frontend)
-│   ├── config/                          # Schwellen/Parametrierung
-│   ├── forecast/                        # 30-min-Prognose (T3)
-│   └── main.py                          # Einstiegspunkt (FastAPI)
+├── 04-Source-code/                      # Backend-Code (P0-Grundgerüst steht)
+│   ├── src/
+│   │   ├── ingest/                      # REST-Endpoint, Eingangsvalidierung
+│   │   ├── model/                       # Datenklassen/Schemas (Pydantic)
+│   │   ├── assessment/                  # Vereisungslogik (Schwellenwerte) — Kernmodul, DB-frei
+│   │   ├── storage/                     # DB-Zugriff (Repository-Pattern, SQLAlchemy → MySQL/MariaDB)
+│   │   ├── api/                         # API-Endpoints für G3 (Frontend)
+│   │   ├── config/                      # Schwellen/Parametrierung
+│   │   ├── forecast/                    # 30-min-Prognose (T3)
+│   │   └── main.py                      # Einstiegspunkt (FastAPI), GET /health
+│   ├── tests/                           # Unit/Integrationstests
+│   ├── migrations/                      # Alembic-Schema-Migrationen
+│   ├── config/                          # Default-Schwellenwerte (parametrierbar)
+│   ├── docker-compose.yml               # MariaDB 11 (dev = prod)
+│   ├── .env.example                     # DB-Zugangsdaten (Platzhalter; keine Secrets)
+│   ├── pyproject.toml · requirements*.txt
+│   └── README.md                        # Setup + Struktur des Backends
 │
-├── tests/                               # Unit/Integrationstests
-│   ├── test_assessment.py               # Bewertungslogik (Kernmodule, ≥ 80 % Coverage)
-│   ├── test_ingest.py                   # Validierung + Plausibilität
-│   ├── test_api.py                      # API-Schnittstellen
-│   └── test_integration_e2e.py          # End-to-End (mit G1/G3)
-│
-├── config/                              # Default-Schwellenwerte (parametrierbar)
-│   └── thresholds.json
+├── 05-Fortschrittslog/                  # Code-Stand + Commit-/PR-Log (Orientierung)
+│   └── Fortschrittslog.md
 │
 ├── .github/workflows/                   # CI/CD (geplant)
-│   ├── test.yml
-│   └── deploy.yml
 │
 ├── .claude/                             # Geteilte Claude-Code-Config (committet)
 │   ├── settings.json                    # Hooks (SessionStart; Enforcement folgt in Phase 2)
@@ -76,7 +77,6 @@ Alarmsystem-Dev/
 ├── erinnerung/                          # Geteiltes Projektgedächtnis (/start liest es)
 │   ├── README.md
 │   └── stand.md
-├── pyproject.toml                       # uv-Umgebung (FastAPI, pytest, ruff)
 ├── claude-sync.md                       # Geteilte Agent-Config → wird lokal zu CLAUDE.md
 ├── ONBOARDING.md                        # 3-Schritt-Schnellstart
 ├── CLAUDE.md                            # Persönliche Agent-Config (gitignored; lokal aus claude-sync.md)
@@ -89,7 +89,7 @@ Alarmsystem-Dev/
 
 ---
 
-> **Hinweis zur Struktur:** `src/`, `tests/`, `config/` und `.github/` sind **geplant** (Zielzustand nach `Backend-Konzept §7`) und noch nicht im Repo.
+> **Hinweis zur Struktur:** Der Backend-Code liegt unter **`04-Source-code/`** — das **P0-Grundgerüst steht** (FastAPI-Skelett, `GET /health`, MariaDB-Setup via `docker-compose.yml`). Struktur-/Setup-Detail siehe `04-Source-code/README.md` und `Backend-Konzept §7`. `.github/workflows/` (CI/CD) ist noch geplant.
 
 
 
@@ -254,21 +254,23 @@ cd Alarmsystem-Dev
 
 ### 3. Umgebung aufsetzen
 ```bash
-uv sync                 # Python-Umgebung reproduzierbar aus pyproject.toml
-docker compose up -d db # MariaDB/MySQL starten (DB ist GL-Vorgabe; dev = prod)
+cd 04-Source-code
+py -m venv .venv && .venv\Scripts\activate   # Windows
+pip install -r requirements-dev.txt
+docker compose up -d db                      # MariaDB 11 starten (GL-Vorgabe; dev = prod)
 ```
 > Setup-/Agenten-Tooling lebt in `Devteam-vibecodes` (siehe **⚙️ Setup & Tooling** oben).
 
 ### 4. Server starten
 ```bash
 # T0-Ziel: GET /health → 200 OK
-uv run python src/main.py
+uvicorn src.main:app --reload                # → http://127.0.0.1:8000
 ```
 
 ### 5. Tests schreiben & laufen
 ```bash
-uv run pytest tests/ -v --cov=src --cov-report=html
-# Bewertungslogik-Tests = Priorität 1 (≥ 80 % Coverage)
+pytest                  # alle Tests
+pytest --cov=src        # mit Coverage (Bewertungslogik = Priorität 1, ≥ 80 %)
 ```
 
 ### 6. Feature-Branch erstellen & PR öffnen
@@ -313,7 +315,7 @@ Refs: FA-05, NF-01, Schwellenwerte.md
 
 ## 📐 Interne Conventions
 
-### Code-Struktur (`src/`)
+### Code-Struktur (`04-Source-code/src/`)
 ```
 assessment/
 ├── __init__.py
