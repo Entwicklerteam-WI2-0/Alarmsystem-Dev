@@ -1,5 +1,11 @@
 # erinnerung/ — Geteiltes Projektgedächtnis
 
+> # ⛔ ORDNERWEITE PFLICHT — APPEND-ONLY (gesamter `erinnerung/`-Baum inkl. aller Unterordner/Childs)
+> **Jeder Neueintrag wird AUSSCHLIESSLICH angehängt (append) — NIEMALS überschreiben, ersetzen oder löschen.**
+> Verbindlich für **jede Datei im kompletten `erinnerung/`-Ordner und allen Unterordnern/Childs**
+> (z. B. `journal/`). Fremde Einträge bleiben **unangetastet**; eigene Beiträge kommen an der passenden
+> Stelle dazu. Details siehe unten.
+
 Diese Dateien sind das **gemeinsame Gedächtnis** des Teams. Der `/start`-Befehl liest sie beim
 Sitzungsbeginn, damit jede:r mit demselben aktuellen Stand startet — auch nach Tages-/Personenwechsel.
 
@@ -24,6 +30,7 @@ Es gelten weiterhin:
   ändern oder löschen (hält Merges konfliktfrei).
 - Kurz, faktisch, Deutsch; veraltete Notizen ersetzen statt anhäufen.
 - Committen (geteilt); keine Secrets, keine personenbezogenen Bewertungen.
+
 ## Pflege-Regel: per Hand, append-only — fremde Einträge nie überschreiben
 
 Diese Dateien werden **von Hand** gepflegt (kein automatisches Überschreiben). Beim Bearbeiten gilt:
