@@ -1,0 +1,4 @@
+# Laufzeitabhaengigkeiten (Produktion) — Dev-/Test-Tools in requirements-dev.txt
+fastapi~=0.115
+uvicorn[standard]~=0.34
+pydantic~=2.11

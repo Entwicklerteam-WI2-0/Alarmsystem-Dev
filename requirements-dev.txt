@@ -1,0 +1,4 @@
+# Entwicklungsabhaengigkeiten (Tests, CI) — nicht fuer Produktion noetig
+pytest~=8.3
+pytest-cov~=6.1
+httpx~=0.28
