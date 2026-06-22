@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+# Virtuelle Umgebungen
+.venv/
+venv/
+# Secrets / lokale Config
+.env
+# Test / Tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/

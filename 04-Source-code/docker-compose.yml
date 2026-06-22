@@ -1,0 +1,20 @@
+# MariaDB/MySQL für das G2-Backend (dev = prod, s. Backend-Konzept.md §6/§6a).
+# Start:  docker compose up -d db
+# Zugangsdaten aus .env (Kopie von .env.example) — niemals echte Secrets committen.
+services:
+  db:
+    image: mariadb:11
+    container_name: alarmsystem-db
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-alarmsystem}
+      MARIADB_USER: ${DB_USER:-alarm}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-changeme}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-changeme}
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+
+volumes:
+  db_data:

@@ -24,3 +24,16 @@ Es gelten weiterhin:
   ändern oder löschen (hält Merges konfliktfrei).
 - Kurz, faktisch, Deutsch; veraltete Notizen ersetzen statt anhäufen.
 - Committen (geteilt); keine Secrets, keine personenbezogenen Bewertungen.
+## Pflege-Regel: per Hand, append-only — fremde Einträge nie überschreiben
+
+Diese Dateien werden **von Hand** gepflegt (kein automatisches Überschreiben). Beim Bearbeiten gilt:
+
+- **Eigene Beiträge immer an der passenden Stelle anhängen**; **Einträge anderer Personen niemals
+  überschreiben, ersetzen oder löschen** — gilt für **alle** Dateien hier. So bleiben parallele Beiträge
+  mehrerer Leute konfliktarm.
+- **Das Journal (`journal/<datum>.md`) ist strikt append-only** — nur unten einen neuen Block anhängen,
+  bestehende Blöcke nie ändern (je Person/Session ein eigener Block; hält Merges konfliktfrei).
+- Beim Verdichten von `stand.md` nur **eigene/veraltete** Notizen ersetzen — **fremde, frische Beiträge
+  stehen lassen**.
+- Alle Mitglieder (und ihre Agenten) dürfen `erinnerung/` bearbeiten; Pflege primär bei Lucas. Committen
+  (geteilt), keine Secrets.
