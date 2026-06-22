@@ -30,16 +30,36 @@
 
 ## 2. Entscheidungskategorien Vereisungsrisiko — **die Kernlogik**
 
-| Stufe | Bedingung (Startwerte, parametrierbar) | Bedeutung | Aktion |
-|---|---|---|---|
-| 🟢 **GRÜN** | `T_s > +1,0 °C` | kein Vereisungsrisiko | nur Anzeige |
-| 🟡 **GELB** | `T_s ≤ +1,0 °C` **und** *keine* Feuchte¹ — **ODER** Prognose: `T_s ≤ 0 °C` in ≤ 30 min | kalte/grenzwertige, aber trockene Oberfläche → beobachten / Vorwarnung | Vorwarnung anzeigen |
-| 🟠 **ORANGE** | `T_s ≤ 0,0 °C` **und** Feuchte vorhanden¹ | Vereisung **wahrscheinlich** | Warnung (optisch **+** akustisch) |
-| 🔴 **ROT** | `T_s ≤ 0,0 °C` **und** `ΔT ≤ 0 °C` | **aktive Eisbildung / Glatteis** (Oberfläche unter Taupunkt → Reif/Glatteis) | Alarm höchster Prio, **Quittierung erforderlich** |
+**Auswertung als priorisierte Kaskade (NF-01 Fail-safe):** Die Stufen werden **von der gefährlichsten
+abwärts** geprüft — die **erste zutreffende gewinnt** (ROT → ORANGE → GELB → GRÜN). **GELB ist der Auffang**
+für jede Oberfläche, die nicht GRÜN, aber auch noch nicht ORANGE/ROT ist; dadurch bleibt **kein
+Wertebereich unklassifiziert** und es wird im Zweifel **nie GRÜN** ausgegeben.
+
+| Prio | Stufe | Bedingung (Startwerte, parametrierbar) | Bedeutung | Aktion |
+|---|---|---|---|---|
+| 1 | 🔴 **ROT** | `T_s ≤ 0,0 °C` **und** `ΔT ≤ 0 °C` | **aktive Eisbildung / Glatteis** (Oberfläche unter Taupunkt → Reif/Glatteis) | Alarm höchster Prio, **Quittierung erforderlich** |
+| 2 | 🟠 **ORANGE** | `T_s ≤ 0,0 °C` **und** Feuchte vorhanden¹ | Vereisung **wahrscheinlich** | Warnung (optisch **+** akustisch) |
+| 3 | 🟡 **GELB** | `T_s ≤ +1,0 °C` (Auffang: kalt/grenzwertig, nicht schon ORANGE/ROT) — **oder** Prognose: `T_s ≤ 0 °C` in ≤ 30 min | kalte/grenzwertige Oberfläche (feucht *oder* trocken) → beobachten / Vorwarnung | Vorwarnung anzeigen |
+| 4 | 🟢 **GRÜN** | `T_s > +1,0 °C` **und** keine GELB-Prognose | kein Vereisungsrisiko | nur Anzeige |
+
+> **Auswertungsreihenfolge = Implementierungsvorgabe (DTB-38) — genau so kodieren:**
+> ```text
+> if   T_s ≤ 0,0  und  ΔT ≤ 0,0:       risk = ROT
+> elif T_s ≤ 0,0  und  ΔT ≤ 1,0:       risk = ORANGE     # „Feuchte vorhanden"¹
+> elif T_s ≤ +1,0  oder  prog_T_s ≤ 0: risk = GELB        # Auffang + 30-min-Vorwarnung
+> else:                                risk = GRÜN
+> ```
+> Die Stufen **überlappen bewusst** (jeder ROT-Fall erfüllt auch ORANGE); die **Reihenfolge** — nicht
+> sich gegenseitig ausschließende Bedingungen — stellt sicher, dass die höchste zutreffende Stufe gewinnt.
+> Das schließt zugleich die Lücke `0 °C < T_s ≤ +1,0 °C` **mit** Feuchte (fällt jetzt sauber auf GELB).
 
 ¹ **„Feuchte vorhanden"** := `ΔT (T_s − T_d) ≤ 1,0 °C` (Oberfläche nahe/unter Taupunkt). **Luft-`RH` allein
 triggert keine Feuchte** — sie sagt nichts über die *Oberfläche* (Vorfall 1: 92 % Luftfeuchte bei trockener
 Oberfläche → kein Eis); `T_a`/`RH` fließen nur über den Taupunkt `T_d` in `ΔT` ein. *(Luft-RH-Schwelle entfernt → E-33.)*
+
+**Feuchte nicht bestimmbar (Fail-safe, NF-01):** Lässt sich `ΔT` nicht berechnen (z. B. `RH`/`T_a` defekt →
+`T_d` fehlt), gilt **„Feuchte vorhanden" = wahr** (konservativ): bei `T_s ≤ 0,0 °C` ⇒ mindestens **ORANGE**,
+sonst **GELB** — **nie GRÜN**. Fehlt `T_s` selbst, greift der sichere Zustand aus §3 (stale/defekt → ≥ GELB).
 
 **Entprellung/Hysterese (ISA-18.2, gegen Chattering):** Hochstufung nach `On-Delay ≥ 60 s` Bedingung erfüllt.
 Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist **und** für `≥ 5 min` stabil.
