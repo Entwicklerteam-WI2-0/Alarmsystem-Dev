@@ -53,6 +53,16 @@
 **E-09 — Sensorik-Pragmatik: ein günstiger echter Sensor für die Kerngröße + Simulator-Feed hinter *einer* Ingest-Schnittstelle**
 - *Begründung:* Reale Vorfeld-Sensorik ist in 3 Wochen unrealistisch und teuer (Konflikte K3/K4). So läuft die Demo zuverlässig; echte Sensoren ersetzen die Simulation später 1:1.
 
+**E-30 — G1-Ingest-Naht: Push-Modell — G1 sendet an `POST /readings` (G2 hostet den Ingest-Endpoint)**
+- *Kontext/Task:* P1.3 (Seam-Sync mit G1) · E-04/E-06 (API/Datenmodell = einzige Naht, G2-Verantwortung, contract-first) · FA Schnittstellen · NF-01 (Fail-safe). **Auslöser:** G1 formulierte „G2 baut die (GET-)Endpoints und stellt bereit, was wir brauchen" — damit war die Richtung der Naht G1→G2 nicht eindeutig.
+- *Entscheidung:* Die Sensor→Backend-Naht läuft als **Push**: G1 schickt Messungen per `POST /readings` an einen von **G2 gehosteten** Ingest-Endpoint; G2 validiert am Eingang (Schema, Stale/Defekt) und persistiert. Begriffsklärung: **GET serviert Daten heraus** (an G3: `GET /assessment/current`, `GET /readings`), **POST nimmt Daten herein** (von G1) — beides baut G2, aber es sind zwei verschiedene Richtungen.
+- *Begründung:* (1) **Contract-Hoheit am kritischen Punkt:** Wer den Ingest-Endpoint hostet, besitzt Schema- und Validierungshoheit über die Naht — genau die G2-Kernverantwortung (E-04). (2) **Fail-safe natürlich umsetzbar (NF-01):** Trifft eine Messung verspätet/defekt ein oder bleibt sie aus, erkennt G2 das direkt am Eingang und kann „nie GRÜN bei Stale/Ausfall" erzwingen; beim Pull müsste G2 aktiv pollen und „keine Antwort" mehrdeutig von „keine neuen Daten" trennen. (3) **Multi-Sensor-fähig (NF-11):** Mehrere Sensoren/Standorte senden unabhängig an denselben Endpoint, ohne dass G2 jede Quelle einzeln abfragt. (4) **Realistische Topologie:** G1 läuft auf Sensor-/Pi-Hardware, die nach außen senden kann, aber nicht zwingend einen dauerverfügbaren, abfragbaren Dienst bereitstellt — Push verlangt von G1 weniger Infrastruktur. (5) **Passt zum Datenmodell** (`reading`-Payload, Backend-Konzept §9).
+- *Alternativen (verworfen):*
+  - **Pull / G2 pollt einen GET-Endpoint bei G1** — verworfen: verschiebt Hosting- und Contract-Hoheit zu G1, macht Fail-safe-Erkennung mehrdeutig (Polling-Lücke vs. echter Ausfall), Poll-Intervall ↔ Datenaktualität als zusätzlicher Tradeoff, skaliert schlechter auf mehrere Sensoren.
+  - **Wörtliche Auslegung „G2 baut nur GET-Endpoints, über die G1 liefert"** — verworfen: vermengt die zwei Richtungen; ein GET als Dateneingang ist semantisch falsch (GET ist seiteneffektfrei/idempotent, kein Ingest-Kanal).
+- *Ergebnis/Status:* **empfohlen** (diese Session, mit Lucas erarbeitet); **mit G1 zu bestätigen** (P1.3) und mit **P1.4** einzufrieren. G2 liefert als Gegenstück einen **Referenz-Sender/Simulator** (E-09), damit Ingest unabhängig von realer G1-Hardware testbar ist.
+- *Bezug:* E-04, E-06, E-09; P1.3/P1.4; FA Schnittstellen; NF-01/NF-11; Backend-Konzept §9.
+
 ## C. Vereisungs-Entscheidungslogik & Schwellenwerte
 
 **E-10 — Bewertung über Oberflächentemperatur + Taupunkt-Abstand + Feuchte + Niederschlag; Lufttemperatur nur Kontext**
@@ -151,6 +161,8 @@
 | Lokal vs. Cloud + Fernzugriff | AE-01/AE-02 | Quelle unentschieden; im Logbuch zu begründen |
 | Eisindikator: Proxy vs. echter Sensor vs. Simulation | K3/K4 | Budget- und Messgüte-abhängig |
 | Anbindung an das HS-gestellte zentrale Remote | E-01 | sobald die Hochschule es bereitstellt |
+| Backend-Code-Root: `04-Source-code/` flach vs. `04-Source-code/source/` (Unterordner) | E-01, P0.2 | P0-Grundgerüst liegt in `04-Source-code/`, DB-Engineer legt `.env`/Datenmodell in `04-Source-code/source/` → **einen** Root festlegen vor dem P0-Push (sonst Doppelstruktur) |
+| DB-Bereitstellung im Dev: Docker-Compose-MariaDB vs. native Pi-MariaDB | E-29 | E-29 wählte „dev = prod via Docker"; DB-Engineer richtete real eine **native** Pi-MariaDB (11.8) ein → vor Storage-Impl klären, ob Dev lokal Docker nutzt und der Pi die Prod-Instanz ist |
 
 > **Pflege:** Bei jeder neuen Festlegung einen `E-xx`-Eintrag ergänzen; offene Punkte aus G nach Entscheidung
 > nach oben überführen. So bleibt der rote Faden „Warum haben wir das so gebaut?" jederzeit nachvollziehbar.
