@@ -112,6 +112,10 @@ Diese drei Punkte entscheiden, ob der Plan so trägt:
    (Spring Boot)** braucht einen Pi 4/5 mit ausreichend RAM und ist grenzwertig.
    Schwere Cloud-native Stacks (Java reaktiv + DB + Cloud-Dienste) sind **nicht**
    für einen Pi gedacht.
+   > **Datenbank (G2-Vorgabe):** Das Backend nutzt **MySQL/MariaDB** (GL-Vorgabe, s. `Backend-Konzept.md §6`).
+   > Auf dem Pi **MariaDB** installieren (`sudo apt install mariadb-server`) — der quelloffene, ressourcen-
+   > schonende MySQL-Ersatz; als systemd-Dienst dauerhaft. Datenverzeichnis auf stabilem Medium
+   > (SD-Karten-Verschleiß bei Dauerschreiblast bedenken; ggf. externe SSD/USB).
 2. **Nur im WLAN oder auch von außen (Internet) erreichbar?**
    - Lokales Netz: mit obigem fertig.
    - Von außen: **nicht** über simples Port-Forwarding im Router (Sicherheitsrisiko),

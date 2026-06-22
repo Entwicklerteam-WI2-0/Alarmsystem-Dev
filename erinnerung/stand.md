@@ -6,19 +6,25 @@
 - **G2 Backend (Alarmsystem ANR):** Woche 2. **Projektplan + Jira-Backlog (Projekt DTB)** steht:
   9 Epics / 43 Tasks (DTB-1..DTB-52) + 43 "Blocks"-Abhängigkeitslinks. Begleitdoc:
   `02-Arbeitsdokumente/Projektplan-Jira-Backlog-G2.md`.
-- **Stack-Update (#20):** **MySQL/MariaDB** als verpflichtende Backend-DB gesetzt — **ersetzt SQLite** im
-  bisherigen T0 (FastAPI/HTTP bleiben). Betrifft Datenmodell, requirements und CI; DB-Treiber nötig.
+- **Stack-Update MySQL (#20, Surprise-Vorgabe 22.06.):** Die Geschäftsleitung gibt **MySQL/MariaDB**
+  verbindlich vor (`02-Arbeitsdokumente/Surprise Anforderungen.txt`) — **ersetzt SQLite** im bisherigen T0
+  (FastAPI/HTTP bleiben; dev = prod via Docker-Compose). Dokumentiert in `Backend-Konzept.md §6/§6a`,
+  `README.md` und Entscheidungslog **E-29**. Betrifft Datenmodell, requirements und CI; DB-Treiber nötig.
 - **CI/CD-Setup (DTB-11):** Grundgerüst fertig & reviewed → **PR #18** (`feat/ci-base`), **auf Eis bis DTB-1**
   (CI wird erst mit `src/`+Tests grün). E-08 formal nachziehen → DTB-2.
 - Noch **kein `src/`** — Scaffolding (P0 / Epic E-01 / DTB-1) ist überfällig.
 
 ## Als Nächstes (kritischer Pfad)
-1. **P0/Scaffolding** (DTB-1: DTB-2/50/51/52) — `src/`-Struktur + erste Tests → macht CI grün-fähig.
+1. **P0/Scaffolding** (DTB-1: DTB-2/50/51/52) — `src/`-Struktur + erste Tests, jetzt inkl. MariaDB via
+   Docker-Compose → macht CI grün-fähig.
 2. **Contract-first**: API + Datenmodell (E-02 / DTB-7) + Seam-Sync mit G1+G3 bis Di → M2. **Jetzt MySQL/MariaDB statt SQLite.**
 3. **T0 Vertical Slice** (E-03 / DTB-8): assessment-Kern + beide Vorfall-Tests + Fail-safe (≥80 % Coverage).
 4. Danach: **PR #18 mergen** + Branch-Protection „Require status checks" (Check `test`); **MySQL-DB-Treiber** in requirements/CI ergänzen.
 
 ## Offene Punkte / Blocker
+- **MySQL-Vorgabe vollständig eingearbeitet (22.06.):** Backend-Konzept §6/§6a, README, Entscheidungslog
+  E-29 (Begründung ausformuliert), Tasks P0.1 und Pi-Anleitung konsistent nachgezogen. PR #21 (mergebar).
+  G1-Schwellen/reale Last später gegen §6a plausibilisieren.
 - **M2 (Ende Woche 2) kritisch:** nur 1 echter Backend-Dev (Lucas) auf 7 kritischen Tasks → Petzold früh
   einbinden, P3 bewusst nach Woche 3.
 - **Echte Schwellenwerte von G1** ausstehend (~2 Tage) → `config/` parametrierbar halten, NIE hardcoden.

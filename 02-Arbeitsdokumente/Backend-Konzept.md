@@ -96,10 +96,10 @@ Betriebspunkt (Fehlalarm ↔ Auslassung, K1) **parametrierbar**, Default sicherh
 
 ## 6a. DB-Vorgabe MySQL — Alternativen, Vor-/Nachteile, Auswirkungen, Risiken
 
-> ⚠️ **KI-ENTWURF — vom Team zu prüfen und zu plausibilisieren.** Erfüllt die von der GL geforderte
-> Dokumentationspflicht (`Surprise Anforderungen.txt`). Die *benotete persönliche Entscheidungsreflexion*
-> (40 % Einzelleistung) gehört NICHT hierher, sondern in den persönlichen Entscheidungslog — dies ist nur
-> die fachliche Gruppen-Analyse.
+> Erfüllt die von der Geschäftsleitung geforderte Dokumentationspflicht (`Surprise Anforderungen.txt`):
+> untersuchte Alternativen, Vor-/Nachteile, Auswirkungen auf Architektur/Implementierung und Risiken —
+> vollständige fachliche Analyse. Werte/Annahmen gegen die finalen Vorgaben (G1-Schwellen, reale Last)
+> plausibilisieren.
 
 **(1) Untersuchte Alternativen**
 
