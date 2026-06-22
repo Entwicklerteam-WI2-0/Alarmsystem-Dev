@@ -50,7 +50,7 @@ Alarmsystem-Dev/
 │   ├── ingest/                          # REST-Endpoint, Eingangsvalidierung
 │   ├── model/                           # Datenklassen/Schemas (Pydantic)
 │   ├── assessment/                      # Vereisungslogik (Schwellenwerte) — Kernmodul
-│   ├── storage/                         # DB-Zugriff (Repository-Pattern)
+│   ├── storage/                         # DB-Zugriff (Repository-Pattern, SQLAlchemy → MySQL/MariaDB)
 │   ├── api/                             # API-Endpoints für G3 (Frontend)
 │   ├── config/                          # Schwellen/Parametrierung
 │   ├── forecast/                        # 30-min-Prognose (T3)
@@ -97,7 +97,7 @@ Alarmsystem-Dev/
 
 **G2 baut:**
 - Daten-**Ingest** (REST `POST /readings` von Sensorik)
-- **Datenhaltung** (SQLite/PostgreSQL)
+- **Datenhaltung** (**MySQL/MariaDB** — durch Geschäftsleitung vorgegeben)
 - **Vereisungsbewertung** (4-Stufen-Logik: 🟢🟡🟠🔴)
 - **Alarm-Generierung** (Schweregrad, Hysterese)
 - **Prognose** (30-min-Vorlauf)
@@ -192,7 +192,7 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 **Inhalt:**
 - Module (Ingest, Validierung, Persistenz, Bewertung, Alarm, Prognose, API, Config, Audit)
 - Datenmodell (Tabellen: `reading`, `assessment`, `alarm`, `acknowledgement`, `threshold_set`, `audit_log`)
-- Tech-Stack-Optionen (FastAPI + Pydantic, SQLite → PostgreSQL, HTTP-POST)
+- Tech-Stack (FastAPI + Pydantic, **MySQL/MariaDB** [GL-Vorgabe], SQLAlchemy, HTTP-POST)
 - Ausbaustufen T0–T3
 - Schnittstellen zu G1 (Sensorik) & G3 (Frontend)
 
@@ -223,12 +223,14 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 | **Sprache** | Python 3.11+ | — |
 | **Framework** | FastAPI | Flask, Node/Express |
 | **Validierung** | Pydantic v2 | — |
-| **Datenbank** | SQLite (T0) → PostgreSQL (T1+) | TimescaleDB |
+| **Datenbank** | **MySQL 8 / MariaDB** — durch GL vorgegeben (dev = prod via Docker-Compose) | ~~SQLite, PostgreSQL~~ (verworfen, s. Backend-Konzept §6a) |
+| **DB-Zugriff** | SQLAlchemy + Repository-Pattern · Alembic-Migrationen | raw SQL |
 | **Übertragung** | HTTP REST (`POST /readings`) | MQTT (später) |
 | **Testing** | pytest + coverage | unittest |
 | **Logging** | Python `logging` + structlog | — |
 
-**Auswahl begründen** im Entscheidungslogbuch (Team-Kompetenz, Prototyp-Fokus).
+> **DB ist vorgegeben** (`02-Arbeitsdokumente/Surprise Anforderungen.txt`); Analyse + Risiken in
+> `Backend-Konzept.md §6a`. Übrige Bausteine **begründen** im Entscheidungslogbuch (Team-Kompetenz, Prototyp-Fokus).
 
 ---
 
@@ -252,7 +254,8 @@ cd Alarmsystem-Dev
 
 ### 3. Umgebung aufsetzen
 ```bash
-uv sync          # Python-Umgebung reproduzierbar aus pyproject.toml
+uv sync                 # Python-Umgebung reproduzierbar aus pyproject.toml
+docker compose up -d db # MariaDB/MySQL starten (DB ist GL-Vorgabe; dev = prod)
 ```
 > Setup-/Agenten-Tooling lebt in `Devteam-vibecodes` (siehe **⚙️ Setup & Tooling** oben).
 
@@ -435,4 +438,4 @@ tests/
 
 **Viel Erfolg bei der Implementierung!** 🚀
 
-*Letzte Aktualisierung: 18.06.2026 — G2 Backend & Entscheidungslogik*
+*Letzte Aktualisierung: 22.06.2026 — G2 Backend & Entscheidungslogik (MySQL-Vorgabe eingearbeitet)*
