@@ -49,7 +49,7 @@ Alarmsystem-Dev/
 │
 ├── 04-Source-code/                      # Backend-Code (P0-Grundgerüst steht)
 │   ├── src/
-│   │   ├── ingest/                      # REST-Endpoint, Eingangsvalidierung
+│   │   ├── ingest/                      # Pull-Poller (GET /current bei G1), Eingangsvalidierung
 │   │   ├── model/                       # Datenklassen/Schemas (Pydantic)
 │   │   ├── assessment/                  # Vereisungslogik (Schwellenwerte) — Kernmodul, DB-frei
 │   │   ├── storage/                     # DB-Zugriff (Repository-Pattern, SQLAlchemy → MySQL/MariaDB)
@@ -96,7 +96,7 @@ Alarmsystem-Dev/
 ## 🎯 Kernauftrag & Scope (G2)
 
 **G2 baut:**
-- Daten-**Ingest** (REST `POST /readings` von Sensorik)
+- Daten-**Ingest** (**Pull-Poller**: G2 ruft `GET /current` bei G1 ab, Intervall ≤ 60 s, selbst bestimmt)
 - **Datenhaltung** (**MySQL/MariaDB** — durch Geschäftsleitung vorgegeben)
 - **Vereisungsbewertung** (4-Stufen-Logik: 🟢🟡🟠🔴)
 - **Alarm-Generierung** (Schweregrad, Hysterese)
@@ -110,14 +110,22 @@ Alarmsystem-Dev/
 
 **Die Naht = API + Datenmodell** — das ist das kritische Interface.
 
+> **🔄 Naht-Entscheidung (mit G1 abgestimmt, 22.06.2026 — E-31):** Die Datenübergabe G1 → G2 läuft als
+> **Pull**, nicht als Push. **G1 stellt bereit:** `GET /current` (liefert **alle** aktuellen Messwerte als
+> **einen** Snapshot mit **einem** gemeinsamen Mess-Zeitstempel `measured_at`, UTC/ISO-8601) und `GET /health`
+> (Verfügbarkeit). **G2 baut** einen **Poller**, der `GET /current` in einem **selbst bestimmten Intervall
+> (≤ 60 s)** abruft, validiert (Bereich, Stale, Defekt), persistiert und bewertet. Es gibt **keinen** von G2
+> gehosteten `POST /readings`-Endpoint mehr. **Fail-safe (NF-01):** Erreichbarkeit (`/health`/Timeout)
+> getrennt von Datenaktualität (`measured_at` zu alt → stale) prüfen — bei beidem **nie GRÜN**.
+
 ---
 
 ## 📊 Datenfluss (Backend)
 
 ```
-  (von G1 — Sensoren)
-         ↓
-    POST /readings
+  (G1 — Sensoren, stellt GET /current + GET /health bereit)
+         ↑  Pull (G2 pollt, Intervall ≤ 60 s)
+   G2-Poller ──→ GET /current  (1 Snapshot + measured_at, UTC)
          ↓
    ┌─────────────────────────────────────────┐
    │    Eingangsvalidierung & Plausibilität   │
@@ -130,7 +138,7 @@ Alarmsystem-Dev/
          ↓
    ┌──────────────────────────────────────────┐
    │  Bewertungsmodul (4-Stufen-Logik)        │
-   │  Input: T_s, T_d, RH, Niederschlag      │
+   │  Input: T_s, ΔT (Taupunkt-Abstand), RH  │
    │  Output: risk_level (green/yellow/...)  │
    └─────────────────────────────────────────┘
          ↓
@@ -161,11 +169,22 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 |---|---|---|
 | 🟢 **GRÜN** | `T_s > +1,0 °C` | Kein Vereisungsrisiko |
 | 🟡 **GELB** | `T_s ≤ +1,0 °C` + trocken / OR Prognose `T_s ≤ 0 °C` in ≤ 30 min | Beobachtung + Vorwarnung |
-| 🟠 **ORANGE** | `T_s ≤ 0,0 °C` + Feuchte vorhanden | Vereisung wahrscheinlich → Warnung |
-| 🔴 **ROT** | `T_s ≤ 0,0 °C` + (gefrierender Regen OR `ΔT ≤ 0 °C`) | **Aktive Eisbildung** → Alarm + Quittierung |
+| 🟠 **ORANGE** | `T_s ≤ 0,0 °C` + Feuchte vorhanden (`ΔT ≤ 1,0 °C`) | Vereisung wahrscheinlich → Warnung |
+| 🔴 **ROT** | `T_s ≤ 0,0 °C` **und** `ΔT ≤ 0 °C` | **Aktive Eisbildung** → Alarm + Quittierung |
+
+> **3-Faktor-Bewertung (E-32):** Die Logik nutzt **drei** Faktoren — Oberflächentemperatur `T_s`,
+> Taupunkt-Abstand `ΔT` und Luftfeuchte `RH`. **Niederschlag ist als Faktor gestrichen** (Customer-Scope).
+> Schwellen (0 °C / 1,0 °C) sind **Dummy-Startwerte**, parametrierbar (NF-05) — finale Werte von G1.
+>
+> **Feuchte = Oberflächennähe zum Taupunkt (E-33):** „Feuchte vorhanden" := `ΔT (T_s − T_d) ≤ 1,0 °C`,
+> also an die **Oberfläche** gebunden (Nähe zum Taupunkt = reale Kondensations-/Reifgefahr). Der frühere
+> Luft-`RH ≥ 90 %`-Trigger ist **komplett entfernt** — Luftfeuchte sagt nichts über die Oberfläche
+> (Vorfall 1: 92 % **Luft**feuchte bei trockener Oberfläche → `ΔT > 1,0` → **GELB**, kein Fehlalarm).
+> `RH`/`T_a` fließen nur **indirekt** über den Taupunkt `T_d` (Magnus) in `ΔT` ein; **keine** neue
+> Messgröße. Das `humidity_pct` im `GET /current`-Snapshot ist **Luft**feuchte (nur `T_d`-Input).
 
 **Beide dokumentierten Vorfälle gelöst:**
-- Vorfall 1 (−2,1 °C Luft, trocken): **GELB** (kein Fehlalarm)
+- Vorfall 1 (−2,1 °C Luft, 92 % **Luft**feuchte, trockene Oberfläche): `ΔT > 1,0` → **GELB** (kein Fehlalarm)
 - Vorfall 2 (+1,2 °C Luft, Oberfläche < 0 °C): **ORANGE/ROT** (Vereisung erkannt)
 
 ---
@@ -174,7 +193,7 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 
 ### Funktionale & Nicht-Funktionale Anforderungen
 **Datei:** `02-Arbeitsdokumente/Usecase-quick.md`  
-**Inhalt:** FA-01–12 (z. B. Temperatur-/Feuchte-/Niederschlagmessung, Alarmierung, Logging)  
+**Inhalt:** FA-01–12 (z. B. Oberflächentemperatur-/Taupunkt-/Feuchtemessung, Alarmierung, Logging)  
 **+ NF-01–11** (Zuverlässigkeit, Latenz, Wartbarkeit, Security, Verfügbarkeit)  
 **+ RB-01:** Harte Randbedingung: Mensch ist letzte Instanz — **keine automatischen Freigaben**.
 
@@ -192,7 +211,7 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 **Inhalt:**
 - Module (Ingest, Validierung, Persistenz, Bewertung, Alarm, Prognose, API, Config, Audit)
 - Datenmodell (Tabellen: `reading`, `assessment`, `alarm`, `acknowledgement`, `threshold_set`, `audit_log`)
-- Tech-Stack (FastAPI + Pydantic, **MySQL/MariaDB** [GL-Vorgabe], SQLAlchemy, HTTP-POST)
+- Tech-Stack (FastAPI + Pydantic, **MySQL/MariaDB** [GL-Vorgabe], SQLAlchemy, HTTP-Pull-Poller `GET /current`)
 - Ausbaustufen T0–T3
 - Schnittstellen zu G1 (Sensorik) & G3 (Frontend)
 
@@ -225,7 +244,7 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 | **Validierung** | Pydantic v2 | — |
 | **Datenbank** | **MySQL 8 / MariaDB** — durch GL vorgegeben (dev = prod via Docker-Compose) | ~~SQLite, PostgreSQL~~ (verworfen, s. Backend-Konzept §6a) |
 | **DB-Zugriff** | SQLAlchemy + Repository-Pattern · Alembic-Migrationen | raw SQL |
-| **Übertragung** | HTTP REST (`POST /readings`) | MQTT (später) |
+| **Übertragung** | HTTP REST **Pull** — G2-Poller ruft G1s `GET /current` ab (≤ 60 s) | MQTT (später) |
 | **Testing** | pytest + coverage | unittest |
 | **Logging** | Python `logging` + structlog | — |
 
@@ -351,9 +370,10 @@ tests/
 ### Schnittstellen (die eine Naht)
 **Systemarchitekt (Lucas V. + Johannes P.) = DRI für beide Seiten.**
 
-#### zu G1 (Sensorik)
-- **`POST /readings`-Payload** — welche Felder, welche Einheiten?
-- **Update-Frequenz** — wie oft pushen?
+#### zu G1 (Sensorik) — **Pull**: G1 ist Server, G2 ist Client
+- **`GET /current`-Snapshot** — welche Felder, welche Einheiten, gemeinsamer `measured_at` (UTC)?
+- **`GET /health`** — Verfügbarkeits-Check (200 ok / 503 fault)
+- **Poll-Intervall** — G2 bestimmt selbst (≤ 60 s); keine Push-Frequenz seitens G1 nötig
 - **Seam-Sync:** 1×/Woche (Anfang Woche 2)
 
 #### zu G3 (Frontend)

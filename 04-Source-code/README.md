@@ -4,7 +4,7 @@ Backend-Repo der Gruppe 2 (FastAPI · MySQL/MariaDB · SQLAlchemy). Struktur nac
 `../02-Arbeitsdokumente/Backend-Konzept.md` §7, Tasks nach `../02-Arbeitsdokumente/Tasks+Projektplan.md`.
 
 ## Struktur
-- `src/ingest/` — REST-Ingest (`POST /readings`), Eingangsvalidierung
+- `src/ingest/` — Poller (`GET /current` von G1) + Health-Check, Eingangsvalidierung
 - `src/model/` — Datenklassen / Schemas
 - `src/assessment/` — Vereisungslogik (4-Stufen) — Kernmodul, hohe Testabdeckung
 - `src/storage/` — DB-Zugriff (Repository-Pattern, SQLAlchemy -> MySQL/MariaDB)
