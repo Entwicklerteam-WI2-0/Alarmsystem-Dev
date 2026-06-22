@@ -59,3 +59,17 @@
 - **Neu offen:** (1) 40%-Klarstellung in `Devteam-vibecodes`-Skill-Sources nachziehen. (2) **G1-Seam-Sync final**
   (`humidity_pct` = Luftfeuchte; Feldnamen + `measured_at` bestätigen; Contract **P1.4** einfrieren).
   (3) E-ID-Kollision E-29/E-30 (Altbestand, DRI Lucas).
+
+## Update [23.06., ~00:10] — Kaskade-Fix Bewertungslogik (E-34) + Jira-Link-Cleanup (architekt)
+- **Bewertungslogik gehärtet (E-34, PR #35 gemergt → 3c703b0):** `Schwellenwerte.md` §2 als **priorisierte
+  Kaskade** (ROT→ORANGE→GELB→GRÜN, erste zutreffende gewinnt). Schließt **Klassifikationslücke**
+  `0 °C < T_s ≤ +1,0 °C` mit Feuchte (war undefiniert) → **GELB-Auffang**; **ROT-Vorrang** explizit;
+  **Fail-safe** bei nicht berechenbarem `ΔT` (konservativ Feuchte = wahr → nie GRÜN). **Keine Schwellen
+  geändert**; beide Vorfälle unverändert aufgelöst. Pseudocode-Vorgabe für DTB-38 hinterlegt.
+- **Jira DTB:** zirkulärer Link **10011** (DTB-14 ↔ DTB-38) erkannt; korrekt ist **DTB-15** (Link 10075,
+  bereits vorhanden). MCP kann Links **nicht** löschen → DTB-14 + DTB-38 mit `----DELETE----`-Marker versehen.
+- **Branch-Cleanup:** lokale verwaiste Branches entfernt; `main` ff auf 3c703b0; **PR #18 `feat/ci-base` verschont.**
+- **Neu offen:** (1) **Jira-Link 10011 manuell löschen** (Jira-UI Papierkorb ODER REST
+  `DELETE /rest/api/3/issueLink/10011`). (2) untracked `02-Arbeitsdokumente/Task-Zuweisungsvorschlag-G2.md`
+  (nicht vom Architekt) — Ablage/Commit klären. (3) Hysterese-Begriff „untere Schwelle" in §2 präzisieren;
+  `assess_ice_risk`-Signatur (RH redundant, da nur `T_d`-Input).
