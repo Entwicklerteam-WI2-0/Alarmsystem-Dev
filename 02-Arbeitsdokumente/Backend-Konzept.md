@@ -62,22 +62,90 @@ Prognose · API · Logging/Audit · Konfiguration (Schwellen).
 | `threshold_set` | id · name · params(json) · valid_from · changed_by  *(NF-05)* |
 | `audit_log` | append-only Event-Log |
 
+> **DB-Typen (MySQL/MariaDB):** `id`→`BIGINT AUTO_INCREMENT`, Zeitstempel→`DATETIME(3)` (UTC),
+> `params`→`JSON`, Enums→`VARCHAR`/`ENUM`. Schema versioniert via Alembic (s. §6/§6a).
+
 ## 5. Bewertungslogik (Kern-IP von G2)
 
 Vollständig in **`Schwellenwerte.md §2`**: 4 Stufen 🟢🟡🟠🔴 aus **Oberflächentemperatur + Taupunkt-Abstand
 + Feuchte + Niederschlag**, mit Hysterese gegen Chattering. Löst beide dokumentierten Vorfälle korrekt auf.
 Betriebspunkt (Fehlalarm ↔ Auslassung, K1) **parametrierbar**, Default sicherheitsbetont.
 
-## 6. Tech-Stack Backend (T0 — Optionen offen, gehört ins Entscheidungslogbuch)
+## 6. Tech-Stack Backend (T0)
 
-| Baustein | Optionen | Empfehlung T0 |
+> **Datenbank ist nicht mehr offen:** Die Geschäftsleitung gibt **MySQL** verbindlich vor
+> (`Surprise Anforderungen.txt`, 22.06.2026 — GL-Gründe: vorhandene IT-Kompetenz, etablierte
+> Betriebs-/Backup-Prozesse, geringerer Wartungsaufwand, bewährte Verfügbarkeit). Die von der GL
+> geforderte Alternativen-/Risiko-Analyse steht in **§6a**. Die übrigen Bausteine bleiben
+> begründungspflichtig (Entscheidungslogbuch).
+
+| Baustein | Optionen | Wahl/Empfehlung T0 |
 |---|---|---|
 | Sprache/Framework | Python **FastAPI** · Flask · Node/Express | FastAPI (schnelle REST + Validierung via Pydantic) |
-| Datenbank | **SQLite** (Prototyp) · PostgreSQL · TimescaleDB | SQLite für T0, später Postgres |
+| **Datenbank** | ~~SQLite · PostgreSQL · TimescaleDB~~ | **MySQL 8 / MariaDB — durch GL vorgegeben** (dev = prod via Docker-Compose) |
+| DB-Zugriff | SQLAlchemy Core/ORM · raw SQL | **SQLAlchemy + Repository-Pattern** (kapselt die DB hinter `storage/`) |
+| Migrationen | Alembic · SQL-Skripte | Alembic (versionierte Schema-Änderungen) |
 | Übertragung | **HTTP-POST** (T0) · MQTT (Skalierung) | HTTP-POST |
 | Bewertung | reine Funktion (testbar) + Config | als isolierbares Modul (Coverage ≥ 80 %) |
 
-> Wahl nach **Team-Kompetenz** treffen und begründen — nicht vorwegnehmen.
+> **Dev-Setup:** Eine MariaDB/MySQL für alle via `docker compose up db` — gleiche DB lokal wie im Betrieb,
+> kein SQL-Dialekt-Drift. **MariaDB** ist der quelloffene, Drop-in-kompatible MySQL-Ersatz und auf dem
+> Raspberry Pi (s. `Raspberry-Pi-Hosting-Anleitung.md`) die ressourcenschonendere Wahl. Die
+> **Bewertungslogik bleibt DB-frei** (reine Funktion) — sie ist von der DB-Wahl nicht betroffen.
+> Übrige Bausteine: Wahl nach **Team-Kompetenz** begründen — nicht vorwegnehmen.
+
+## 6a. DB-Vorgabe MySQL — Alternativen, Vor-/Nachteile, Auswirkungen, Risiken
+
+> Erfüllt die von der Geschäftsleitung geforderte Dokumentationspflicht (`Surprise Anforderungen.txt`):
+> untersuchte Alternativen, Vor-/Nachteile, Auswirkungen auf Architektur/Implementierung und Risiken —
+> vollständige fachliche Analyse. Werte/Annahmen gegen die finalen Vorgaben (G1-Schwellen, reale Last)
+> plausibilisieren.
+
+**(1) Untersuchte Alternativen**
+
+| Option | Kurzcharakter |
+|---|---|
+| **MySQL 8 / MariaDB** (vorgegeben) | Server-RDBMS, im Haus etabliert |
+| SQLite | Eingebettete Datei-DB, null Setup |
+| PostgreSQL / TimescaleDB | Server-RDBMS, stark bei Zeitreihen |
+| InfluxDB | Spezialisierte Zeitreihen-DB |
+
+**(2) Vor-/Nachteile**
+
+- **MySQL/MariaDB:** + im Unternehmen vorhandene Kompetenz, Backup/Betrieb etabliert, ausgereift, gute
+  Treiber-Unterstützung, MariaDB Pi-tauglich. − braucht laufenden Server-Prozess (zusätzliche
+  Betriebs-/Ausfallfläche), kein nativer Zeitreihen-Vorteil, Setup-Hürde im Dev.
+- **SQLite:** + null Setup, ideal für schnellen Prototyp/Tests. − nicht für parallelen Server-/
+  Mehrbenutzerbetrieb gedacht, widerspricht der GL-Vorgabe, späterer Migrationsaufwand.
+- **PostgreSQL/TimescaleDB:** + technisch sehr stark für Sensorzeitreihen. − im Haus *nicht* etabliert →
+  widerspricht dem GL-Kriterium „bestehende Kompetenz wiederverwenden".
+- **InfluxDB:** + spezialisiert auf Zeitreihen. − Fremd-Stack, Overkill für Prototyp, gegen GL-Vorgabe.
+
+**(3) Auswirkungen auf Architektur/Implementierung**
+
+- Persistenz (`storage/`) strikt über **Repository-Pattern + SQLAlchemy** → DB-Detail gekapselt; Ingest,
+  Bewertung und API bleiben DB-agnostisch.
+- **Docker-Compose** stellt MariaDB reproduzierbar bereit (dev = prod); **Alembic** für Schema-Migrationen.
+- **Datentyp-Mapping** (§4): `id`→`BIGINT AUTO_INCREMENT`, `ts`/`received_at`→`DATETIME(3)` (UTC),
+  `params(json)`→`JSON`, Enums (`risk_level`, `state`)→`VARCHAR`+CHECK bzw. `ENUM`.
+- **Connection-Pooling** über die SQLAlchemy-Engine statt Datei-Handle; Zugangsdaten über **Env-Var/
+  Secret**, nie im Code (Security/NF-07).
+- Betrieb auf **Raspberry Pi**: MariaDB als Dienst, Datenverzeichnis auf stabilem Medium
+  (SD-Karten-Verschleiß bei Dauerschreiblast bedenken).
+
+**(4) Risiken / Einschränkungen**
+
+- **Setup-Hürde Anfänger-Team** (Docker/MariaDB) kann M2 verzögern → Docker-Compose + Kurzanleitung als
+  Mitigation.
+- **Zusätzliche Ausfallfläche:** der DB-Prozess kann ausfallen → **Fail-safe NF-01 muss greifen** (bei
+  DB-Fehler nie GRÜN, sondern GELB/„unbekannt" + Warnung).
+- **Langsamere Tests** ggü. SQLite-in-memory → Bewertungslogik bleibt DB-frei testbar; Persistenz-Tests
+  laufen gegen den Container.
+- **Ressourcen/SD-Karte auf dem Pi** bei Dauerschreiblast (Sensordaten) → Retention/Rotation einplanen.
+
+**Schwerwiegende technische Gegenargumente gegen MySQL?** Für die erwartete Last eines Regional-Flughafen-
+Prototyps (moderate Sensordatenrate): **keine** — MySQL/MariaDB ist dafür ausreichend dimensioniert. Die
+GL-Vorgabe wird daher **angenommen**, nicht angefochten. *(Vom Team zu bestätigen.)*
 
 ## 7. Vorschlag Code-/Repo-Struktur (`Alarmsystem-Dev`)
 
@@ -86,12 +154,14 @@ src/
   ingest/        # REST-Endpoint, Eingangsvalidierung
   model/         # Datenklassen / Schemas
   assessment/    # Vereisungslogik (Schwellenwerte) — Kernmodul, hohe Testabdeckung
-  storage/       # DB-Zugriff (Repository-Pattern)
+  storage/       # DB-Zugriff (Repository-Pattern, SQLAlchemy → MySQL/MariaDB)
   api/           # Serving-Endpoints für G3
   config/        # Schwellen/Parameter (parametrierbar)
   forecast/      # 30-min-Trend (T3)
+migrations/      # Alembic-Schema-Migrationen (MySQL)
 tests/           # Unit-/Integrationstests, v. a. assessment
 config/          # Default-Schwellenwerte (aus Schwellenwerte.md)
+docker-compose.yml  # MariaDB/MySQL-Container für Dev (dev = prod)
 ```
 
 ## 8. Ausbaustufen (Backend-scoped)
