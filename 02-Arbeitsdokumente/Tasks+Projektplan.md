@@ -31,23 +31,23 @@
 ### P1 — Contract: API + Datenmodell (kritisch)
 - **P1.1** Datenmodell-Schema festzurren (reading/assessment/alarm/ack/threshold/audit) — `[Architektur&API]` Systemarchitekt · Schnittstelle · DoD: Schema dokumentiert + reviewed · **M**
 - **P1.2** API-Spezifikation v1 (Endpoints, Request/Response, Envelope) — `[Architektur&API]` Systemarchitekt · DoD: API-Spec-Doc, OpenAPI-fähig · **M**
-- **P1.3** Seam-Sync: Ingest-Payload mit G1 + GET-Formate mit G3 abstimmen — `[Anforderungen&Stakeholder]` Systemarchitekt+PL · DoD: G1 & G3 bestätigen den Contract · **M**
+- **P1.3** Seam-Sync: `GET /current`-Payload + `GET /health` mit G1 abstimmen (G2 = Client) + GET-Serving-Formate mit G3 — `[Anforderungen&Stakeholder]` Systemarchitekt+PL · DoD: G1 & G3 bestätigen den Contract · **M**
 - **P1.4** Contract v1 **einfrieren** + kommunizieren — `[Architektur&API]` Systemarchitekt · DoD: v1 getaggt/an alle kommuniziert · **S**
 
 ### P2 — T0 Vertical Slice
-- **P2.1** Ingest `POST /readings` + Eingangsvalidierung — `[Backend-Impl]` Backend-Dev · FA Schnittstellen · DoD: gültiger POST → 201 + persistiert · **M**
+- **P2.1** Poller `GET /current` (G1-Pull, Intervall ≤ 60 s) + Eingangsvalidierung — `[Backend-Impl]` Backend-Dev · FA Schnittstellen · DoD: Poll liefert Snapshot → validiert + persistiert (`measured_at` als `ts`) · **M**
 - **P2.2** Persistenz `readings` (Repository-Pattern) — `[Backend-Impl]` Backend-Dev · FA Datenspeicherung · **M**
 - **P2.3** Taupunkt-Berechnung (Magnus) — `[Backend-Impl]` Backend-Dev · DoD: gegen Referenzwerte geprüft · **S**
-- **P2.4** **Bewertungsmodul: 4-Stufen-Logik** (Schwellenwerte §2) als reine Funktion — `[Backend-Impl]` Backend+Architekt · FA Risikobewertung · DoD: **beide Vorfälle (−2,1/+1,2 °C) korrekt** · **L**
+- **P2.4** **Bewertungsmodul: 4-Stufen-Logik** (Schwellenwerte §2) als reine Funktion über **3 Faktoren** (`T_s` + `ΔT` + `RH` als Kontext) — `[Backend-Impl]` Backend+Architekt · FA Risikobewertung · DoD: **beide Vorfälle korrekt** — Vorfall 1 (−2,1 °C, 92 % **Luft**-RH, **trockene** Oberfläche → `ΔT > 1,0`) ergibt **GELB** (kein Fehlalarm), Vorfall 2 (+1,2 °C, Oberfläche < 0 °C → `ΔT ≤ 0`) ergibt ORANGE/ROT. **Feuchte-Kriterium = `ΔT (T_s − T_d) ≤ 1,0 °C` (Oberfläche), NICHT Luft-`RH ≥ 90 %`** (entfernt → E-33). ROT := `T_s ≤ 0` **und** `ΔT ≤ 0` · **L**
 - **P2.5** `GET /assessment/current` — `[Backend-Impl]` Backend-Dev · DoD: liefert Stufe+Werte+Datenstand · **S**
-- **P2.6** Unit-Tests Bewertung (≥ 80 % Coverage, inkl. 2 Vorfälle) — `[Test&Qualität]` Test · DoD: Tests grün · **M**
+- **P2.6** Unit-Tests Bewertung (≥ 80 % Coverage, inkl. 2 Vorfälle) — `[Test&Qualität]` Test · DoD: Tests grün; **benannter Testfall Vorfall 1 → GELB** (92 % Luft-RH bei trockener Oberfläche, `ΔT > 1,0` ⇒ keine Feuchte, kein Fehlalarm — der frühere `RH ≥ 90 %`-Term hätte fälschlich ORANGE erzeugt, entfernt → E-33) · **M**
 
 ### P3 — T1 Kernfunktion
 - **P3.1** Plausibilität + Stale-Erkennung (> 180 s) — `[Backend-Impl]` Backend-Dev · FA veraltete Daten · **M**
 - **P3.2** Sensor-Defekt-Erkennung (Flatline/Sprung/Timeout) — `[Backend-Impl]` Backend-Dev · FA defekte Sensoren · **M**
 - **P3.3** Alarm-Generierung + Schweregrad + Hysterese/Entprellung — `[Backend-Impl]` Backend-Dev · FA Alarmierung · **M**
 - **P3.4** `GET /alarms` — `[Backend-Impl]` Backend-Dev · **S**
-- **P3.5** Restliche Messgrößen aufnehmen (RH, Druck, Niederschlagsart) — `[Backend-Impl]` Backend-Dev · **S**
+- **P3.5** Restliche Messgrößen aufnehmen (RH, Druck) — `[Backend-Impl]` Backend-Dev · **S**
 - **P3.6** Integrationstest Ingest→Bewertung→API — `[Test&Qualität]` Test · **M**
 - **P3.7** Fail-safe testen (Ausfall/Stale → nie GRÜN) — `[Test&Qualität]` Test · NF-01 · **S**
 

@@ -2,6 +2,16 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ Die „40 % Einzelleistung" ist NUR ein Prüfungs-Notengewicht — keine Arbeits-/Architekturregel
+
+Die „40 % individuell / 60 % Gruppe" (aus `01-quellen/Prüfungsleistung Anforderungen.txt`) sind ausschließlich
+der **Bewertungsschlüssel der Dozenten** für die Prüfungsnote. Sie haben **keinerlei** Bedeutung für die
+Entwicklungsarbeit, die Architektur oder die Aufgabenverteilung. Agenten dürfen die 40 % **niemals** als Grund
+verwenden, technische/architektonische Entscheidungen an einen Menschen „zurückzudelegieren" oder als
+„individuell zu treffende" zu framen — und Arbeitsdokumente/Pläne/Begründungen **niemals** absichtlich als
+Lücke leer lassen. Triff und empfiehl technische Entscheidungen **wie ein kompetenter Engineering-Partner**.
+(Quelle der Klarstellung: `~/.claude/CLAUDE.md`, Lucas explizit 22.06.2026.)
+
 ## Was dieses Verzeichnis ist
 
 Dies ist das **Arbeits-Repository der Backend-Gruppe (G2)** für den Projektkurs „Vereisungserkennung am
@@ -62,7 +72,7 @@ Vor `push`/PR/`force-push`/destruktiven Git-Aktionen: **vorher Genehmigung einho
 ### Heutiger Stand (16.06.2026)
 
 - **Vereisungs-Entscheidungslogik + Schwellenwerte konkretisiert** (`Schwellenwerte.md`): 4 Stufen über
-  Oberflächentemp + Taupunkt-Abstand + Feuchte + Niederschlag — löst beide dokumentierten Vorfälle korrekt auf.
+  Oberflächentemp + Taupunkt-Abstand + Feuchte — löst beide dokumentierten Vorfälle korrekt auf. *(Niederschlag als Faktor gestrichen 22.06., Customer-Scope → E-32.)*
 - **Backend-Konzept** (auf G2 geschnitten) und **Projektplan/Kanban** (`Tasks+Projektplan.md`) erstellt.
 - **KI-Onboarding** für ChatGPT/Gemini (`Agents-gpt-gemini.md`).
 - **Rolle/Gruppe bestätigt:** G2 Backend; Lucas = Systemarchitekt.
@@ -94,8 +104,8 @@ Annahme**, keine Briefing-Vorgabe.
 - **Sicherheitskritisch — keine Automatik-Freigabe:** Das System darf die Startbahn NIE automatisch
   freigeben oder sperren. Die Verantwortung bleibt beim Menschen. Entscheidungs*unterstützung*, kein Aktor. (→ RB-01)
 - **Lufttemperatur reicht nicht:** Beide Vorfälle scheiterten an reiner Lufttemperatur — Fehlalarm bei
-  −2,1 °C (kein Eis) und übersehene Eisbildung bei +1,2 °C. Relevant: **Oberflächentemperatur, Feuchte,
-  Taupunkt, Niederschlagsart** (umgesetzt in `Schwellenwerte.md`).
+  −2,1 °C (kein Eis) und übersehene Eisbildung bei +1,2 °C. Relevant: **Oberflächentemperatur,
+  Oberflächenfeuchte, Taupunkt** (umgesetzt in `Schwellenwerte.md`). *(Niederschlagsart gestrichen → E-32.)*
 - **Zielkonflikt Fehlalarm vs. Sicherheit:** „Lieber zehn Fehlalarme als ein vereistes Flugzeug" — Kern der
   Bewertungslogik, bewusst parametrierbar. (→ K1)
 - **Vorhersage statt Momentaufnahme:** Fluglotsen brauchen ≥ 30 min Vorlaufzeit.

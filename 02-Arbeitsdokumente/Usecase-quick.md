@@ -28,7 +28,7 @@ Der externe Gutachter weist darauf hin, dass die **Lufttemperatur nicht das ents
 
 - Oberflächenfeuchte
 - Taupunkt
-- Niederschlagsart
+- ~~Niederschlagsart~~ — _entfällt als G2-Messgröße/Bewertungsfaktor (Customer-Scope → E-32, 22.06.2026); historisch vom Gutachter genannt, aber nicht mehr Teil der Bewertung._
 
 ### Zentrale Zielkonflikte
 
@@ -62,7 +62,7 @@ Entwicklung eines **prototypischen Systems zur Erfassung und Bewertung von Verei
 
 ### Kernfunktionen
 
-1. **Sensordatenerfassung** — Messung von Oberflächentemperatur, Oberflächenfeuchte, Taupunkt, Niederschlagsart, Eisindikator.
+1. **Sensordatenerfassung** — Messung von Oberflächentemperatur, Oberflächenfeuchte, Taupunkt, Eisindikator. _(Niederschlagsart entfällt, Customer-Scope → E-32.)_
 2. **Datenverarbeitung** — Plausibilisierung, Speicherung, Trendbildung.
 3. **Vereisungsbewertung** — Algorithmus zur Risikobewertung, parametrierbar zwischen Fehlalarm- und Auslassungsrisiko.
 4. **Backend-System** — API und Datenmodell als Schnittstelle zwischen Sensorik und Frontend.
@@ -95,7 +95,7 @@ Entwicklung eines **prototypischen Systems zur Erfassung und Bewertung von Verei
 
 | ID | Anforderung | Prio | Status | Quelle / Begründung |
 |---|---|---|---|---|
-| **FA-01** | Erfasst **Oberflächentemperatur, Oberflächenfeuchte, Taupunkt, Niederschlagsart, Eisindikator** als primäre Messgrößen. | Muss | bestätigt | Tech. Notiz (Z. 79–84), Sensorhersteller (Z. 152–156); Lufttemperatur allein reicht nicht (Gutachter, Z. 46–48). |
+| **FA-01** | Erfasst **Oberflächentemperatur, Oberflächenfeuchte, Taupunkt, Eisindikator** als primäre Messgrößen. **Niederschlagsart entfällt** (Customer-Scope → E-32); das Datenfeld `precip_type` wurde gestrichen. | Muss | bestätigt | Tech. Notiz (Z. 79–84), Sensorhersteller (Z. 152–156); Lufttemperatur allein reicht nicht (Gutachter, Z. 46–48). Niederschlag-Streichung E-32 vom 22.06.2026. |
 | **FA-02** | Erfasst ergänzend **Lufttemperatur und Luftfeuchtigkeit** (Bestandsdaten, Vergleichbarkeit). | Soll | bestätigt | Wetterstation (Z. 14–16, 35–37). |
 | **FA-03** | Speichert alle Messwerte persistent **mit Zeitstempel**. | Muss | bestätigt | Handreichung Z. 42 „Speicherung". |
 | **FA-04** | Prüft Sensordaten auf **Plausibilität**, markiert Ausreißer/fehlende Werte **und erkennt veraltete Daten (Stale-Detection)** — zeigt keine alten Werte als aktuell. | Muss | bestätigt | R1 (Z. 123–124), R2 Kommunikationsausfall (Z. 125–126). |
@@ -103,7 +103,7 @@ Entwicklung eines **prototypischen Systems zur Erfassung und Bewertung von Verei
 | **FA-06** | Liefert **Prognose mit ≥ 30 min Vorlaufzeit**. | Muss | bestätigt | Fluglotsen (Z. 95, 99). |
 | **FA-07** | Visualisiert aktuelle + prognostizierte Bedingungen **inkl. Sensor-/Datenstatus**. | Muss | bestätigt | Anf. 3 (Z. 171–172). |
 | **FA-08** | **Alarmiert** relevante Akteure bei kritischen Zuständen; Alarme **eindeutig mit Schweregrad**. | Muss | bestätigt | Zielkonflikt (Z. 27–30); Handreichung Z. 47 „Alarmierung". |
-| **FA-09** | Stellt eine **API** als Schnittstelle Sensorik ↔ Backend ↔ Frontend bereit. | Muss | bestätigt | Handreichung Z. 41 „API". |
+| **FA-09** | Stellt die **Schnittstellen** zu Sensorik und Frontend bereit. **Naht G1→G2 = Pull:** G2 betreibt einen **Poller/HTTP-Client**, der `GET /current` (ein Snapshot aller aktuellen Messwerte mit gemeinsamem `measured_at`, UTC) und `GET /health` von G1 in **selbst bestimmtem Intervall (≤ 60 s)** abruft (G1 = Server, G2 = Client). **Serving zu G3** über G2-eigene Endpoints (`GET /assessment/current`, `GET /readings`, `GET /alarms`). | Muss | bestätigt | Handreichung Z. 41 „API"; Naht-Umstellung E-31 (Pull) vom 22.06.2026. |
 | **FA-10** | _(NEU)_ Mensch **quittiert Alarme**; die getroffene **manuelle Entscheidung** (Kontrolle/Sperrung) wird erfasst. | Muss | Annahme | Sicherheitsbeauftragte (Z. 163–165) + Entscheidungslogbuch (Z. 66). |
 | **FA-11** | _(NEU)_ **Schwellwerte/Parameter** der Bewertungslogik sind im System konfigurierbar (Bedien-Gegenstück zu NF-05). | Soll | Annahme | Zielkonflikt Fehlalarm ↔ Sicherheit (Z. 27–30). |
 | **FA-12** | _(NEU)_ Protokolliert Messwerte, Bewertungen, Alarme und Quittierungen (**Audit-Trail**). | Muss | Annahme | Entscheidungslogbuch (Z. 66); Haftung/Sicherheit. |

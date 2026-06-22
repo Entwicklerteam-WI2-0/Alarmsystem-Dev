@@ -14,38 +14,38 @@ Prognose · API · Logging/Audit · Konfiguration (Schwellen).
 - **Sensor-Hardware/Messung** → Gruppe 1 (G2 definiert nur, *welche* Daten in welchem Format reinkommen).
 - **Visualisierung/UI** → Gruppe 3 (G2 liefert nur die Daten über die API).
 
-**Die einzige Naht = API + Datenmodell — und die gehört uns.** G1 pusht dagegen, G3 konsumiert sie.
+**Die einzige Naht = API + Datenmodell — und die gehört uns.** Zur Sensorik (G1) holen **wir** die Messwerte per **Pull** ab (G1 stellt einen Abfrage-Endpoint bereit, wir pollen); zu G3 liefern wir über unsere API, G3 konsumiert sie.
 
 ## 2. Backend-Komponenten (Module)
 
 ```
-   (von G1)                                                         (an G3)
-  POST /readings ─► [Ingest] ─► [Validierung/Plausibilität] ─► [Persistenz]
-                                        │  Stale/Defekt-Check        │
-                                        ▼                            ▼
-                                  (sicherer Zustand)          [Bewertung] ──► [Alarm]
-                                                                    │            │
-                                                                    ▼            ▼
-                                                              [Persistenz]   [API: GET ...] ─► G3
-                                  [Prognose 30 min] ◄── liest Zeitreihe ──┘
-                                  [Config/Schwellen]  [Logging/Audit]  (querschnittlich)
+   (G2 pollt G1, Intervall ≤60s selbst bestimmt)                    (an G3)
+  G1: GET /current ◄─ poll ─ [Ingest/Poller] ─► [Validierung/Plausibilität] ─► [Persistenz]
+   G1: GET /health  ◄─ check ─┘                  │  Stale/Defekt-Check         │
+                                                 ▼                             ▼
+                                           (sicherer Zustand)           [Bewertung] ──► [Alarm]
+                                                                              │            │
+                                                                              ▼            ▼
+                                                                        [Persistenz]   [API: GET ...] ─► G3
+                                          [Prognose 30 min] ◄── liest Zeitreihe ──┘
+                                          [Config/Schwellen]  [Logging/Audit]  (querschnittlich)
 ```
 
 | Modul | Aufgabe | Anf. |
 |---|---|---|
-| **Ingest** | Messdatensätze annehmen (REST), Eingangsvalidierung | FA-Schnittstellen |
+| **Ingest** | Messwerte bei G1 **pollen** (`GET /current`, Intervall selbst bestimmt) + `GET /health`, Eingangsvalidierung | FA-Schnittstellen |
 | **Validierung/Plausibilität** | Bereichscheck, Stale-Erkennung (>180 s), Sensor-Defekt (Flatline/Sprung/Timeout) | FA „veraltete Daten/defekte Sensoren", NF-01 |
 | **Persistenz** | Speichern von Messwerten, Bewertungen, Alarmen, Quittierungen | FA Datenspeicherung, NF-09 |
-| **Bewertung** | **Vereisungsrisiko** (4-Stufen-Logik) aus T_s/T_d/RH/Niederschlag | FA Risikobewertung, `Schwellenwerte.md §2` |
+| **Bewertung** | **Vereisungsrisiko** (4-Stufen-Logik) aus T_s/T_d/RH | FA Risikobewertung, `Schwellenwerte.md §2` |
 | **Alarm** | Schwellüberschreitung → Alarm-Objekt + Schweregrad | FA Alarmierung, NF-08 |
 | **Prognose** | 30-min-Trend (Extrapolation T_s, T_d, Drucktendenz) | FA 30-min-Vorlauf |
-| **API** | Serving für G3 (aktueller Zustand, Historie, Alarme), Ingest-Endpoint | FA Schnittstellen |
+| **API** | Serving-Endpoints für G3 (aktueller Zustand, Historie, Alarme) — **kein** Ingest-Endpoint (Daten kommen per Pull von G1) | FA Schnittstellen |
 | **Config** | Schwellen zur Laufzeit parametrierbar | FA/NF-05 |
 | **Logging/Audit** | append-only Protokoll aller Mess-/Bewertungs-/Alarm-/Quittierungs-Events | FA Logging, NF-09 |
 
 ## 3. Interner Datenfluss
 
-`POST /readings` → **Validierung** (Bereich, Plausibilität, Stale/Defekt) → **DB `readings`** →
+**Poller** holt `GET /current` bei G1 (Intervall ≤ 60 s, von G2 bestimmt; `GET /health` als Verfügbarkeits-Check) → **Validierung** (Bereich, Plausibilität, Stale/Defekt) → **DB `readings`** →
 **Bewertung** (`Schwellenwerte.md §2`) → **`assessment`** (+ ggf. **`alarm`**) → **DB** →
 `GET /assessment/current` → (G3). Querschnitt: jedes Event ins **Audit-Log**; Bewertung liest Config-Schwellen.
 
@@ -55,7 +55,7 @@ Prognose · API · Logging/Audit · Konfiguration (Schwellen).
 
 | Entität | Felder (Kern) |
 |---|---|
-| `reading` | id · sensor_id · ts(UTC) · surface_temp_c · air_temp_c · humidity_pct · dew_point_c(berechnet) · pressure_hpa · precip_type · ice_indicator · source(`real|sim`) · received_at |
+| `reading` | id · sensor_id · ts(UTC, = G1s `measured_at`) · surface_temp_c · air_temp_c · humidity_pct · dew_point_c(berechnet) · pressure_hpa · ice_indicator · source(`real|sim`) · received_at |
 | `assessment` | id · ts · reading_id · risk_level(`green|yellow|orange|red`) · driving_factor · threshold_set_id · explanation |
 | `alarm` | id · assessment_id · severity · raised_at · state(`active|acknowledged`) |
 | `acknowledgement` | id · alarm_id · operator · note · ts  *(append-only, NF-09)* |
@@ -68,7 +68,7 @@ Prognose · API · Logging/Audit · Konfiguration (Schwellen).
 ## 5. Bewertungslogik (Kern-IP von G2)
 
 Vollständig in **`Schwellenwerte.md §2`**: 4 Stufen 🟢🟡🟠🔴 aus **Oberflächentemperatur + Taupunkt-Abstand
-+ Feuchte + Niederschlag**, mit Hysterese gegen Chattering. Löst beide dokumentierten Vorfälle korrekt auf.
++ Feuchte** (Niederschlag als Faktor gestrichen — Customer-Scope, → Entscheidungslog **E-32**), mit Hysterese gegen Chattering. Löst beide dokumentierten Vorfälle korrekt auf.
 Betriebspunkt (Fehlalarm ↔ Auslassung, K1) **parametrierbar**, Default sicherheitsbetont.
 
 ## 6. Tech-Stack Backend (T0)
@@ -85,7 +85,7 @@ Betriebspunkt (Fehlalarm ↔ Auslassung, K1) **parametrierbar**, Default sicherh
 | **Datenbank** | ~~SQLite · PostgreSQL · TimescaleDB~~ | **MySQL 8 / MariaDB — durch GL vorgegeben** (dev = prod via Docker-Compose) |
 | DB-Zugriff | SQLAlchemy Core/ORM · raw SQL | **SQLAlchemy + Repository-Pattern** (kapselt die DB hinter `storage/`) |
 | Migrationen | Alembic · SQL-Skripte | Alembic (versionierte Schema-Änderungen) |
-| Übertragung | **HTTP-POST** (T0) · MQTT (Skalierung) | HTTP-POST |
+| Datenabruf | **HTTP-Pull** (G2 pollt G1s `GET /current`) · MQTT (Skalierung) | HTTP-Pull |
 | Bewertung | reine Funktion (testbar) + Config | als isolierbares Modul (Coverage ≥ 80 %) |
 
 > **Dev-Setup:** Eine MariaDB/MySQL für alle via `docker compose up db` — gleiche DB lokal wie im Betrieb,
@@ -151,7 +151,7 @@ GL-Vorgabe wird daher **angenommen**, nicht angefochten. *(Vom Team zu bestätig
 
 ```
 src/
-  ingest/        # REST-Endpoint, Eingangsvalidierung
+  ingest/        # Poller (holt `GET /current` von G1) + Health-Check, Eingangsvalidierung
   model/         # Datenklassen / Schemas
   assessment/    # Vereisungslogik (Schwellenwerte) — Kernmodul, hohe Testabdeckung
   storage/       # DB-Zugriff (Repository-Pattern, SQLAlchemy → MySQL/MariaDB)
@@ -166,14 +166,14 @@ docker-compose.yml  # MariaDB/MySQL-Container für Dev (dev = prod)
 
 ## 8. Ausbaustufen (Backend-scoped)
 
-- **T0 (Kern):** Ingest → speichern → Schwellwert-Bewertung → `GET /assessment/current` → `GET /health`.
+- **T0 (Kern):** Poll (`GET /current` von G1) → speichern → Schwellwert-Bewertung → `GET /assessment/current` → `GET /health`.
 - **T1:** Plausibilität/Stale/Defekt-Erkennung, Alarm-Generierung, alle Messgrößen.
 - **T2:** Quittierung (FA-10), Audit-Trail, Schwellen-Config-Endpoint, Historie.
 - **T3:** 30-min-Prognose, Multi-Sensor (NF-11), Fernwartung + Auth (NF-07).
 
 ## 9. Schnittstellen nach außen (abstimmen, nicht bauen)
 
-- **zu G1 (Sensorik):** `POST /readings`-**Payload** — welche Messgrößen real geliefert werden (Seam-Sync).
+- **von G1 (Sensorik):** G1 stellt **`GET /current`** (Snapshot aller aktuellen Messwerte + gemeinsamer **`measured_at`**) und **`GET /health`** bereit; **G2 pollt** (Intervall ≤ 60 s, selbst bestimmt). Abzustimmen: Feldnamen/Einheiten (Seam-Sync). **An dieser Naht ist G2 _Client_** — G1 definiert den Endpoint-Shape.
 - **zu G3 (Frontend):** `GET`-**Antwortformate** — was angezeigt wird (Seam-Sync).
 - Details in der API-Spezifikation (geplant); Datenmodell s. §4.
 
@@ -182,7 +182,7 @@ docker-compose.yml  # MariaDB/MySQL-Container für Dev (dev = prod)
 | Anforderung | Modul |
 |---|---|
 | Risikobewertung / Alarmierung | Bewertung, Alarm |
-| Temperatur/Feuchte/Druck/Taupunkt/Niederschlag(-art) | Ingest, Model, Bewertung |
+| Temperatur/Feuchte/Druck/Taupunkt | Ingest, Model, Bewertung |
 | Datenspeicherung / Logging | Persistenz, Audit |
 | Vorhersage + veraltete Daten + defekte Sensoren | Prognose, Validierung |
 | Schnittstellen | API |

@@ -5,6 +5,15 @@
 > Sprache: Deutsch (wie alle Projektdokumente).
 > **Hinweis:** Dieses Repo ist das **Arbeitsrepo der Backend-Gruppe (G2)** — `Entwicklerteam-WI2-0/Alarmsystem-Dev`.
 
+> ## ⚠️ Die „40 % Einzelleistung" ist NUR ein Prüfungs-Notengewicht — keine Arbeits-/Architekturregel
+> Die „40 % individuell / 60 % Gruppe" sind ausschließlich der **Bewertungsschlüssel der Dozenten** für die
+> Prüfungsnote. Sie haben **keinerlei** Bedeutung für die Entwicklungsarbeit, die Architektur oder die
+> Aufgabenverteilung. **Agenten dürfen die 40 % NIEMALS** als Grund verwenden, technische/architektonische
+> Entscheidungen an einen Menschen „zurückzudelegieren" oder als „individuell zu treffende" zu framen — und
+> dürfen Arbeitsdokumente/Pläne/Begründungen **niemals** absichtlich als Lücke „für den Menschen" leer lassen.
+> Triff und empfiehl technische Entscheidungen **wie ein kompetenter Engineering-Partner**, mit klarer
+> Empfehlung. Lucas ist PM/CTO/Architekt — er gibt Richtung, der Agent bringt Entscheidungstiefe.
+
 ---
 
 ## 1. Projektübersicht
@@ -23,7 +32,7 @@ Backend-Konzept, Projektplan liegen vor). Das Repo geht in die **Implementierung
 
 ### Kernziele
 
-- Erfassung relevanter Wetter-/Oberflächendaten (Oberflächentemperatur, Feuchte, Taupunkt, Niederschlagsart, Luftdruck).
+- Erfassung relevanter Oberflächendaten (Oberflächentemperatur, Oberflächenfeuchte, Taupunkt, Luftdruck). *(Niederschlagsart entfällt — Customer-Scope, → Entscheidungslog E-32.)*
 - **Bewertung von Vereisungsrisiken** (Entscheidungslogik, s. `Schwellenwerte.md`).
 - Backend zur Datenverarbeitung und Entscheidungsunterstützung (**unser Fokus, G2**).
 - Visualisierung/Alarmierung über ein Frontend (G3), Sensorik (G1).
@@ -40,8 +49,8 @@ und der Bewertung. Das Briefing nie als fertige Spec behandeln.
 - **Sicherheitskritisch — keine Automatik-Freigabe:** Das System darf die Startbahn NIE automatisch
   freigeben oder sperren. Die Verantwortung bleibt beim Menschen. Entscheidungs*unterstützung*, kein Aktor. (→ RB-01)
 - **Lufttemperatur reicht nicht:** Beide Vorfälle scheiterten an reiner Lufttemperatur — Fehlalarm bei
-  −2,1 °C (kein Eis) und übersehene Eisbildung bei +1,2 °C. Relevant: **Oberflächentemperatur, Feuchte,
-  Taupunkt, Niederschlagsart** (umgesetzt in `Schwellenwerte.md`).
+  −2,1 °C (kein Eis) und übersehene Eisbildung bei +1,2 °C. Relevant: **Oberflächentemperatur,
+  Oberflächenfeuchte, Taupunkt** (umgesetzt in `Schwellenwerte.md`). *(Niederschlagsart gestrichen → E-32.)*
 - **Zielkonflikt Fehlalarm vs. Sicherheit:** „Lieber zehn Fehlalarme als ein vereistes Flugzeug" — Kern der
   Bewertungslogik, bewusst parametrierbar. (→ K1)
 - **Vorhersage statt Momentaufnahme:** Fluglotsen brauchen ≥ 30 min Vorlaufzeit.
@@ -145,8 +154,8 @@ Der konkrete Stack ist **noch nicht final** und gehört begründet ins Entscheid
 Optionen + Empfehlung in **`Backend-Konzept.md` §6**:
 
 - **Backend:** Python **FastAPI** (Empfehlung) · Flask · Node/Express
-- **Datenbank:** **SQLite** (T0) → PostgreSQL/TimescaleDB
-- **Übertragung:** **HTTP-POST** (T0) → MQTT (Skalierung)
+- **Datenbank:** **MySQL 8 / MariaDB** (GL-Vorgabe, durchgängig ab T0; dev = prod via Docker-Compose, → E-29)
+- **Datenabruf:** **HTTP-Pull** — G2 pollt G1s `GET /current` (Snapshot + `measured_at`) + `GET /health`, Intervall ≤ 60 s selbst bestimmt (→ E-31) → MQTT (Skalierung)
 - **Sensorik (G1, Kontext):** ESP32/Raspberry Pi; IR-/Kontaktsensor Oberflächentemp; Kombisensor Temp/Feuchte/Druck (BME280/SHT31); Eisindikator zunächst Proxy/Sim.
 
 **Offene Architekturentscheidungen** (vgl. `Usecase-quick.md` §3.4, AE-01/AE-02): lokal vs. Cloud + Fernzugriff,
@@ -160,7 +169,7 @@ Modul-/Ordnerstruktur s. **`Backend-Konzept.md` §7**:
 
 ```text
 src/
-  ingest/      # REST-Endpoint, Eingangsvalidierung
+  ingest/      # Poller (holt `GET /current` von G1), Eingangsvalidierung
   model/       # Datenklassen/Schemas
   assessment/  # Vereisungslogik (Schwellenwerte) — Kernmodul, hohe Testabdeckung
   storage/     # DB-Zugriff (Repository-Pattern)

@@ -1,7 +1,10 @@
 # G2 Backend — Projektplan & Jira-Backlog (internes Arbeitsdokument)
 
 > **Zweck:** Grundlage zum Aufziehen des Jira-Projekts **DTB** (Dev-Team-Backend) und zum Verteilen der Tasks. Internes, **versioniertes** Arbeitsdokument (im Repo unter Versionskontrolle; kein benotetes Deliverable).
-> **Stand:** 2026-06-21 (Übergang Woche 2) · **Quelle:** Ultracode-Workflow `g2-jira-plan` (11 Agenten, ~849k Tokens, ~20,6 Min) · Analyse → Architektur-Scan → Synthese → Verifikation.
+> **Stand:** 2026-06-22 (Woche 2; **Pull-Naht + 3-Faktor umgestellt**, vgl. E-31/E-32 + `Umstellung-Pull-3Faktor-Faktenblatt.md`) · **Quelle:** Ultracode-Workflow `g2-jira-plan` (11 Agenten, ~849k Tokens, ~20,6 Min) · Analyse → Architektur-Scan → Synthese → Verifikation.
+> **NAHT-UMSTELLUNG (E-31, Pull):** Die G1→G2-Ingest-Richtung ist **Pull**, kein Push mehr. G1 stellt `GET /current` (EIN Snapshot aller aktuellen Messwerte + EIN gemeinsamer `measured_at`, UTC) und `GET /health` bereit; G2 baut einen **Poller/HTTP-Client** (Intervall ≤ 60 s), der validiert + persistiert. **Kein** von G2 gehosteter `POST /readings`-Endpoint mehr. Die G2→G3-Serving-Endpoints (`GET /assessment/current`, `GET /readings`, `GET /alarms`) **bleiben** unverändert.
+> **3-FAKTOR-BEWERTUNG (E-32):** Niederschlag ist **komplett gestrichen** (Customer-Scope) — als Bewertungsfaktor UND als Datenfeld `precip_type`. Bewertet wird über **Oberflächentemp `T_s` + Taupunkt-Abstand `ΔT` + Oberflächenfeuchte (via `ΔT`)**.
+> **FEUCHTE-FIX (E-33):** „Feuchte vorhanden" := `ΔT (T_s − T_d) ≤ 1,0 °C` — an die **Oberfläche** gebunden. Der frühere Luft-RH-Trigger (`RH ≥ 90 %`) ist **komplett entfernt**, weil Luftfeuchte nichts über die Oberfläche aussagt (Vorfall 1: 92 % Luftfeuchte bei trockener Oberfläche → ΔT > 1,0 → **GELB**, nicht ORANGE). `RH` (= **Luftfeuchte**) fließt nur **indirekt** über den Taupunkt `T_d` (Magnus) in `ΔT` ein; `humidity_pct` im G1-`GET /current`-Snapshot ist Luftfeuchte und reiner T_d-Input — **kein** separater Oberflächenfeuchte-Wert nötig.
 > **DUMMY-SCHWELLEN:** Alle Schwellenwerte bleiben Platzhalter bis G1 liefert — ausnahmslos über `config/` parametrierbar, NIE hardcoden.
 > **Owner = Empfehlung** (skill-bewusst), kein harter Assignee. Tasks gehören in den Backlog; Owner-Hinweis je Task unten.
 
@@ -17,10 +20,10 @@
 
 ### Sofort-Anpassungen (aus Verifikation)
 - **Prioritaetsaenderung:** P6.1 (30-min-Prognose) von T3/Kann auf T1/Soll mit M3 hochstufen. Implementierungsansatz vereinfachen: 3-Punkt-Lineare-Regression ueber T_s-Zeitreihe der letzten 30 Minuten statt ARIMA/komplexe Methode. Das ist eine S-Groesse (~1 Tag Lucas oder Petzold), nicht L. Ohne diese Anpassung ist FA-06 (MUSS laut Usecase-quick.md) nicht im Prototyp. Epic E-07 oder E-03 erweitern.
-- **Owner-Korrektur kritischer Pfad:** P2.4 (Bewertungsmodul) steht als Owner 'Lucas Voehringer (Backend+Architekt, DRI kritischer Pfad)' — korrekt. Aber P2.1 (POST /readings) ist als Owner 'Hartling oder Ganter (Anfaenger)' eingeplant mit Abhaengigkeit von P2.4 und P2.2. Korrektur: P2.1 Owner = Arash Sarkhab (Backend-Developer laut teamstruktur-final.md), NICHT Hartling/Ganter. Hartling und Ganter bekommen P3.4 (GET /alarms) und P4.4 (GET /readings?from&to) als wirklich abgegrenzte, von anderen Tasks unabhaengige Endpoints.
+- **Owner-Korrektur kritischer Pfad:** P2.4 (Bewertungsmodul) steht als Owner 'Lucas Voehringer (Backend+Architekt, DRI kritischer Pfad)' — korrekt. Aber P2.1 (Poller-Client gegen G1 `GET /current`) ist als Owner 'Hartling oder Ganter (Anfaenger)' eingeplant mit Abhaengigkeit von P2.4 und P2.2. Korrektur: P2.1 Owner = Arash Sarkhab (Backend-Developer laut teamstruktur-final.md), NICHT Hartling/Ganter. Hartling und Ganter bekommen P3.4 (GET /alarms) und P4.4 (GET /readings?from&to) als wirklich abgegrenzte, von anderen Tasks unabhaengige Endpoints.
 - **Milestone-Anpassung Realismus:** P3 (T1 Kernfunktion) als M2-Ziel ist unrealistisch bei null Produktionscode am 2026-06-21. Empfehlung: P3.1+P3.2+P3.3 explizit zu M3-Beginn (Woche 3 Mo/Di) verschieben, P3.4+P3.5 in Woche 2 parallel zu P2 halten. Den Spillover-Hinweis im Plan ('M2 mit Spillover M3 realistisch') in eine harte Abgrenzung umwandeln: P3.3 (Alarm-Generierung) ist M3-Task, nicht M2-Task. Das entlastet den kritischen Pfad ohne die Pruefungsanforderungen zu verletzen (Zeitplan.txt M2 fordert 'funktionierende Einzelmodule' — T0 Vertical Slice reicht dafuer).
 - **Task-Scope-Fehler korrigieren:** P4.3 (Schwellen-Config) steht als M3-Deliverable, ist aber als Abhaengigkeit von P2.4 eingetragen ('dependsOn: [P2.4, P4.3]'). Das ist zirkulaer falsch. Korrektur: P4.3 muss VOR P2.4 kommen, da assessment() parametrierbar sein muss. Config-Grundstruktur (config/thresholds.json + src/config/loader.py) in E-07 voranziehen auf M1/P0-Zeitfenster und als ENABLER fuer P2.4 markieren, nicht als Nachfolger.
-- **Bewertungslogik-Praezisierung Vorfall 2:** Plan benennt Vorfall 2 mehrfach als '+1,2 °C Luft, T_s<0 → ORANGE/ROT'. Schwellenwerte.md §2 sagt: ORANGE wenn T_s<=0 UND Feuchte vorhanden (RH>=90% oder DeltaT<=1°C oder Niederschlag), ROT wenn T_s<=0 UND (gefrierender Niederschlag ODER DeltaT<=0°C). Fuer Vorfall 2 (Reif, naechliche Abstrahlung) waere ROT korrekt (DeltaT<=0 bei Reifbildung). Der Test test_vorfall_2_ice_at_positive_air_temp() muss daher spezifisch 'ROT' erwarten, nicht 'ORANGE oder ROT'. DoD in P2.4 und P2.6 entsprechend praezisieren.
+- **Bewertungslogik-Praezisierung Vorfall 2:** Plan benennt Vorfall 2 mehrfach als '+1,2 °C Luft, T_s<0 → ORANGE/ROT'. Schwellenwerte.md §2 (3-Faktor, E-32/E-33) sagt: ROT wenn T_s<=0 UND DeltaT<=0; 'Feuchte vorhanden' := DeltaT (T_s − T_d) <= 1,0 °C — der frühere Luft-RH-Term (RH>=90%) ist **komplett entfernt** (E-33), weil Luftfeuchte nichts über die Oberfläche aussagt. Fuer Vorfall 2 (Reif, naechliche Abstrahlung) ist ROT korrekt (DeltaT<=0 bei Reifbildung). Der Test test_vorfall_2_ice_at_positive_air_temp() muss daher spezifisch 'ROT' erwarten, nicht 'ORANGE oder ROT'. DoD in P2.4 und P2.6 entsprechend praezisieren.
 - **CI/CD-Luecke:** GitHub hat zwei Workflows (claude-code-review.yml, claude.yml), aber KEINEN pytest-Gate. E-08-TestCI hat die richtige Idee, aber P0.4 (DoD) muss explizit .github/workflows/test.yml als Pflicht-Deliverable enthalten. Alternativ: Petzold schreibt test.yml heute Mo als ersten PR (15 Minuten Aufwand), damit alle weiteren PRs automatisch abgesichert sind. Das fehlt als explizites Task-Deliverable in P0.
 - **Entscheidungslogbuch-Individualanteil strukturieren:** P5.4 ('Entscheidungslogbuch finalisieren') ist als Gruppen-Task modelliert. Aber 40% der Note ist individuelle Reflexion je Person (Pruefungsleistung Anforderungen.txt). Korrektur: P5.4 in zwei Sub-Tasks aufteilen: (a) Gruppen-Entscheidungslogbuch (AE/E-Eintraege, kollektiv), (b) 11 individuelle Reflexionen (je 4-6 Seiten, DRI = jeweilige Person, Deadline = M3). Jeder der 11 Personen muss einer konkreten Entscheidung aus E-01..E-27 zugewiesen werden, die sie selbst reflektieren. Lucas' Entscheidungslog deckt bereits E-01..E-28, ist aber noch nicht auf andere Personen verteilt.
 - **Fail-safe Ownership-Klaerung:** Plan weist Fail-safe-Verantwortung diffus zu: P3.1 an Petzold, P3.7 an Mohammadi/Berger, aber die Architektur-Entscheidung 'wer ist verantwortlich fuer den sicheren Zustand' (Ingest vs. Storage vs. Assessment) fehlt als expliziter ADR-Eintrag. E-29 (Fail-safe Multi-Layer wie im Scan beschrieben) sollte als eigener Task ergaenzt werden mit DRI Lucas, bevor P3.1/P3.2 implementiert werden.
@@ -39,7 +42,7 @@
 
 ## 2. Überblick
 
-Alarmsystem Vereisungserkennung — Backend Gruppe 2 (G2). Prototyp zur Erfassung und Bewertung von Vereisungsbedingungen auf der Startbahn des Flughafens ANR (3-wöchiges Projekt). Stack T0 (Python + FastAPI + SQLite + HTTP-POST) ist faktisch gewählt. Kritischer Pfad: API/Datenmodell-Naht P1 (bis Woche 2, Di fällig) + Bewertungsmodul P2.4 mit beiden Vorfall-Testfällen + Fail-safe. Meilenstein M2 (Ende Woche 2, ca. 2026-06-26) ist risikoreich: kein Produktionscode vorhanden, Lucas als Single-Point-of-Failure auf kritischem Pfad.
+Alarmsystem Vereisungserkennung — Backend Gruppe 2 (G2). Prototyp zur Erfassung und Bewertung von Vereisungsbedingungen auf der Startbahn des Flughafens ANR (3-wöchiges Projekt). Stack T0 (Python + FastAPI + SQLite) ist faktisch gewählt; die G1→G2-Naht ist **Pull** (G2 = HTTP-Client/Poller gegen G1s `GET /current`, vgl. E-31). Kritischer Pfad: API/Datenmodell-Naht P1 (bis Woche 2, Di fällig) + Bewertungsmodul P2.4 (3-Faktor: T_s + ΔT + RH) mit beiden Vorfall-Testfällen + Fail-safe. Meilenstein M2 (Ende Woche 2, ca. 2026-06-26) ist risikoreich: kein Produktionscode vorhanden, Lucas als Single-Point-of-Failure auf kritischem Pfad.
 
 **Kritischer Pfad:** P0.2–P0.3 (Scaffolding, Mo Woche 2) → P1.1–P1.4 (Contract, Mo/Di Woche 2) → Seam-Sync (Di 08:00) → P2.1–P2.6 (Vertical Slice, Mi–Fr Woche 2) → M2 Deadline (Fr 17:00 2026-06-26). Kein Überschreitung, alle PRs gemergt auf main bis Do 17:00 damit Fr für Abgabe-Freeze Zeit bleibt. Reservezeit: <12h für Rollback/Hotfixes. P3 Spillover zu Woche 3 akzeptiert. **Engpässe:** Lucas (P0+P1+P2.4+P5.1/5.2), Test-Team (P2.6+P3.6+P3.7+P5.3), DB-Engineers (P2.2+P3.1/3.2). **Mitigation:** Pair-Programming Mo/Di, Parallelisierung kleiner Tasks, TDD-Ansatz (Testfälle vor Code).
 
@@ -74,25 +77,25 @@ Einfrieren der Naht zwischen G2/G1 und G2/G3. Formale API-Spezifikation v1, Date
 ### P2 — T0 Vertical Slice (Ingest→Bewertung→API)  ·  M2
 **Zeitfenster:** Woche 2, Mittwoch bis Freitag (2026-06-25 bis 2026-06-26, Deadline M2)
 
-Funktionsfähiger T0-Stack: Dateneingabe via POST /readings, Persistenz, Bewertungslogik, GET /assessment/current mit ≥80% Unit-Test-Coverage. Beide Vorfälle (−2,1 °C, +1,2 °C) als grüne Testfälle.
+Funktionsfähiger T0-Stack: Datenbeschaffung via Poller-Client gegen G1s `GET /current` (Snapshot + `measured_at`), Persistenz, Bewertungslogik, GET /assessment/current mit ≥80% Unit-Test-Coverage. Beide Vorfälle (−2,1 °C, +1,2 °C) als grüne Testfälle.
 
 **Exit-Kriterien:**
-- POST /readings mit Validierung → 201 + persistiert
+- Poller ruft G1s `GET /current` (≤ 60 s) ab, validiert (Bereich, Stale via `measured_at`, Defekt) → persistiert
 - GET /assessment/current liefert risk_level (green|yellow|orange|red) + Erklärung
-- Bewertungsmodul als reine Funktion (assessment/core.py), parametrierbar aus config/thresholds.json
+- Bewertungsmodul als reine Funktion (assessment/core.py), 3-Faktor (T_s + ΔT + RH), parametrierbar aus config/thresholds.json
 - Unit-Tests ≥80% Coverage mit benannten Vorfall-Testfällen (test_vorfall_1_dry_cold, test_vorfall_2_ice_at_positive_air_temp)
 - Fail-safe-Test: Stale/Ausfall → nie GRÜN
 
 ### P3 — T1 Kernfunktion (Plausibilität, Alarme, Messgrößen)  ·  M2 (mit Spillover zu M3 realistisch)
 **Zeitfenster:** Woche 2, parallel zu P2, oder Woche 2/3 Überlauf (2026-06-25 bis Anfang Woche 3)
 
-Stale/Defekt-Erkennung, Alarm-Generierung mit Hysterese, alle Messgrößen (RH, Druck, Niederschlagsart), Integrationstests, Fail-safe-Test konkretisiert.
+Stale/Defekt-Erkennung, Alarm-Generierung mit Hysterese, alle Messgrößen (RH, Druck), Integrationstests, Fail-safe-Test konkretisiert.
 
 **Exit-Kriterien:**
 - P3.1: Stale-Erkennung > 180s, Plausibilitäts-Gate funktioniert
 - P3.2: Sensor-Defekt (Flatline/Sprung/Timeout) erkannt, gekennzeichnet
 - P3.3: Alarm-Generierung ab ORANGE mit Schweregrad + Hysterese/Entprellung
-- P3.4/P3.5: GET /alarms, alle Messgrößen RH/Druck/Niederschlag im Ingest vorhanden
+- P3.4/P3.5: GET /alarms, alle Messgrößen RH/Druck im Poller-Ingest vorhanden
 - P3.6: Integrationstests Ingest→Bewertung→API grün
 - P3.7: Fail-safe-Test konkretisiert (5 Szenarios: stale, out-of-range, flatline, no-data, network-delay)
 
@@ -187,8 +190,8 @@ _CRITICAL MISALIGNMENT: G2 hat dokumentierte Architektur + klare Anforderungen, 
   - → Lucas + Johannes müssen Mo/Di die gesamte P1 (P1.1–P1.4) abschließen, bevor ein einziger Zeile Code-PR für P2 anfange. Seam-Sync mit G1+G3 muss bis Di 17:00 Uhr stattgefunden haben. Fallback: formale OpenAPI-Spezifikation schreiben und die 6 kritischen Felder (reading-Ingest + assessment-Response) in .md + Schema als JSON-Beispiel dokumentieren.
 - **[CRITICAL] Null Produktionscode vorhanden: src/ + tests/ komplett leer** _(betrifft: P2 kann nicht parallel zu P1 laufen (Blockedependency), kritischer Pfad wird sequenzialisiert statt parallelisiert)_
   - → P0 sofort (heute/Mo) abschließen: 2-3 Stunden für Ordnerstruktur src/ingest/.../tests/ + pyproject.toml + /health-Endpoint. Dann P1 parallel zu P2 über gemeinsame .gitignore + feature-branches.gitignore. Ohne P0-heute können P2.1–P2.6 nicht beginnen.
-- **[CRITICAL] Datenmodell-Schnittstelle G1↔G2 unspezifisch: POST /readings Payload nicht definiert** _(betrifft: G1 weiß nicht exakt, welche Felder zu pushen sind; G2 kann keine robuste Validierung schreiben; G3 weiß nicht, welche Felder in GET /assessment/current zu erwarten sind)_
-  - → P1.1–P1.2 als blockedPRIORITY: formale API-Spec (OpenAPI 3.1 JSON oder minimal Markdown + JSON-Schema) mit: (1) POST /readings: Pflichtfelder (sensor_id, ts_utc, surface_temp_c, humidity_pct, pressure_hpa, precip_type), optional (ice_indicator, air_temp_c=berechnet-auf-G2-seite). (2) GET /assessment/current: Response {ts, risk_level, driving_factor, explanation, reading_id, threshold_set_id}. (3) Fehlerbehandlung + Status-Codes. (4) Versioning-Strategie (z.B. /v1/).
+- **[CRITICAL] Datennaht G1↔G2 unspezifisch: G1s `GET /current`-Snapshot-Shape nicht final** _(betrifft: G2 weiß nicht exakt, welche Felder G1 im Snapshot liefert; G2 kann keine robuste Validierung schreiben; G3 weiß nicht, welche Felder in GET /assessment/current zu erwarten sind)_
+  - → P1.1–P1.2 als blockedPRIORITY: formale API-Spec (OpenAPI 3.1 JSON oder minimal Markdown + JSON-Schema) mit: (1) **Konsum von G1s `GET /current`** — EIN Snapshot aller aktuellen Messwerte + gemeinsamer `measured_at` (UTC/ISO-8601): erwartete Felder (sensor_id, measured_at, surface_temp_c, air_temp_c, humidity_pct, pressure_hpa, status); plus `GET /health` als Erreichbarkeits-Check. Feldnamen final im Seam-Sync (G1 = Server, definiert den Shape). (2) GET /assessment/current: Response {ts, risk_level, driving_factor, explanation, reading_id, threshold_set_id}. (3) Fehlerbehandlung + Status-Codes (inkl. Poller-Timeout/503 von G1). (4) Versioning-Strategie (z.B. /v1/).
 - **[CRITICAL] Bewertungsmodul P2.4 ist größte einzelne Risikoaufgabe; beide Vorfälle als benannte Testfälle still offen** _(betrifft: DoD für P2.4 kann nicht erfüllt werden ohne echte Schwellenwerte; Testschreiben läuft gegen Dummy-Werte; Risiko: am Freitag (M2) Test bestanden, am Montag mit realen Werten fehlgeschlagen)_
   - → Parallel zu P1: (1) Beide Vorfälle als parametrisierte pytest-Testfälle schreiben, mit Dummy-Schwellenwerten ausfüllen (z.B. über Config-Fixture). (2) assessment() als reine Funktion (ggf. mit Mock-Config) implementieren. (3) sobald G1-Finalwerte eintreffen: Config aktualisieren + Tests rerun (kein Code-Change nötig dank Parametrierbarkeit). Fail-safe-Test (Stale → GELB) ebenfalls schreiben, auch ohne finale Schwellen. Ziel: >=80% Coverage bis M2, beide VF-Tests grün.
 - **[HIGH] Betriebsmodell AE-01/AE-02 unbegründet offen, impactet NF-03/NF-07/K9** _(betrifft: Architektur-Entscheidung müsste vor M2 dokumentiert sein, um Betriebsbetrieb-szenarios (Docker, systemd, Netzwerk-Config) zu validieren)_
@@ -196,9 +199,9 @@ _CRITICAL MISALIGNMENT: G2 hat dokumentierte Architektur + klare Anforderungen, 
 - **[HIGH] G1-Schwellenwert-Finalwerte ausstehend (~2 Tage); Config-Parametrierbarkeit noch nicht implementiert** _(betrifft: Testmethodologie (Test gegen Config-Fixture vs. Hard-coded Schwellen), M2-DoD-Akzeptanz (echte vs. Dummy-Schwellen), Vertraubarkeit der Bewertungslogik)_
   - → SOFORT: (1) config/thresholds.example.json mit Dummy-Werten anlegen (aus Schwellenwerte.md §2). (2) src/config/__init__.py mit Config-Loader schreiben (YAML/JSON-Read, Fallback auf Defaults). (3) P2.4 assessment() erhält config als Argument oder liest aus sys-Config (DI-Pattern). (4) P2.6 Unit-Tests verwenden pytest.mark.parametrize über Config-Varianten (z.B. '@pytest.fixture(params=[config_dummy, config_conservative])'). Sobald G1-Werte eintreffen: config/thresholds.json aktualisieren, Tests rerun, kein Code-Änderung nötig. P4.3 (Laufzeit-UI) kann danach gebaut werden.
 - **[HIGH] Seam-Sync mit G1+G3 nicht stattgefunden (1×/Woche laut Team-Organisation, aber noch nicht durchgeführt)** _(betrifft: Kommunikations-Fehler zwischen G1/G2/G3 in der kritischsten Phase (Contract-Lock-in Woche 2))_
-  - → Lucas/Johannes müssen heute (Mo) oder spätestens Di 09:00 den Seam-Sync durchführen (virtuelles Treffen oder schriftliche Bestätigung je Gruppe). Agenda: (1) POST /readings-Payload-Felder + Formate (wer liefert ice_indicator? wie encoded precip_type?). (2) GET /assessment/current Response. (3) FA-13 Geoposition: wie und wo. Schriftliche Bestätigung per E-Mail an Architekten + GitHub-Issue labeln 'seam-sync-confirmed' oder ähnlich. Ohne Mo/Di-Bestätigung: P1.4 (Freeze) nicht möglich → M2 blockiert.
+  - → Lucas/Johannes müssen heute (Mo) oder spätestens Di 09:00 den Seam-Sync durchführen (virtuelles Treffen oder schriftliche Bestätigung je Gruppe). Agenda: (1) G1s `GET /current`-Snapshot-Felder + Formate (welche Messwerte, gemeinsamer `measured_at` in UTC, `status`-Encoding) + `GET /health`-Vertrag (200=ok/503=fault) + G2-Poll-Intervall (≤ 60 s) abstimmen. (2) GET /assessment/current Response. (3) FA-13 Geoposition: wie und wo. Schriftliche Bestätigung per E-Mail an Architekten + GitHub-Issue labeln 'seam-sync-confirmed' oder ähnlich. Ohne Mo/Di-Bestätigung: P1.4 (Freeze) nicht möglich → M2 blockiert.
 - **[HIGH] OpenAPI-Spezifikation als verbindliches Deliverable D-08 noch nicht erstellt** _(betrifft: Interop-Testing zwischen G1/G2/G3 fehlt visuelle Schnittstellen-Dokumentation, Demo-API-Docs)_
-  - → P1.2 wird zum schreiben einer OpenAPI 3.1 JSON-Datei erweitert (z.B. src/openapi.json oder docs/api-v1.json). Minimales Gerüst: (1) info{title, version}, (2) paths: /health, /readings (POST), /assessment/current (GET), /alarms (GET, T1), (3) components.schemas: Reading, Assessment, Alarm, Error. Mit FastAPI + Pydantic: `from fastapi.openapi.utils import get_openapi` in main.py, dann in P2.1 auto-generiert. Oder Redoc/SwaggerUI per `app.openapi_schema = get_openapi(...)` + `@app.get('/openapi.json')`. Bis M2 muss docs/ einen Link zu live-API enthalten (z.B. Swagger UI unter /docs).
+  - → P1.2 wird zum schreiben einer OpenAPI 3.1 JSON-Datei erweitert (z.B. src/openapi.json oder docs/api-v1.json). Minimales Gerüst: (1) info{title, version}, (2) paths (G2-Serving): /health, /assessment/current (GET), /alarms (GET, T1), /readings (GET-Historie, T1) — die G1-Naht selbst ist KEIN G2-Endpoint mehr, sondern der dokumentierte Konsum von G1s `GET /current` + `GET /health` durch den Poller. (3) components.schemas: Reading, Assessment, Alarm, Error. Mit FastAPI + Pydantic: `from fastapi.openapi.utils import get_openapi` in main.py, dann in P2.1 auto-generiert. Oder Redoc/SwaggerUI per `app.openapi_schema = get_openapi(...)` + `@app.get('/openapi.json')`. Bis M2 muss docs/ einen Link zu live-API enthalten (z.B. Swagger UI unter /docs).
 - **[HIGH] Audit-Log-Schema unspezifisch; append-only Implementierung + Feld-Liste fehlend** _(betrifft: Logging-Konsistenz, Compliance-Nachweise, forensische Analyse von Zwischenfällen)_
   - → P1.1-Erweiterung: audit_log-Schema definieren: {id, event_type: enum(reading_received, assessment_computed, alarm_raised, alarm_acknowledged, config_changed), actor: string (system|operator_id), ts: datetime_utc, reading_id: int (nullable), assessment_id: int (nullable), alarm_id: int (nullable), payload: json}. Append-only erzwingen: Datenbank-Constraint (NOT NULL, kein UPDATE), Application-seitig: nur INSERT. Aufbewahrung: 12 Monate (abgeleitet aus Entscheidungslogbuch, offen). P4.2 wird dann Implementierungsdetail.
 - **[HIGH] Fail-safe NF-01 Implementierungs-Pfad unklar: wer is responsible (Ingest vs. Storage vs. Assessment)?** _(betrifft: Fehlerbehandlungs-Logik, Testabdeckung (P2.6/P3.7), DoD-Verifikation für P3.1/P3.2)_
@@ -223,7 +226,7 @@ _KRITISCHER STAND — M2-Deadline (Ende Woche 2, ca. 2026-06-26) in 5 Tagen mit 
 - **[CRITICAL] API/Datenmodell-Naht P1 blockiert BEIDE Gruppe 1 und 3 — noch nicht eingefroriert** _(betrifft: G1 kann nicht gegen finales API-Format entwickeln; G3 kann nicht gegen finales Datenformat UI planen. Ohne P1.3-Seam-Sync (G1 + G3 bestätigen Contract) kann P1.4 nicht umgesetzt werden. P2 und alle nachfolgenden Backend-Tasks brauchen finales Datenmodell aus P1.1.)_
   - → Formale Lieferdatei: OpenAPI 3.0 YAML/JSON im Repo unter docs/api/v1/openapi.yaml (oder .json). Dies ist Teil der DEL-08 Abnahmekriterium (Prüfungsleistung).
 - **[CRITICAL] RB-01 (kein Aktor) architektonisch definiert, aber noch nicht code-reviewed** _(betrifft: Sicherheits-Compliance: Wenn ein Entwickler versehentlich einen Endpoint wie POST /runway/lock oder DELETE /restrictions schreibt, ist RB-01 verletzt. Enforcement-Hook (RB-01-Guard) ist geplant (erinnerung/stand.md), aber noch nicht aktiv. Bis dahin: manuelles Review im PR.)_
-  - → Dokumentation in README.md: Listing der erlaubten Endpoints (GET /assessment, GET /health, POST /readings, GET /alarms, POST /alarms/{id}/ack, GET /readings?from&to) mit Begründung, dass KEIN POST/DELETE für Runway/Sperrung existiert. Dies ist auch Teil der DEL-08 API-Dokumentation.
+  - → Dokumentation in README.md: Listing der erlaubten G2-Endpoints (GET /assessment/current, GET /health, GET /alarms, POST /alarms/{id}/ack, GET /readings?from&to) mit Begründung, dass KEIN POST/DELETE für Runway/Sperrung existiert. Die G1-Daten kommen per Poller (G2 = Client gegen G1s `GET /current`), nicht über einen G2-eigenen Ingest-Endpoint. Dies ist auch Teil der DEL-08 API-Dokumentation.
 - **[CRITICAL] NF-01 Fail-Safe (nie GRÜN bei Ausfall/Stale) als benannter Test noch nicht geschrieben** _(betrifft: Meilenstein M2: Wenn P2.6 (Unit-Tests ≥80% Coverage) keine Fail-Safe-Testfälle enthält, ist die Anforderung NF-01 nicht nachgewiesen. Prüfungsleistung: Ohne diese Tests können die Betreuer nicht validieren, dass das System sicherheitskritisch robust arbeitet.)_
   - → P3.7 Task parallel zu P2.6 starten und vor M2-Abschluss mergen. Verantwortung: Test & Code-Review (Mohammadi + Berger).
 - **[HIGH] Zwei Vorfall-Testfälle (FA-05 Nachvollziehbarkeit) noch nicht benannt/geschrieben** _(betrifft: Risiko: Implementierer könnte eine Logik schreiben, die 'funktioniert' (alle Tests grün) aber beide Vorfälle NICHT korrekt löst, weil die spezifischen Testfälle fehlen. Dies ist direkter Verstoß gegen FA-05 (nachvollziehbare Bewertung) und ein Risiko für das Kernziel des Projekts.)_
@@ -263,17 +266,17 @@ Dies muss im PR-Template in .github/pull_request_template.md stehen.
 _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische Pfad P1 (API/Datenmodell-Naht) MUSS sofort Montag/Dienstag abgeschlossen werden (Deadline Di Ende dieser Woche ~26.06). Lucas V. als einziger echter Backend-Dev sitzt gleichzeitig auf CTO/PM/Architekt-Rollen. P2.4 (Bewertungsmodul, Größe L, ~40-60h Schätzung) liegt kritisch auf ihm. Kein Produktionscode (src/tests/ nicht vorhanden) — Scaffolding blockiert alles und kostet 1-2 Tage. Drei parallele Engpässe: (1) API-Naht einfrieren + parallele Entwicklung ermöglichen, (2) Bewertungsmodul testen mit beiden Vorfällen + Fail-safe, (3) Ressourcen-Engpass bei Lucas. G1-Finalwerte nicht Blocker (parametrierbar bleiben), aber Drift-Risiko._
 
 - **[CRITICAL] P1 (Contract-first API/Datenmodell) liegt allein bei Lucas — 4 Tage bis Deadline** _(betrifft: P2 (Vertical Slice), P3 (T1), G1-Datenformat, G3-Frontend-Integration)_
-  - → SOFORT: Mo 09:00 — Lucas + Petzold (Pair) skizzieren Datenmodell in 2h (7 Entities, JSON-Schema). Mo 14:00 — Lucas schreibt API-Spezifikation formal (OpenAPI 3.0 YAML, <3h). Di 08:00 — Telekonferenz Seam-Sync mit G1 + G3 (1h, Lucas moderiert). Di 17:00 — P1.4 Tag + Push. NICHT warten auf G1-Finalwerte (können später als Config-Werte kommen). ENTSCHEIDUNG JETZT: Sind Niederschlag/ice_indicator PFLICHT in POST oder optional/nullable?
+  - → SOFORT: Mo 09:00 — Lucas + Petzold (Pair) skizzieren Datenmodell in 2h (6 Entities, JSON-Schema; `reading` ohne `precip_type`, `ts` = G1s `measured_at`). Mo 14:00 — Lucas schreibt API-Spezifikation formal (OpenAPI 3.0 YAML, <3h). Di 08:00 — Telekonferenz Seam-Sync mit G1 + G3 (1h, Lucas moderiert): G1s `GET /current`-Snapshot-Shape + `GET /health` abstimmen. Di 17:00 — P1.4 Tag + Push. NICHT warten auf G1-Finalwerte (können später als Config-Werte kommen). ENTSCHEIDUNG JETZT: Poll-Intervall (≤ 60 s) + welche Felder G1 im `GET /current`-Snapshot garantiert liefert (Niederschlag ist gestrichen, E-32).
 - **[CRITICAL] Kein Produktionscode vorhanden — Scaffolding (src/, tests/, config/) blockiert M2** _(betrifft: P0, P2, P3 — alle anderen Tasks sind von Ordnerstruktur abhängig)_
   - → Mo 08:00 — START: Lucas legt SOFORT die Ordnerstruktur an (15 min mit Bash). Pair mit Petzold, um pyproject.toml + FastAPI-Main aufzusetzen (45 min, einfach). Mo 09:30 — GET /health läuft, main branch wird via PR gemergt. Ab Mo 10:00 können alle anderen auf Feature-Branches gegen diese Struktur arbeiten. NICHT blockieren lassen — Scaffolding vor P1 oder parallel, nicht nach.
 - **[CRITICAL] P2.4 (Bewertungsmodul, Größe L) — Lucas als einziger Owner bei kritischem Datenmangelrisiko** _(betrifft: M2 Deliverables (DEL-09), Alarmierungslogik, Live-Demo-Credibility)_
-  - → PRIORISIERUNG: (1) Mo 10:00 (nach Scaffolding): Lucas + Petzold schreiben die reine Funktion der Bewertungslogik als isolierbares Modul assessment/core.py (Funktion evaluate_ice_risk(T_s, T_d, RH, precip) -> str). Startzeit: Mo 10:00, Ziel: Di 12:00 (Grundversion, ~6h Pair). (2) Alle Schwellen aus config/thresholds.json LADEN, nicht hardcoden. (3) Mi 08:00: Unit-Tests schreiben + beide Vorfälle als Testfälle. (4) Mi 17:00: Code-Review mit Arezo + Amelie (Test-Team). FEHLER VERMEIDEN: wenn T_s = -2.1 und RH=92%, MUSS result=yellow sein (nicht orange). Wenn T_s < 0 und T_d < T_s, MUSS result=orange/rot sein. Testfälle sind nicht optional.
+  - → PRIORISIERUNG: (1) Mo 10:00 (nach Scaffolding): Lucas + Petzold schreiben die reine Funktion der Bewertungslogik als isolierbares Modul assessment/core.py (Funktion evaluate_ice_risk(T_s, T_d, RH) -> str; 3-Faktor, kein Niederschlag-Argument). Startzeit: Mo 10:00, Ziel: Di 12:00 (Grundversion, ~6h Pair). (2) Alle Schwellen aus config/thresholds.json LADEN, nicht hardcoden. (3) Mi 08:00: Unit-Tests schreiben + beide Vorfälle als Testfälle. (4) Mi 17:00: Code-Review mit Arezo + Amelie (Test-Team). FEHLER VERMEIDEN: wenn T_s = -2.1 bei trockener Oberfläche (ΔT > 1,0 °C, auch bei 92 % Luftfeuchte), MUSS result=yellow sein (nicht orange) — Luft-RH triggert keine Feuchte mehr (E-33). Wenn T_s ≤ 0 und ΔT ≤ 0, MUSS result=rot sein. Testfälle sind nicht optional.
 - **[CRITICAL] Lucas-Bottleneck: CTO/PM/Systemarchitekt + einziger echter Backend-Dev in einer Person** _(betrifft: Alle kritischen Pfad-Tasks, Risiko für Ausfallkatastrophe bei Lucas' Krankheit/Überlastung)_
   - → RESSOURCEN-UMLENKUNG: (1) Petzold übernimmt P2.2 (Repository-Pattern, DB-Schema) + P3.1/P3.2 (Stale/Defekt-Erkennung) — das sind Backend-intensive aber von Bewertungslogik unabhängig. (2) Hartling + Ganter: NICHT auf kritischem Pfad. Ihnen geben: P3.4 (GET /alarms einfacher Endpoint, 2h), P3.5 (restliche Messgrößen, 3h), P4.4 (Historie-Endpoint, 2h). (3) Lucas fokussiert: SOFORT P0.2 (Scaffolding, 3h), dann P1.1–P1.4 (15h Mo/Di), dann P2.4 (40h Mi/Do/Fr und übers Wochenende). (4) TEST-TEAM (Arezo, Amelie): nicht idle rumstehen — sie schreiben Testfälle parallel zu Implementierung (P2.6, P3.6, P3.7 können concurrent laufen sobald Code da ist).
 - **[HIGH] Seam-Sync mit G1 + G3 nicht durchgeführt — API-Payload-Variationen sind offen** _(betrifft: P1.3, P2.1 (Ingest), P2.5 (GET /assessment), P5.1 (G1-Integration), P5.2 (G3-Integration))_
-  - → Di 08:00–09:00 Konferenz mit allen 3 Gruppen: Lucas (G2), G1-Lead, G3-Lead (30 min pro Seite). Agenda: (1) POST /readings-Payload finalisieren (Pflichtfelder vs. optional, Datentypen, Constraints). (2) GET /assessment/current Antwort-Format (welche Felder müssen dabei sein?). (3) Messintervall + Stale-Timeout absprechen. (4) Commitment: G1 sagt 'wir liefern X bis Freitag', G3 sagt 'wir konsumieren Y bis Montag Woche 3'. ENTSCHEIDUNG-PROTOKOLL ins Entscheidungslogbuch.
+  - → Di 08:00–09:00 Konferenz mit allen 3 Gruppen: Lucas (G2), G1-Lead, G3-Lead (30 min pro Seite). Agenda: (1) G1s `GET /current`-Snapshot finalisieren (garantierte Felder, gemeinsamer `measured_at` in UTC, `status`-Encoding, Constraints) + `GET /health`-Vertrag. (2) GET /assessment/current Antwort-Format (welche Felder müssen dabei sein?). (3) G2-Poll-Intervall (≤ 60 s) + Stale-Timeout absprechen. (4) Commitment: G1 sagt 'unser `GET /current` ist ab X stabil', G3 sagt 'wir konsumieren Y bis Montag Woche 3'. ENTSCHEIDUNG-PROTOKOLL ins Entscheidungslogbuch.
 - **[HIGH] G1-Finalwerte (~2 Tage ausstehend) — Parametrierbarkeit ist Bedingung, nicht Lösung** _(betrifft: P2.4 (Bewertungslogik), P4.3 (Config-Endpoint T2), Live-Demo-Zuverlässigkeit)_
-  - → (1) JETZT Architektur-Design: Config-Layer muss zuerst kommen. Schwellenwerte.md definiert: welche 15–20 Parameter sind konfigurierbar (T_s_gruen_min, RH_feucht_schwelle, stale_timeout_s, etc.). (2) Implementierung: assessment/core.py NUR reine Funktion mit Parametern. Alle Schwelle-Laden-Logik in config/loader.py. (3) Fallback: config/thresholds.json hat hardcodierte Dummies. (4) STRENGE Regel: jede Schwelle muss als Konstante oder ENV-Var referenzierbar sein, NICHT als Literal. Code-Review-Gate: Search for '> 1.0' oder '0.0 °C' Strings wird REJECTED.
+  - → (1) JETZT Architektur-Design: Config-Layer muss zuerst kommen. Schwellenwerte.md definiert: welche 15–20 Parameter sind konfigurierbar (T_s_gruen_min, delta_T_feucht [ΔT-Oberflächenfeuchte-Schwelle ≤ 1,0 °C; kein Luft-RH-Parameter mehr, E-33], stale_timeout_s, etc.). (2) Implementierung: assessment/core.py NUR reine Funktion mit Parametern. Alle Schwelle-Laden-Logik in config/loader.py. (3) Fallback: config/thresholds.json hat hardcodierte Dummies. (4) STRENGE Regel: jede Schwelle muss als Konstante oder ENV-Var referenzierbar sein, NICHT als Literal. Code-Review-Gate: Search for '> 1.0' oder '0.0 °C' Strings wird REJECTED.
 - **[HIGH] Definition-of-Ready fehlende Klarheit — Task-Abhängigkeitsmatrix nicht explizit** _(betrifft: Jira-Backlog-Synchronisierung, Parallelisierungspotential, Task-Zuordnung)_
   - → Heute Montag 11:00: Lucas + Petzold zeichnen eine 2D-Matrix (Task × Zeit in Stunden) auf, mit expliziten Abhängigkeiten. Beispiel: [P0.2: 3h, P0.3: 2h, P1.1: 6h parallel zu P0.2, P1.2: 4h nach P1.1, etc.]. Diese Matrix wir ins Jira übertragen (Sprints für Woche 2). So wird klar: Welche Tasks können Di parallel laufen während Lucas an P1 arbeitet? (Antwort: Petzold P2.2, Hartling/Ganter andere Dinge — aber NICHT ohne klare Abhängigkeitsauflösung). ARBEITSPRODUKT: einfaches CSV oder ASCII-Art-Diagram in 02-Arbeitsdokumente/.
 - **[HIGH] Keine CI/CD-Pipeline (.github/workflows/) — Tests müssen manuell geprüft werden** _(betrifft: Code-Quality, Merge-Safety, M2-Deliverable-Stabilität)_
@@ -384,21 +387,22 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Story · Highest · M
 - **Owner (Empfehlung):** Lucas Voehringer (Systemarchitekt)
 - **Abhängig von:** P1.1
-- **Beschreibung:** Schreibe formale OpenAPI 3.0 Spezifikation (YAML/JSON) mit Endpoints: POST /readings, GET /assessment/current, GET /health, GET /alarms (T1), GET /readings (T1), POST /alarms/{id}/ack (T2). Request/Response-Formate, Error-Codes, Versionierung-Strategie.
+- **Beschreibung:** Schreibe formale OpenAPI 3.0 Spezifikation (YAML/JSON) der **G2-Serving-Endpoints**: GET /assessment/current, GET /health, GET /alarms (T1), GET /readings (T1, Historie), POST /alarms/{id}/ack (T2). Request/Response-Formate, Error-Codes, Versionierung-Strategie. **Zusätzlich** den konsumierten **G1-Vertrag dokumentieren** (kein G2-Endpoint): erwartetes Schema von G1s `GET /current` (Snapshot + gemeinsamer `measured_at`) + `GET /health`, gegen das der Poller (P2.1) baut.
 - **DoD:**
-  - docs/api/v1/openapi.yaml oder openapi.json vorhanden (≥15 Operationen)
+  - docs/api/v1/openapi.yaml oder openapi.json vorhanden (≥15 Operationen, G2-Serving)
   - FastAPI auto-generiert /docs (Swagger UI) + /redoc korrekt
-  - Endpoint-Deckung: min. POST /readings, GET /assessment/current, GET /health
-  - Fehlerbehandlung (400 BadRequest, 503 ServiceUnavailable bei Stale) dokumentiert
+  - Endpoint-Deckung: min. GET /assessment/current, GET /health, GET /alarms
+  - G1-Naht dokumentiert: erwartetes `GET /current`-Snapshot-Schema + `GET /health` (Client-Sicht), gegen das der Poller validiert
+  - Fehlerbehandlung (400 BadRequest, 503 ServiceUnavailable bei Stale/G1-Ausfall) dokumentiert
 
 #### P1.3: Seam-Sync mit G1+G3 durchführen
 - **Typ / Prio / Schätzung:** Story · Highest · M
 - **Owner (Empfehlung):** Lucas Voehringer (G2 Moderator)
 - **Abhängig von:** P1.2
-- **Beschreibung:** Synchronisationstermin Montag 10:00 oder Di 08:00 mit G1-Lead + G3-Lead. Abstimmung: (1) POST /readings Payload-Felder + Datentypen (wer liefert ice_indicator? wie encoded precip_type?), (2) GET /assessment/current Response-Format, (3) Messintervall + Stale-Timeout, (4) Geoposition (FA-13). Schriftliche Bestätigung von beiden Gruppen.
+- **Beschreibung:** Synchronisationstermin Montag 10:00 oder Di 08:00 mit G1-Lead + G3-Lead. Abstimmung: (1) G1s `GET /current`-Snapshot-Felder + Datentypen (welche Messwerte garantiert, gemeinsamer `measured_at` in UTC, `status`-Encoding) + `GET /health`-Vertrag + G2-Poll-Intervall (≤ 60 s), (2) GET /assessment/current Response-Format, (3) Messintervall + Stale-Timeout, (4) Geoposition (FA-13). Schriftliche Bestätigung von beiden Gruppen.
 - **DoD:**
   - Termin mit G1+G3 durchgeführt (Konferenz oder async schriftlich)
-  - Geklärt: POST-Payload Felder/Typen, GET-Response Format
+  - Geklärt: G1s `GET /current`-Snapshot-Felder/Typen + `measured_at` + `GET /health`, GET-Response Format, G2-Poll-Intervall
   - G1 + G3 unterschreiben Bestätigung per E-Mail oder GitHub-Issue mit Label 'seam-sync-confirmed'
   - Entscheidungslog-Eintrag: AE-03 'API-Versioning Strategie' + Final-Zielwerte für NF-02 (Messintervall)
 
@@ -410,27 +414,29 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Beschreibung:** Tag Contract v1 in Git (z.B. git tag api-v1.0 + PR-Merge auf main). Versand an G1 + G3 mit Zusammenfassung der gesammelten API-Payload-Formate.
 - **DoD:**
   - Git-Tag 'api-v1.0' + 'P1.4' Commit vorhanden
-  - docs/API_FROZEN_v1.md (oder Ticket-Kommentar) mit Summary: POST /readings fields, GET /assessment/current format, Messintervall, Versionierung
+  - docs/API_FROZEN_v1.md (oder Ticket-Kommentar) mit Summary: G1 `GET /current`-Snapshot-Felder (Client-Konsum) + `GET /health`, GET /assessment/current format, Poll-Intervall, Versionierung
   - E-Mail an G1/G3 mit Link zu openapi.yaml
 
 ---
 
 ### E-03 T0 Vertical Slice (Ingest → Bewertung → API)  ·  M2
 
-**Ziel:** Funktionsfähiger T0-Stack: POST /readings → Persistenz → Bewertung → GET /assessment/current mit ≥80% Coverage + beide Vorfälle grün.
+**Ziel:** Funktionsfähiger T0-Stack: Poller (G1 `GET /current`) → Validierung → Persistenz → Bewertung → GET /assessment/current mit ≥80% Coverage + beide Vorfälle grün.
 
 **Anforderungen:** FA-01, FA-03, FA-05, FA-09
 
-#### P2.1: POST /readings Endpoint + Eingangsvalidierung
+#### P2.1: Poller-Client gegen G1 `GET /current` + Eingangsvalidierung
 - **Typ / Prio / Schätzung:** Story · Highest · M
-- **Owner (Empfehlung):** Hartling oder Ganter (abgegrenzte Task unter Anleitung)
+- **Owner (Empfehlung):** Arash Sarkhab (Backend-Developer) — NICHT Hartling/Ganter (vgl. Owner-Korrektur §1)
 - **Anforderungen:** FA-Schnittstellen
 - **Abhängig von:** P1.4, P2.2
-- **Beschreibung:** Implementiere FastAPI Endpoint POST /readings, die eine Reading-Payload empfängt (sensor_id, ts, T_s, T_a, RH, Druck, Niederschlag). Validierung: Bereichscheck (T_s -40..+60, RH 0..100), Pflichtfelder. Speichern via Repository.save_reading(). HTTP 201 + reading-ID.
+- **Beschreibung:** Implementiere einen **Poller/HTTP-Client**, der G1s `GET /current` in einem selbst bestimmten Intervall (≤ 60 s) abruft (EIN Snapshot aller Messwerte + gemeinsamer `measured_at`, UTC) und `GET /health` als Erreichbarkeits-Check nutzt. Empfangene Felder: sensor_id, measured_at, surface_temp_c (T_s), air_temp_c (T_a), humidity_pct (= **Luftfeuchte RH**, nur Input für T_d via Magnus — **kein** separater Oberflächenfeuchte-Wert nötig, E-33), pressure_hpa (Druck) — **kein** precip_type (E-32). Validierung: Bereichscheck (T_s -40..+60, RH 0..100), Pflichtfelder, Stale (`measured_at` älter als 3 × Intervall / > 180 s) und Erreichbarkeit (`/health`/Timeout) **getrennt** prüfen. Persistieren via Repository.save_reading() mit `ts` = G1s `measured_at`.
 - **DoD:**
-  - POST /readings akzeptiert valides JSON, speichert persistiert via Repository, gibt 201 + reading_id zurück
-  - Ungültige Einträge (Out-of-Range, fehlende Felder) → 400 BadRequest mit Fehlermeldung
-  - Swagger-Docs (/docs) zeigt Endpoint + Beispiel-Payload
+  - Poller ruft G1 `GET /current` zyklisch (≤ 60 s) ab; gültiger Snapshot → persistiert via Repository
+  - `GET /health`/Timeout-Behandlung: G1 nicht erreichbar → kein Absturz, sicherer Zustand (nie GRÜN), Log
+  - Ungültige Snapshot-Werte (Out-of-Range, fehlende Felder) → verworfen/markiert + Fehler-Log (kein stiller Ausfall)
+  - Stale-Erkennung über `measured_at` (getrennt von Erreichbarkeit) greift
+  - Unit-Test: Poller gegen gemockten G1-`GET /current` (httpx-Mock) speichert korrekt
 
 #### P2.2: Persistenz (Repository-Pattern)
 - **Typ / Prio / Schätzung:** Story · High · M
@@ -458,9 +464,9 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Owner (Empfehlung):** Lucas Voehringer (Backend+Architekt, DRI kritischer Pfad)
 - **Anforderungen:** FA Risikobewertung, Schwellenwerte.md §2
 - **Abhängig von:** P2.3, P0.5 (Config-Infrastruktur: config/thresholds.json + loader, E-09; ENABLER, M1) — NICHT der Laufzeit-Endpunkt P4.3
-- **Beschreibung:** Implementiere Vereisungslogik aus Schwellenwerte.md §2: 4 Stufen (GRÜN/GELB/ORANGE/ROT) basierend auf T_s, T_d, RH, Niederschlag. Hysterese + Entprellung. KRITISCH: beide Vorfälle (−2,1 °C trocken→GELB; +1,2 °C Luft, T_s<0→ROT) als benannte grüne Testfälle. Schwellen aus config/ laden, keine Hardcodes. Reine Funktion (testbar). Coverage ≥80%.
+- **Beschreibung:** Implementiere Vereisungslogik aus Schwellenwerte.md §2: 4 Stufen (GRÜN/GELB/ORANGE/ROT) **3-Faktor** basierend auf T_s (Oberflächentemp), ΔT (Taupunkt-Abstand) und RH (Luftfeuchte, nur T_d-Input) — **kein Niederschlag** (E-32). ROT := T_s ≤ 0 °C UND ΔT ≤ 0 °C; 'Feuchte vorhanden' := ΔT (T_s − T_d) ≤ 1,0 °C — an die **Oberfläche** gebunden (Nähe zum Taupunkt). Der frühere Luft-RH-Trigger (`RH ≥ 90 %`) ist **komplett entfernt** (E-33), weil Luftfeuchte nichts über die Oberfläche aussagt; T_a/RH fließen nur **indirekt** über T_d (Magnus) in ΔT ein. Hysterese + Entprellung. KRITISCH: beide Vorfälle (−2,1 °C, 92 % Luftfeuchte bei trockener Oberfläche → ΔT > 1,0 → **GELB**, NICHT ORANGE; +1,2 °C Luft, T_s<0, ΔT≤0→ROT) als benannte grüne Testfälle. Schwellen aus config/ laden, keine Hardcodes. Reine Funktion (testbar). Coverage ≥80%.
 - **DoD:**
-  - Reine Funktion assess_ice_risk(T_s, T_d, RH, precip_type, config) → Assessment in src/assessment/core.py
+  - Reine Funktion assess_ice_risk(T_s, T_d, RH, config) → Assessment in src/assessment/core.py (3-Faktor, kein precip_type-Argument; RH = Luftfeuchte nur als T_d-Input, kein direkter Feuchte-Trigger)
   - Config-Loader lädt thresholds aus config/thresholds.json (YAML oder JSON mit Dummy-Werten)
   - Test-Suite mit ≥15 Testfällen inkl. test_vorfall_1_false_alarm_dry_cold() + test_vorfall_2_ice_at_positive_air_temp()
   - Hysterese/On-Delay (60s) + Rückstufungs-Stabilität (5min) implementiert
@@ -481,10 +487,10 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Owner (Empfehlung):** Mohammadi oder Berger (Test & QA), mit Lucas Code-Input
 - **Anforderungen:** NF-01
 - **Abhängig von:** P2.4, P3.1, P3.2
-- **Beschreibung:** Schreibe umfassende Unit-Tests für assessment/core.py: ≥15 Test-Cases inkl. (1) Vorfall 1 (−2,1 °C, trocken → GELB), (2) Vorfall 2 (+1,2 °C Luft, T_s<0 → ROT), (3) Grenzfälle (T_s=0°C, RH=90%, ΔT=0), (4) Hysterese-Schaltungen, (5) Fail-safe (Stale/Defekt → GELB/rot). pytest --cov ≥80%.
+- **Beschreibung:** Schreibe umfassende Unit-Tests für assessment/core.py: ≥15 Test-Cases inkl. (1) Vorfall 1 (−2,1 °C, 92 % Luftfeuchte bei trockener Oberfläche → ΔT > 1,0 → GELB, NICHT ORANGE; Luft-RH triggert bewusst keine Feuchte mehr, E-33), (2) Vorfall 2 (+1,2 °C Luft, T_s<0, ΔT≤0 → ROT), (3) Grenzfälle (T_s=0°C, ΔT=1,0 °C als Feuchte-Schwelle, ΔT=0), (4) Hysterese-Schaltungen, (5) Fail-safe (Stale/Defekt → GELB/rot). pytest --cov ≥80%.
 - **DoD:**
   - tests/test_assessment_core.py mit ≥15 Testfällen
-  - test_vorfall_1_false_alarm_dry_cold() grün
+  - test_vorfall_1_false_alarm_dry_cold() grün — Erwartung GELB über ΔT > 1,0 (nicht über Luft-RH)
   - test_vorfall_2_ice_at_positive_air_temp() grün
   - pytest --cov=src/assessment --cov-report=term-missing → ≥80%
   - Alle Tests grün vor PR-Merge
@@ -552,25 +558,25 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
   - Pagination ?limit=10 &offset=0
   - Swagger-Docs zeigt Endpoint
 
-#### P3.5: Restliche Messgrößen aufnehmen (RH, Druck, Niederschlag)
+#### P3.5: Restliche Messgrößen aufnehmen (RH, Druck)
 - **Typ / Prio / Schätzung:** Task · Medium · S
 - **Owner (Empfehlung):** Backend-Dev (Hartling/Ganter)
 - **Abhängig von:** P2.1
-- **Beschreibung:** Erweitere POST /readings + Reading-Entität um alle Messgrößen: relative_humidity, pressure_hpa, precip_type (string enum: none/rain/freezing_rain/snow/sleet). Validierung + Persistenz. Bereits teilweise in P2.1 vorhanden, jetzt komplett.
+- **Beschreibung:** Erweitere den Poller-Mapper + Reading-Entität um alle aus G1s `GET /current`-Snapshot gelieferten Messgrößen: humidity_pct (= Luftfeuchte RH, nur T_d-Input via Magnus — kein direkter Feuchte-Trigger, E-33), pressure_hpa (air_temp_c bereits in P2.1). **Kein** precip_type (E-32). Validierung + Persistenz. Bereits teilweise in P2.1 vorhanden, jetzt komplett.
 - **DoD:**
-  - Reading-Pydantic-Schema erweitert: humidity_pct, pressure_hpa, precip_type
-  - Validierung: RH 0..100, Druck 300..1100 hPa, precip_type enum
+  - Reading-Pydantic-Schema erweitert: humidity_pct, pressure_hpa (kein precip_type)
+  - Validierung: RH 0..100, Druck 300..1100 hPa
   - Unit-Tests: test_reading_with_all_fields()
 
 #### P3.6: Integrationstest Ingest→Bewertung→API
 - **Typ / Prio / Schätzung:** Story · High · M
 - **Owner (Empfehlung):** Mohammadi oder Berger (Test & QA)
 - **Abhängig von:** P2.5, P3.3
-- **Beschreibung:** Schreibe Integrationstests: POST /readings mit realistische Daten (z.B. Vorfall 1, Vorfall 2, Normalbedingungen) → GET /assessment/current → prüfe risk_level + driving_factor. End-to-End-Verifikation ohne Mocks.
+- **Beschreibung:** Schreibe Integrationstests: gemockter G1-`GET /current`-Snapshot mit realistischen Daten (z.B. Vorfall 1, Vorfall 2, Normalbedingungen) → Poller verarbeitet → GET /assessment/current → prüfe risk_level + driving_factor. End-to-End-Verifikation; G1-HTTP gegen einen lokalen Stub/Mock, der Rest ohne Mocks.
 - **DoD:**
   - tests/test_integration_e2e.py mit ≥5 Integrationstests
   - Test-Datensätze: Vorfall 1 (-2.1°C, dry), Vorfall 2 (+1.2°C, Oberfläche<0), Green (T_s>1°C)
-  - POST /readings → GET /assessment/current → Assertion risk_level korrekt
+  - G1-`GET /current`-Stub → Poller → GET /assessment/current → Assertion risk_level korrekt
   - Coverage integriert in --cov Report
 
 ---
@@ -587,7 +593,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Owner (Empfehlung):** Petzold oder Backend-Dev
 - **Anforderungen:** NF-05, FA-11
 - **Abhängig von:** P2.4
-- **Beschreibung:** Implementiere Config-Loading + -Endpoint. YAML/JSON (config/thresholds.json) mit allen Schwellen (T_s_green, T_s_orange, T_s_red, RH_feucht, stale_timeout_s, etc.). GET /config, POST /config/{param}=value (authentifiziert, T3). Keine Hardcodes in Code.
+- **Beschreibung:** Implementiere Config-Loading + -Endpoint. YAML/JSON (config/thresholds.json) mit allen Schwellen (T_s_green, T_s_orange, T_s_red, delta_T_feucht [Oberflächenfeuchte-Schwelle ΔT ≤ 1,0 °C; **kein** Luft-RH-Parameter, E-33], stale_timeout_s, etc.). GET /config, POST /config/{param}=value (authentifiziert, T3). Keine Hardcodes in Code.
 - **DoD:**
   - config/thresholds.json mit ≥15 Schwellen-Parametern
   - src/config/loader.py liest config zur Startup
@@ -655,10 +661,10 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Story · High · M
 - **Owner (Empfehlung):** Lucas Voehringer (Architekt + Backend, koordiniert mit G1-Lead)
 - **Abhängig von:** P3.7, P4.3
-- **Beschreibung:** Integriere Backend mit G1-Datenstrom. POST /readings mit realen oder simulierten Messwerten, durchlauf komplette Pipeline (Validierung → Bewertung → Alarm). Teste beide Vorfälle + Normalfall. Live-Demo möglich.
+- **Beschreibung:** Integriere Backend mit G1-Datenstrom. Poller zieht reale oder simulierte Messwerte aus G1s `GET /current`, durchlauf komplette Pipeline (Validierung → Bewertung → Alarm). Teste beide Vorfälle + Normalfall. Live-Demo möglich.
 - **DoD:**
-  - G1-Schnittstelle (POST /readings) angebunden
-  - ≥10 Messwerte pro Scenario (Vorfall 1, Vorfall 2, Normalbedingungen) fließen E2E
+  - G1-Schnittstelle (Poller gegen G1 `GET /current` + `GET /health`) angebunden
+  - ≥10 Snapshots pro Scenario (Vorfall 1, Vorfall 2, Normalbedingungen) fließen E2E
   - Logs zeigen jede Stage (Ingest → Bewertung → Alarm)
   - Live-Demo funzioniert
 
@@ -702,7 +708,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Story · High · M
 - **Owner (Empfehlung):** Reisi + Ilchyshyn (Doku) + alle
 - **Abhängig von:** P5.1, P5.2, P5.3
-- **Beschreibung:** Bereite Live-Demo vor: (1) POST /readings mit Testdaten (beide Vorfälle), (2) GET /assessment/current zeigt Bewertung, (3) Frontend (G3) zeigt Visualisierung, (4) Alarm-Quittierung. Schreibe Demo-Skript (Abläufe, Timing, fallback-Szenarien).
+- **Beschreibung:** Bereite Live-Demo vor: (1) G1-`GET /current`-Stub liefert Testdaten (beide Vorfälle), Poller zieht sie, (2) GET /assessment/current zeigt Bewertung, (3) Frontend (G3) zeigt Visualisierung, (4) Alarm-Quittierung. Schreibe Demo-Skript (Abläufe, Timing, fallback-Szenarien).
 - **DoD:**
   - Demo-Skript in docs/DEMO_SCRIPT.md: Schritte, erwartete Outputs, Timing
   - Live-Demo läuft ohne Fehler (≥2 volle Durchläufe getestet)
@@ -732,7 +738,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Task · Highest · M
 - **Owner (Empfehlung):** Petzold oder Backend-Dev
 - **Abhängig von:** P0.2
-- **Beschreibung:** Erstelle config/thresholds.json mit Dummy-Werten (aus Schwellenwerte.md §2): T_s_gruen, T_s_orange, T_s_red, RH_feucht, Delta_T_feucht, stale_timeout_s, flatline_min_minutes, jump_threshold_c_per_min, on_delay_s, hold_min_minutes. Loader in src/config/loader.py liest YAML/JSON + gibt Config-Objekt zurück.
+- **Beschreibung:** Erstelle config/thresholds.json mit Dummy-Werten (aus Schwellenwerte.md §2): T_s_gruen, T_s_orange, T_s_red, Delta_T_feucht (Oberflächenfeuchte-Schwelle ΔT ≤ 1,0 °C; **kein** Luft-RH-Feuchte-Parameter mehr, E-33), stale_timeout_s, flatline_min_minutes, jump_threshold_c_per_min, on_delay_s, hold_min_minutes. Loader in src/config/loader.py liest YAML/JSON + gibt Config-Objekt zurück.
 - **DoD:**
   - config/thresholds.json YAML oder JSON mit ≥15 Schwellen-Parametern
   - src/config/loader.py mit load_config() → ConfigModel Pydantic
@@ -743,10 +749,10 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Task · High · S
 - **Owner (Empfehlung):** Petzold
 - **Abhängig von:** P0.4
-- **Beschreibung:** Schreibe Pre-Commit-Hook oder GitHub-Action, die auf Literal-Schwellen in Code prüft. Regex: keine Strings wie '> 1.0', '< 0.0', 'RH >= 90' ohne config-Referenz. Warnung im PR-Template: 'Bitte keine Hard-codierten Schwellen verwenden'.
+- **Beschreibung:** Schreibe Pre-Commit-Hook oder GitHub-Action, die auf Literal-Schwellen in Code prüft. Regex: keine Strings wie '> 1.0', '< 0.0', 'delta_t <= 1' (ΔT-Feuchteschwelle) ohne config-Referenz. Warnung im PR-Template: 'Bitte keine Hard-codierten Schwellen verwenden'.
 - **DoD:**
   - Pre-Commit-Hook oder GitHub-Action .github/workflows/lint-config.yml vorhanden
-  - Hook prüft auf verdächtige Strings ('>\s*[0-9.]', 'RH\s*[>|<]')
+  - Hook prüft auf verdächtige Strings ('>\s*[0-9.]', 'delta_?t\s*[<>]', 'T_s\s*[<>]')
   - PR-Template warnt: 'Schwellenwerte immer über config/ laden'
 
 ---
@@ -782,7 +788,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 
 #### P0.5: Config-Grundstruktur anlegen (thresholds.json + loader.py)  ·  [E-07-Config]  ·  M2 (Voraussetzung fuer P2.4, Woche 2 Mo/Di)
 - **Owner (Empfehlung):** Petzold (mittel, kann eigenstaendig, entlastet Lucas-Engpass)
-- **Beschreibung:** Erstelle config/thresholds.json mit Dummy-Schwellenwerten aus Schwellenwerte.md §2 (T_s_gruen=1.0, T_s_orange=0.0, RH_feucht=90.0, delta_T_feucht=1.0, stale_timeout_s=180, on_delay_s=60, hold_min_minutes=5, flatline_min_minutes=15, jump_threshold_c_per_min=5.0). Implementiere src/config/loader.py mit load_config() -> ConfigModel (Pydantic). Dies ist ENABLER fuer P2.4 — assessment() darf keine Hardcodes enthalten. Muss VOR P2.4 abgeschlossen sein.
+- **Beschreibung:** Erstelle config/thresholds.json mit Dummy-Schwellenwerten aus Schwellenwerte.md §2 (T_s_gruen=1.0, T_s_orange=0.0, delta_T_feucht=1.0 [Oberflächenfeuchte-Schwelle ΔT ≤ 1,0 °C; **kein** RH_feucht/Luft-RH-Parameter mehr, E-33], stale_timeout_s=180, on_delay_s=60, hold_min_minutes=5, flatline_min_minutes=15, jump_threshold_c_per_min=5.0). Implementiere src/config/loader.py mit load_config() -> ConfigModel (Pydantic). Dies ist ENABLER fuer P2.4 — assessment() darf keine Hardcodes enthalten. Muss VOR P2.4 abgeschlossen sein.
 - **DoD:**
   - config/thresholds.json mit mindestens 10 Parametern aus Schwellenwerte.md §2 vorhanden
   - src/config/loader.py mit load_config() -> ConfigModel (Pydantic BaseModel)

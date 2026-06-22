@@ -21,10 +21,9 @@
 |---|---|---|---|
 | **T_s** | Oberflächentemperatur | Sensor (primär) | °C |
 | T_a | Lufttemperatur | Sensor (Kontext) | °C |
-| RH | relative Luftfeuchte | Sensor | % |
+| RH | relative **Luft**feuchte (Kontext + Input für T_d; **keine** direkte Entscheidungsgröße) | Sensor | % |
 | **T_d** | Taupunkt | **berechnet** (Magnus aus T_a, RH) | °C |
 | **ΔT** | Taupunkt-Abstand = T_s − T_d | berechnet | K |
-| Niederschlag | vorhanden? + Art (Regen/gefrierend/Schnee/Graupel) | Sensor / Sim | — |
 | p | Luftdruck (Tendenz) | Sensor | hPa |
 
 > Taupunkt T_d = Magnus-Formel (a=17,62; b=243,12 °C). ΔT ≤ 0 ⇒ Oberfläche unter Taupunkt ⇒ Kondensation/Reif.
@@ -36,15 +35,19 @@
 | 🟢 **GRÜN** | `T_s > +1,0 °C` | kein Vereisungsrisiko | nur Anzeige |
 | 🟡 **GELB** | `T_s ≤ +1,0 °C` **und** *keine* Feuchte¹ — **ODER** Prognose: `T_s ≤ 0 °C` in ≤ 30 min | kalte/grenzwertige, aber trockene Oberfläche → beobachten / Vorwarnung | Vorwarnung anzeigen |
 | 🟠 **ORANGE** | `T_s ≤ 0,0 °C` **und** Feuchte vorhanden¹ | Vereisung **wahrscheinlich** | Warnung (optisch **+** akustisch) |
-| 🔴 **ROT** | `T_s ≤ 0,0 °C` **und** (gefrierender Niederschlag **oder** `ΔT ≤ 0 °C`) | **aktive Eisbildung / Glatteis** | Alarm höchster Prio, **Quittierung erforderlich** |
+| 🔴 **ROT** | `T_s ≤ 0,0 °C` **und** `ΔT ≤ 0 °C` | **aktive Eisbildung / Glatteis** (Oberfläche unter Taupunkt → Reif/Glatteis) | Alarm höchster Prio, **Quittierung erforderlich** |
 
-¹ **„Feuchte vorhanden"** := `RH ≥ 90 %` **oder** `ΔT (T_s − T_d) ≤ 1,0 °C` **oder** Niederschlag detektiert.
+¹ **„Feuchte vorhanden"** := `ΔT (T_s − T_d) ≤ 1,0 °C` (Oberfläche nahe/unter Taupunkt). **Luft-`RH` allein
+triggert keine Feuchte** — sie sagt nichts über die *Oberfläche* (Vorfall 1: 92 % Luftfeuchte bei trockener
+Oberfläche → kein Eis); `T_a`/`RH` fließen nur über den Taupunkt `T_d` in `ΔT` ein. *(Luft-RH-Schwelle entfernt → E-33.)*
 
 **Entprellung/Hysterese (ISA-18.2, gegen Chattering):** Hochstufung nach `On-Delay ≥ 60 s` Bedingung erfüllt.
 Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist **und** für `≥ 5 min` stabil.
 
 > **Beide Vorfälle korrekt aufgelöst:**
-> - Vorfall 1 (−2,1 °C, **trocken**): `T_s ≤ 0`, aber keine Feuchte → **GELB** (kein Alarm) → Fehlalarm vermieden.
+> - Vorfall 1 (−2,1 °C Luft, 92 % **Luft**feuchte, **trockene Oberfläche**): `T_s ≤ 0`, aber `ΔT > 1,0`
+>   (Oberfläche weit über Taupunkt) → **keine** Oberflächenfeuchte → **GELB** → Fehlalarm vermieden.
+>   *(Luft-RH 92 % triggert bewusst NICHT — der frühere `RH ≥ 90 %`-Term hätte hier fälschlich ORANGE erzeugt; entfernt → E-33.)*
 > - Vorfall 2 (+1,2 °C Luft, **Oberfläche < 0 °C**, Reif): über `T_s` erfasst → **ORANGE/ROT** → Vereisung erkannt.
 
 ## 3. Kalibriervorgabe Sensorik (Mess-Schwellen je Größe)
@@ -56,7 +59,6 @@ Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist 
 | Rel. Feuchte RH | 0 … 100 % | ±3 % RH | 0,1 % | ≤ 60 s | Kombisensor (SHT31/BME280) |
 | Taupunkt T_d | (berechnet) | aus T_a + RH (Magnus) | 0,1 °C | — | kein eigener Sensor |
 | Luftdruck p | 300 … 1100 hPa | Tendenz ±0,12 hPa | 0,1 hPa | ≤ 60 s | nur Prognose (Tendenz), nicht QNH |
-| Niederschlag/-art | ja/nein + Typ | zuverlässige Detektion | — | ≤ 60 s | Present-Weather-/Regendetektor; im Prototyp ggf. simuliert |
 
 **Datenstatus-Schwellen (FA „veraltete Daten erkennen" / „defekte Sensoren erkennen"):**
 - **Veraltet (stale):** letzter Messwert älter als `3 × Intervall` (> 180 s bei 60 s) → Status „veraltet";
@@ -69,14 +71,12 @@ Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist 
 | Funktionale Anforderung | Schwellwert / Parameter (Startwert) |
 |---|---|
 | Temperatur | Entscheidungsgrenze **T_s = 0 °C**; T_s/T_a-Bereiche s. §3 |
-| Feuchtigkeit | `RH ≥ 90 %` = „feucht"; Genauigkeit ±3 % |
-| Niederschlag | Detektion ja/nein; jede Detektion hebt Stufe an |
+| Feuchtigkeit | Entscheidung über **Oberflächennähe zum Taupunkt** (`ΔT ≤ 1,0 °C`); Luft-`RH` nur T_d-Input (Genauigkeit ±3 %) |
 | Taupunkt | Magnus(T_a, RH); `ΔT ≤ 1 °C` = feucht, `ΔT ≤ 0 °C` = Kondensation/Reif |
 | Alarmierung | Auslösung ab **ORANGE**; optisch **+** akustisch; ROT = höchste Prio + Quittierungspflicht |
 | Risikobewertung Vereisung | 4-Stufen-Logik §2 |
 | Luftdruck | Drucktendenz `< −1 hPa / 3 h` ⇒ Wetterverschlechterung → Prognose-Input |
-| Niederschlagsart | **gefrierend → ROT**; Schnee/Regen bei `T_s ≤ 0` → ORANGE |
-| Schnittstellen | REST-API; Push-Intervall ≤ 60 s; Datenmodell s. API-Spezifikation |
+| Schnittstellen | REST-API (**Pull**: G2 pollt G1s `GET /current` ≤ 60 s, Intervall selbst bestimmt); Datenmodell s. API-Spezifikation |
 | Datenspeicherung | Messwerte + Bewertungen + Alarme + Quittierungen; Aufbewahrung ≥ Projektdauer; append-only |
 | Vorhersage + Analyse + Wettervorhersage + veraltete Daten | 30-min-Trend (Extrapolation T_s, T_d, Drucktendenz); externe Wettervorhersage als Zusatzeingang; stale > 180 s |
 | Defekte Sensoren erkennen | Kriterien s. §3 (Bereich / Flatline / Sprung / Timeout) |

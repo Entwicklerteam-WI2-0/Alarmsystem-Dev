@@ -38,7 +38,10 @@ Antworte **auf Deutsch**. Die angehängten Projektdateien sind die **Wahrheit** 
 
 - **Wir bauen:** Daten-Ingest, Datenmodell, **Vereisungsbewertung**, Alarme, Prognose, API, Logging, Konfiguration.
 - **Wir bauen NICHT:** Sensor-Hardware (G1), UI/Visualisierung (G3).
-- **Wir definieren nur die Schnittstelle** (API + Datenmodell) — G1 pusht dagegen, G3 konsumiert sie.
+- **Wir definieren die API zu G3** (G3 konsumiert sie). An der **Naht zu G1** sind **wir Client**: G1
+  stellt `GET /current` (ein Snapshot aller aktuellen Messwerte mit einem gemeinsamen `measured_at`, UTC)
+  und `GET /health` bereit — **wir pollen** G1 in selbst bestimmtem Intervall (≤ 60 s), kein von uns
+  gehosteter Ingest-Endpoint.
 - ⚠️ **Nicht** die anderen Gruppen mitkonzipieren (häufiger Fehler) — bleib im Backend-Scope.
 
 ## 4. Pflichtlektüre — vor dem Arbeiten sichten
@@ -60,8 +63,9 @@ Die KI soll diese Dateien als **Grundlage** verwenden (anhängen!). Fehlt eine �
    verwenden; nichts Eigenes dazuerfinden. Unsicheres als unsicher kennzeichnen.
 3. **IDs referenzieren:** Bezieh dich auf `FA-xx`, `NF-xx`, `RB-01`, `K1–K9`, Tasks `P#.#`.
 4. **RB-01 (hart):** Kein automatisches Freigeben/Sperren der Bahn. System berät, Mensch entscheidet.
-5. **Fachlogik nicht eigenmächtig ändern:** Oberflächentemp + Taupunkt + Feuchte + Niederschlag treiben
-   die Bewertung — **nicht** Lufttemperatur allein. Schwellen sind parametrierbar, aber Defaults aus dem Doc.
+5. **Fachlogik nicht eigenmächtig ändern:** **Drei Faktoren** treiben die Bewertung —
+   Oberflächentemperatur + Taupunkt-Abstand + Feuchte (**nicht** Lufttemperatur allein, **kein**
+   Niederschlag). Schwellen sind parametrierbar, aber Defaults aus dem Doc.
 6. **Contract-first:** API/Datenmodell zuerst; alles baut gegen den Contract.
 7. **Definition of Done:** Tests grün (Bewertungslogik ≥ 80 % Coverage), PR-Review, Anf-ID referenziert,
    **Entscheidung im Entscheidungslogbuch** begründet (Bewertungskriterium „Nachvollziehbarkeit").
@@ -115,8 +119,9 @@ HARTE REGELN:
 - Scope = nur Backend (Ingest, Datenmodell, Vereisungsbewertung, Alarme, API, Logging, Config).
   Sensorik (G1) und Frontend (G3) NICHT mitkonzipieren — wir definieren nur die API-Schnittstelle.
 - RB-01: Das System gibt die Startbahn NIEMALS automatisch frei/sperrt sie. Der Mensch entscheidet.
-- Vereisungslogik nutzt Oberflächentemperatur + Taupunkt + Feuchte + Niederschlag (NICHT Lufttemp
-  allein). Schwellenwerte ausschließlich aus Schwellenwerte.md; nichts dazuerfinden.
+- Vereisungslogik nutzt drei Faktoren: Oberflächentemperatur + Taupunkt-Abstand + Feuchte (NICHT
+  Lufttemp allein, KEIN Niederschlag). Schwellenwerte ausschließlich aus Schwellenwerte.md; nichts
+  dazuerfinden.
 - Referenziere Anforderungs-IDs (FA-xx/NF-xx/RB-01) und Tasks (P#.#). Begründe Entscheidungen.
 - Git: Feature-Branch → PR → Review; kein Push auf main, keine Secrets.
 
