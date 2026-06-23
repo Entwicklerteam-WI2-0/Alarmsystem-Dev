@@ -4,7 +4,7 @@
 > Vorgehen) aus Sicht des Systemarchitekten — Pflichtdeliverable „Entscheidungslogbuch" und Grundlage
 > für die Bewertung (Kriterium *Nachvollziehbarkeit technischer Entscheidungen*).
 > **Format:** je Eintrag *Entscheidung · Begründung · verworfene Alternative · Bezug*. Lebendes Dokument.
-> **Stand:** 22.06.2026 · **Bezug:** `Backend-Konzept.md`, `Schwellenwerte.md`, `Tasks+Projektplan.md`, `Usecase-quick.md`, `Surprise Anforderungen.txt`.
+> **Stand:** 23.06.2026 · **Bezug:** `Backend-Konzept.md`, `Schwellenwerte.md`, `Tasks+Projektplan.md`, `Usecase-quick.md`, `Surprise Anforderungen.txt`.
 
 ---
 
@@ -20,6 +20,19 @@
 
 **E-03 — Git-Workflow: Feature-Branch → PR → Review → `main`; `main` immer lauffähig; `CLAUDE.md`/`AGENTS.md` gitignored**
 - *Begründung:* Reviewbarkeit + stabiler Hauptzweig; Agent-Instruktionsdateien sind lokal/tool-spezifisch, gehören nicht in die geteilte Historie.
+
+**E-38 — Test-CI: Python-Matrix (3.12 + 3.14) gegen Syntax-Drift + `test`-Aggregator-Job für Branch-Protection-Kompatibilität**
+- *Kontext/Task:* **DTB-11 (Test-CI, M2)** · **DTB-11b (Follow-up)** · schließt an **PR #50** (Basis-CI) an · betrifft `.github/workflows/test.yml` + Branch-Protection `required_status_checks` auf `main`. *Auslöser (zwei):* **(1)** Code-Review-Finding zu PR #50 — die Suite lief nur gegen Python **3.12** (Floor laut `pyproject.toml` `requires-python>=3.12` + `ruff target-version=py312`), aber lokale Dev-Maschinen laufen teils auf 3.13/3.14 (belegt durch `src/**/__pycache__`-Artefakte `cpython-313`/`cpython-314`). 3.13+-only-Syntax würde **lokal grün** und in **CI rot** (SyntaxError) durchgehen — ein klassisches „works on my machine". **(2)** Nach Einführung der Matrix blockierte der PR: die Branch-Protection verlangte den Check-Namen **`test`** (alter Einzel-Job-Name aus #50/#51), die Matrix erzeugt aber **`test (3.12)`/`test (3.14)`** → GitHub wartete ewig auf `test` („Waiting for status to be reported"), PR blieb trotz grüner Runs gesperrt.
+- *Entscheidung (zwei Teile):*
+  1. **Python-Matrix `["3.12", "3.14"]`** mit **`fail-fast: false`** — Floor + aktuelle Dev-Version; 3.14 fängt Syntax-Drift deterministisch ab. `fail-fast:false`, damit ein Vorfall auf der einen Version den anderen Run nicht abwürget (sonst sieht man den eigentlichen Fehler nicht).
+  2. **Aggregator-Job `name: test` (job-id `test_status`)** statt Branch-Protection anzupassen: er wartet via `needs: [test]` auf die Matrix und wird **genau dann grün, wenn 3.12 UND 3.14 grün** waren (`if: always()` + explizite `needs.test.result`-Prüfung → bei Matrix-Fehlern **verlässlich rot statt skipped**, sonst würde der Required-Check nie erfüllt). Stellt den Check-Namen `test` wieder her, den die Protection verlangt.
+- *Begründung (Entwurf — von Lucas zu prüfen/formulieren):* Die Matrix schließt die Lücke zwischen Dev-Umgebung (3.13/3.14) und CI-Floor (3.12) — Syntax, die nur neuere Pythons akzeptieren, fällt sonst erst in CI auf. **Der Aggregator statt der Protection-Anpassung**, damit der Workflow **self-contained** bleibt: eine externe Settings-Abhängigkeit (Protection-Checkliste bei jedem neuen Check-Namen manuell nachziehen) würde im Anfängerteam erfahrungsgemäß vergessen → ein Workflow-Fix ist robuster gegen künftige CI-Änderungen. `if: always()` + Exit-Logik statt bloßem `needs:`, weil ein *skipped* Required-Check in der Branch-Protection teils blockt — der Gate muss verlässlich grün **oder** rot reporten.
+- *Alternativen (verworfen):*
+  - **Branch-Protection anpassen** (`test` entfernen, `test (3.12)` + `test (3.14)` als required setzen) — GitHub-idiomatisch, aber externe Settings-Abhängigkeit, die bei jeder künftigen Workflow-Änderung (neuer Check-Name) manuell nachgezogen werden muss; verworfen zugunsten des self-contained Workflows.
+  - **Matrix zurückbauen auf nur 3.12** — Check hieße wieder `test`, Protection passt sofort, aber der Syntax-Drift-Schutz (der eigentliche Zweck) entfiele; verworfen.
+  - **`continue-on-error` für 3.14** (nicht-blockierend) — verworfen: würde den Drift-Schutz entwaffnen (3.14-Fehler blockt nicht → kein echter Schutz, nur Information).
+- *Ergebnis/Status:* umgesetzt in **PR #52** (Commit `03d0500` Matrix + `ac39f4c` Aggregator), gemerged nach `main` (`3540998`, 23.06.2026). **Live validiert:** alle 4 Checks grün — `test` (Aggregator) 4 s, `test (3.12)` 17 s, `test (3.14)` 17 s, `claude-review` 1m48s. **3.14 grün = aktuell kein Syntax-Drift** im Codebase (die Matrix hat keinen versteckten Bruch aufgedeckt, schützt aber künftig). PR #51 (enum-guard) parallel gemerged.
+- *Bezug:* DTB-11 / DTB-11b; **PR #50** (Basis-CI), **PR #52** (Matrix + Aggregator); `pyproject.toml` (`requires-python>=3.12`, `target-version=py312`); Branch-Protection `required_status_checks.contexts=["test"]`; **E-03** (Git-Workflow/CI-Gate, `main` lauffähig).
 
 ## B. Architektur (Backend, G2)
 
