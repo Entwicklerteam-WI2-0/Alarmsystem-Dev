@@ -103,3 +103,17 @@
 - **Offen/weiter:** **Backend-Konzept §6/§7** echte E-35-Prosa (noch SQLAlchemy/Docker) + `docker-compose.yml`
   entfernen + `Projektplan-Jira-Backlog-G2.md` (SQLite) nachziehen. CI-DB-Bereitstellung (DTB-11) mit Johannes.
   Jira-Link 10011 (Altbestand) manuell löschen. G1-Seam-Sync (P1.4) → dann DTB-19 OpenAPI + DTB-28 Persistenz.
+
+## Update [23.06., ~14:15] — API-Contract verankert + Backlog-Übersicht (architekt)
+- **G1→G2 API-Vertrag final dokumentiert:** `Backend-Konzept.md` §9 enthält jetzt den verbindlichen
+  JSON-Contract (`GET /current`, `GET /health`, Pflichtfelder, Verhandlungsposition). Ebenfalls in
+  `04-Source-code/README.md`, `CLAUDE.md` und `AGENTS.md` als **Mandatory Read** verlinkt.
+- **DTB-15 (Config-Loader)** auf `main` reviewed: Code + Tests passen zu `Schwellenwerte.md` §2; spätere
+  Verknüpfung mit `ThresholdSet`-DB-Entity für DTB-38 vormerken.
+- **P0.3 (DTB-51)** Code auf `main` verifiziert (`src/main.py` + `tests/test_health.py` grün); Jira-Status
+  noch „In Arbeit" → Update ausstehend.
+- **Persönliche Backlog-Übersicht** erstellt (`Desktop/DTB-Backlog-Uebersicht.md`): Epic-Hierarchie,
+  Lucas-Prioritäten, Blocker/Abhängigkeiten.
+- **main aktuell:** 57a2c5d "Add API contract FROZEN v1 (draft) (#44)".
+- **Neu offen:** Jira-Status DTB-1/DTB-51 aktualisieren; DTB-53/54/55/56 (DB-Setup) angehen; DTB-35
+  Contract an G1/G3 kommunizieren; Jira-Link 10011 löschen.
