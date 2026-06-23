@@ -1,0 +1,51 @@
+# DTB-11 — Test-CI fuer das G2-Backend (M2).
+# Triggert auf Push nach main und auf Pull Requests (Review-Variante: vermeidet
+# Doppellaeufe bei Feature-Branches mit offenem PR). Der Status-Check "test" ist
+# der Gate fuer die Branch-Protection-Regel "Require status checks to pass".
+#
+# Backend-Root liegt unter 04-Source-code/ (Repo-Root-Entscheidung, PR #29) ->
+# alle run-Schritte laufen via working-directory dort.
+#
+# DB-Strategie (E-35, Entscheidung a): Die Suite ist aktuell vollstaendig DB-frei
+# (repository.py ist nur ein ABC-Interface; konkrete PyMySQL-Impl erst DTB-28).
+# Sobald DB-Integrationstests dazukommen, wird hier ein MariaDB-services-Container
+# ergaenzt (Devs installieren lokal nichts, ein gemeinsames Coverage-Gate).
+
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: 04-Source-code
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: 04-Source-code/requirements-dev.txt
+
+      - name: Abhaengigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Tests mit Coverage
+        run: pytest --cov=src --cov-report=term-missing --cov-fail-under=80
