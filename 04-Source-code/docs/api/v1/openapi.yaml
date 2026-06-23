@@ -1,0 +1,542 @@
+# =============================================================================
+# Alarmsystem-Backend G2 — API v1 (Vereisungserkennung ANR)
+# DTB-19 (P1.2) · OpenAPI 3.0.3
+#
+# Single Source of Truth: 04-Source-code/docs/API_FROZEN_v1.md (eingefrorener
+# Contract, DTB-35/P1.4). Diese YAML ist die formale Abschrift davon — keine
+# eigenen Entscheidungen. Feld-Quelle: src/model/schemas.py (Reading/Assessment).
+# Begruendung: Entscheidungslog E-36 (Contract) + E-37 (Alarme = Push).
+#
+# Diese Datei beschreibt NUR die von G2 bereitgestellte API (G3 ist Client).
+# Der von G2 KONSUMIERTE G1-Vertrag steht separat in g1-consumed.openapi.yaml
+# (eigene API, eigener Server — gehoert nicht in diese Spec hinein).
+#
+# RB-01: Reine Entscheidungsunterstuetzung. Es gibt KEINEN Freigabe-/Sperr-/
+#        Aktor-Endpoint — auch nicht "temporaer".
+# NF-01 (Fail-safe): Bei Stale/G1-Ausfall NIE GRUEN. Kein Fehler, sondern
+#        risk_level=unknown + is_stale=true (200). 503 nur bei echter
+#        G2-Nichtverfuegbarkeit.
+#
+# Status: ENTWURF — wird eingefroren, sobald G1- und G3-Lead schriftlich
+#        bestaetigt haben (DTB-26, Label seam-sync-confirmed). Dann Tag api-v1.0.
+# OFFEN (DoD-Hinweis): Die DTB-19-DoD nennt ">= 15 Operationen"; die
+#        verbindliche Architekten-Vorlage (Jira DTB-19, Kommentar 23.06.) listet
+#        bewusst ~6 G2- + 2 G1-Operationen. Anzahl-Differenz mit Lucas klaeren.
+# =============================================================================
+
+openapi: 3.0.3
+
+info:
+  title: Alarmsystem-Backend G2 — API v1 (Vereisungserkennung ANR)
+  version: 1.0.0-draft
+  description: |
+    REST-Schnittstelle des G2-Backends (Erfassung & Bewertung von
+    Vereisungsbedingungen am Regionalflughafen ANR). **G2 ist hier Server**,
+    **G3 (Frontend) ist Client** (GET / SSE-Abo — G3 hostet nichts).
+
+    **Sicherheits-Randbedingung RB-01:** Das System ist reine
+    *Entscheidungsunterstuetzung*. Es gibt **keinen** Endpoint, der die Startbahn
+    freigibt/sperrt/steuert. Quittieren eines Alarms ist eine reine UI-/Audit-
+    Aktion, kein Steuerbefehl.
+
+    **Fail-safe NF-01:** Bei veralteten (stale) oder fehlenden Daten liefert die
+    aktuelle Bewertung **nie GRUEN**, sondern `risk_level=unknown` +
+    `is_stale=true` mit HTTP `200` — das ist **kein** Fehlerfall. `503` nur, wenn
+    G2 selbst nicht lieferfaehig ist (z. B. noch keine Daten / interner Ausfall).
+
+    Quelle: `docs/API_FROZEN_v1.md`. Konsumierter G1-Vertrag: siehe
+    `g1-consumed.openapi.yaml`.
+
+servers:
+  - url: http://localhost:8000
+    description: Lokale Entwicklung (Prototyp)
+
+tags:
+  - name: Health
+    description: Verfuegbarkeit des G2-Backends.
+  - name: Assessment
+    description: Aktuelle Vereisungsbewertung (Ampel + Roh-Messwerte).
+  - name: Readings
+    description: Historie der eingegangenen Messwerte (Ausbaustufe T1).
+  - name: Alarms
+    description: Alarme — Live-Push via SSE, Zustands-Abfrage zum Resync, Quittierung.
+
+paths:
+  /v1/health:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      summary: Verfuegbarkeit von G2
+      description: Liveness-Check des G2-Backends. `200` = erreichbar.
+      responses:
+        "200":
+          description: G2 ist erreichbar.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+
+  /v1/assessment/current:
+    get:
+      tags: [Assessment]
+      operationId: getCurrentAssessment
+      summary: Aktuelle Vereisungsbewertung
+      description: |
+        Liefert die zuletzt berechnete Bewertung als **Ampel + Roh-Messwerte**
+        in einem Response (flach, kein Envelope — E-36).
+
+        **Fail-safe (NF-01):** Sind die zugrunde liegenden Daten veraltet
+        (stale) oder fehlt G1, ist dies **kein** Fehler: Response `200` mit
+        `is_stale=true` und `risk_level=unknown` (nie GRUEN). `503` nur, wenn G2
+        selbst (noch) nicht lieferfaehig ist.
+
+        **RB-01:** rein beratend — keine Freigabe-/Steueraktion.
+      responses:
+        "200":
+          description: Aktuelle Bewertung (ggf. Fail-safe `unknown` + `is_stale=true`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssessmentCurrent"
+              examples:
+                normal:
+                  summary: Normalfall (Risiko gelb)
+                  value:
+                    risk_level: yellow
+                    driving_factor: dew_point
+                    explanation: "ΔT ≤ 1,0 °C an der Oberfläche → Feuchte"
+                    surface_temp_c: -0.4
+                    dew_point_c: -1.1
+                    delta_t: 0.7
+                    humidity_pct: 96
+                    measured_at: "2026-06-22T14:03:05Z"
+                    assessed_at: "2026-06-22T14:03:30Z"
+                    is_stale: false
+                    sensor_status: ok
+                failsafe_stale:
+                  summary: Fail-safe — veraltete Daten (NF-01)
+                  value:
+                    risk_level: unknown
+                    driving_factor: null
+                    explanation: "Letzter Messwert älter als der Stale-Timeout — keine gültige Bewertung."
+                    surface_temp_c: null
+                    dew_point_c: null
+                    delta_t: null
+                    humidity_pct: null
+                    measured_at: "2026-06-22T13:55:00Z"
+                    assessed_at: "2026-06-22T14:03:30Z"
+                    is_stale: true
+                    sensor_status: fault
+                failsafe_fault:
+                  summary: Fail-safe — Sensor defekt trotz aktueller Daten (NF-01, nie GRUEN)
+                  value:
+                    risk_level: unknown
+                    driving_factor: null
+                    explanation: "Sensor meldet 'fault' — keine vertrauenswürdige Bewertung möglich."
+                    surface_temp_c: null
+                    dew_point_c: null
+                    delta_t: null
+                    humidity_pct: null
+                    measured_at: "2026-06-22T14:03:05Z"
+                    assessed_at: "2026-06-22T14:03:30Z"
+                    is_stale: false
+                    sensor_status: fault
+        "503":
+          description: G2 ist nicht lieferfaehig (z. B. noch keine Daten / interner Ausfall). NICHT fuer Stale.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: SERVICE_UNAVAILABLE
+                message: "Noch keine Bewertung verfügbar."
+
+  /v1/readings:
+    get:
+      tags: [Readings]
+      operationId: listReadings
+      summary: Historie der Messwerte (T1)
+      description: |
+        Liste eingegangener Messwerte (Ausbaustufe T1). Optional per Zeitraum,
+        Sensor und Anzahl eingrenzbar.
+
+        **Hinweis:** `API_FROZEN_v1.md` markiert `/v1/readings` als „reserviert,
+        Form folgt mit openapi.yaml". Die hier definierte Form (inkl. der
+        G2-internen Felder `received_at`, `dew_point_c`, `source`) wird damit
+        **erstmals** festgelegt und ist als T1 noch nachjustierbar.
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: Untere Zeitgrenze (ISO-8601, UTC), inklusiv — Filter auf `measured_at`.
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          description: Obere Zeitgrenze (ISO-8601, UTC), inklusiv — Filter auf `measured_at`.
+          schema:
+            type: string
+            format: date-time
+        - name: sensor_id
+          in: query
+          required: false
+          description: Auf einen Sensor einschraenken.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          description: Maximale Anzahl Eintraege.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        "200":
+          description: Liste von Messwerten (neueste zuerst).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Reading"
+        "400":
+          description: Ungueltige Anfrage (z. B. `from` nach `to`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: BAD_REQUEST
+                message: "'from' darf nicht nach 'to' liegen."
+
+  /v1/alarms:
+    get:
+      tags: [Alarms]
+      operationId: listAlarms
+      summary: Zustands-Abfrage der Alarme (Resync, kein Entdeckungs-Poll)
+      description: |
+        Aktuelle Alarme als **Zustands-Abfrage** — fuer den Initial-Load und den
+        **Resync nach SSE-Disconnect** (Sicherheits-Backstop, E-37).
+
+        **Nicht** als Entdeckungs-Poll verwenden: Fuer Live-Alarme abonniert G3
+        den Stream `GET /v1/alarms/stream`.
+      parameters:
+        - name: state
+          in: query
+          required: false
+          description: Auf einen Alarm-Zustand filtern. Ohne Angabe nur aktive Alarme.
+          schema:
+            $ref: "#/components/schemas/AlarmState"
+      responses:
+        "200":
+          description: Liste der Alarme.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Alarm"
+        "400":
+          description: Ungueltiger `state`-Filter.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /v1/alarms/stream:
+    get:
+      tags: [Alarms]
+      operationId: streamAlarms
+      summary: Live-Alarm-Stream (Server-Sent Events)
+      description: |
+        **Server-Sent Events (SSE)** — G3 haelt **eine** Verbindung offen, G2
+        **pusht** Alarme live (E-37). Jedes SSE-`data:`-Feld enthaelt einen Alarm
+        als JSON (Schema `Alarm`). Kein Polling.
+
+        Der Response-Stream hat den Content-Type `text/event-stream`.
+      responses:
+        "200":
+          description: Offener SSE-Stream; jedes Event traegt einen Alarm als JSON.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  SSE-Frames. Beispiel eines Events:
+                  `data: {"id":42,"assessment_id":17,"severity":"critical","raised_at":"2026-06-22T14:03:30Z","state":"active"}`
+
+  /v1/alarms/{id}/ack:
+    post:
+      tags: [Alarms]
+      operationId: acknowledgeAlarm
+      summary: Alarm quittieren (UI-/Audit-Aktion, kein Aktor)
+      description: |
+        Quittiert einen Alarm. **RB-01:** rein dokumentierend (Audit) — die UI
+        kann den Alarm damit beenden, aber dies ist **kein** Bahn-Freigabe-/
+        Sperr-Befehl. Setzt den Alarm-Zustand auf `acknowledged`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID des zu quittierenden Alarms.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AckRequest"
+            example:
+              operator: "tower-ops-azezoo"
+              note: "Gesehen, manuelle Sichtkontrolle eingeleitet."
+      responses:
+        "200":
+          description: Quittierung gespeichert (append-only Audit-Eintrag).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Acknowledgement"
+        "404":
+          description: Alarm mit dieser ID existiert nicht.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: NOT_FOUND
+                message: "Alarm 42 nicht gefunden."
+        "422":
+          description: Ungueltiger Request-Body (z. B. `operator` fehlt).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  schemas:
+
+    # --- Enums (Spiegel von src/model/enums.py) ---
+    RiskLevel:
+      type: string
+      description: |
+        Vereisungs-Risikostufe. `unknown` ist der Fail-safe-Zustand (NF-01):
+        bei veralteten/fehlenden Daten nie GRUEN.
+      enum: [green, yellow, orange, red, unknown]
+
+    SensorStatus:
+      type: string
+      description: Sensor-/Lieferstatus (aus G1s `GET /current` `status`).
+      enum: [ok, fault]
+
+    AlarmSeverity:
+      type: string
+      description: |
+        Schweregrad eines Alarms, abgeleitet aus der ausloesenden Risikostufe
+        (`RiskLevel`). **Vorgeschlagene Abbildung — TBD, gegen `Schwellenwerte.md`
+        + Architekt zu bestaetigen (noch nicht final entschieden):**
+        `orange → warning`, `red → critical`. `green`/`yellow`/`unknown` loesen
+        keinen Alarm aus.
+      enum: [warning, critical]
+
+    AlarmState:
+      type: string
+      description: Lebenszyklus eines Alarms. Quittieren ist reine UI-/Audit-Aktion (RB-01).
+      enum: [active, acknowledged, cleared]
+
+    Source:
+      type: string
+      description: Herkunft eines Messwerts (echter Sensor vs. Simulator).
+      enum: [real, sim]
+
+    # --- Health ---
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    # --- Aktuelle Bewertung (G2 -> G3), flach (E-36) ---
+    AssessmentCurrent:
+      type: object
+      description: |
+        Aktuelle Vereisungsbewertung. Felder gemaess `Assessment`-Schema
+        (src/model/schemas.py) plus Naht-Felder `is_stale`/`sensor_status`.
+        Alle Zeitstempel in UTC (ISO-8601).
+
+        **Fail-safe-Invarianten (NF-01) — verbindlich, von der `assessment/`-Logik
+        garantiert (OpenAPI 3.0.3 kann felduebergreifende Regeln nicht hart
+        erzwingen; Durchsetzung + Tests liegen im kritischen Pfad):**
+        - `risk_level=green` ist NUR zulaessig, wenn `is_stale=false` UND
+          `sensor_status=ok`. Bei `is_stale=true` oder `sensor_status=fault`
+          gilt `risk_level=unknown` (nie GRUEN).
+        - Bei `risk_level != unknown` sind `surface_temp_c`, `dew_point_c`,
+          `delta_t`, `humidity_pct` und `measured_at` nicht-null (eine echte
+          Bewertung hat immer Messwerte). `null`-Messwerte treten nur mit
+          `risk_level=unknown` + `is_stale=true` auf.
+      required: [risk_level, assessed_at, is_stale, sensor_status]
+      properties:
+        risk_level:
+          $ref: "#/components/schemas/RiskLevel"
+        driving_factor:
+          type: string
+          nullable: true
+          description: Hauptfaktor der Bewertung (z. B. `dew_point`, `surface_temp`).
+        explanation:
+          type: string
+          nullable: true
+          description: Menschenlesbare Begruendung der Stufe.
+        surface_temp_c:
+          type: number
+          nullable: true
+          description: Oberflaechentemperatur T_s (°C).
+        dew_point_c:
+          type: number
+          nullable: true
+          description: Taupunkt (°C), von G2 berechnet (Magnus).
+        delta_t:
+          type: number
+          nullable: true
+          description: ΔT = surface_temp_c − dew_point_c (°C).
+        humidity_pct:
+          type: number
+          nullable: true
+          description: Luftfeuchte (%).
+        measured_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: G1-Messzeitpunkt (UTC). `null`, wenn keine Daten vorliegen.
+        assessed_at:
+          type: string
+          format: date-time
+          description: G2-Bewertungszeitpunkt (UTC).
+        is_stale:
+          type: boolean
+          description: "`true` = Daten ueberaltert; zusammen mit `risk_level=unknown` = Fail-safe griff (NF-01)."
+        sensor_status:
+          $ref: "#/components/schemas/SensorStatus"
+
+    # --- Messwert (Historie) ---
+    Reading:
+      type: object
+      description: Einzelner Messwert-Snapshot. Sensor-Felder von G1, Rest von G2 berechnet/gesetzt.
+      required: [sensor_id, measured_at, surface_temp_c, air_temp_c, humidity_pct, status, received_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+        sensor_id:
+          type: string
+          example: anr-rwy-01
+        measured_at:
+          type: string
+          format: date-time
+          description: Mess-Zeitstempel (UTC), gemeinsam fuer alle Werte.
+        surface_temp_c:
+          type: number
+          description: Oberflaechentemperatur T_s (°C).
+        air_temp_c:
+          type: number
+          description: Lufttemperatur T_a (°C).
+        humidity_pct:
+          type: number
+          description: Luftfeuchte (%).
+        pressure_hpa:
+          type: number
+          nullable: true
+          description: Luftdruck (hPa), optional.
+        status:
+          $ref: "#/components/schemas/SensorStatus"
+        received_at:
+          type: string
+          format: date-time
+          description: Poll-Zeitpunkt von G2 (UTC).
+        dew_point_c:
+          type: number
+          nullable: true
+          description: Taupunkt (°C), von G2 berechnet.
+        source:
+          $ref: "#/components/schemas/Source"
+
+    # --- Alarm ---
+    Alarm:
+      type: object
+      description: Aus einer Bewertung erzeugter Alarm (kein Aktor, RB-01).
+      required: [assessment_id, severity, raised_at, state]
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+        assessment_id:
+          type: integer
+          format: int64
+        severity:
+          $ref: "#/components/schemas/AlarmSeverity"
+        raised_at:
+          type: string
+          format: date-time
+          description: Ausloesezeitpunkt (UTC).
+        state:
+          $ref: "#/components/schemas/AlarmState"
+
+    # --- Quittierung ---
+    AckRequest:
+      type: object
+      description: Request-Body fuer die Quittierung eines Alarms.
+      required: [operator]
+      properties:
+        operator:
+          type: string
+          description: Kennung der quittierenden Person (Audit).
+        note:
+          type: string
+          nullable: true
+          description: Optionale Notiz.
+
+    Acknowledgement:
+      type: object
+      description: Gespeicherte Quittierung (append-only, NF-09).
+      required: [alarm_id, operator, ts]
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+        alarm_id:
+          type: integer
+          format: int64
+        operator:
+          type: string
+        note:
+          type: string
+          nullable: true
+        ts:
+          type: string
+          format: date-time
+          description: Zeitpunkt der Quittierung (UTC).
+
+    # --- Fehlerformat ---
+    Error:
+      type: object
+      description: Maschinenlesbarer Fehler (Code + Meldung). Keine internen Details/Secrets.
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Maschinenlesbarer Fehlercode (z. B. BAD_REQUEST, NOT_FOUND, SERVICE_UNAVAILABLE).
+        message:
+          type: string
+          description: Menschenlesbare Fehlermeldung.
