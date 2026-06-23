@@ -98,13 +98,16 @@ class Poller:
                 logger.error("Pflichtfeld in G1-Antwort fehlt: %s", field)
                 return None
 
-        # Typ-Konvertierung der Pflichtfelder.
+        # Typ-Konvertierung der Pflichtfelder (+ optionales pressure_hpa, s. u.) im Fail-safe-try.
         try:
             measured_at = _parse_iso_utc(data["measured_at"])
             sensor_id = _as_string(data["sensor_id"], "sensor_id")
             surface_temp_c = _as_float(data["surface_temp_c"], "surface_temp_c")
             air_temp_c = _as_float(data["air_temp_c"], "air_temp_c")
             humidity_pct = _as_float(data["humidity_pct"], "humidity_pct")
+            # Optionales pressure_hpa MIT in den Fail-safe-try: ein defektes optionales
+            # Feld darf den Poller nicht crashen (NF-01), sondern fuehrt zu None.
+            pressure_hpa = _optional_float(data.get("pressure_hpa"), "pressure_hpa")
         except ValueError as exc:
             logger.error("G1-Feld ungueltig: %s", exc)
             return None
@@ -120,8 +123,7 @@ class Poller:
             logger.error("humidity_pct ausserhalb des gueltigen Bereichs: %s", humidity_pct)
             return None
 
-        # Optionales Feld pressure_hpa verarbeiten und pruefen.
-        pressure_hpa = _optional_float(data.get("pressure_hpa"), "pressure_hpa")
+        # Plausibilitaet des optionalen pressure_hpa (Parsing erfolgte oben im Fail-safe-try).
         if pressure_hpa is not None and not (MIN_PRESSURE_HPA <= pressure_hpa <= MAX_PRESSURE_HPA):
             logger.error("pressure_hpa ausserhalb des gueltigen Bereichs: %s", pressure_hpa)
             return None
