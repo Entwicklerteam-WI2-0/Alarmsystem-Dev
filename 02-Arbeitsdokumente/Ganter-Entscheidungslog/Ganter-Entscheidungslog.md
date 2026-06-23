@@ -26,3 +26,24 @@
   - **G1 gar nicht dokumentieren** — verworfen: verstößt gegen die Architekten-Vorlage (DTB-19, Punkt 6).
 - **Ergebnis/Status:** umgesetzt. Beide Dateien mit `openapi-spec-validator` geprüft; das santa-loop-Review
   bestätigte die Rollen-Trennung G1/G2 ausdrücklich als sauber.
+
+## 2026-06-23 — Double-Ack: `409 Conflict` statt idempotent
+- **Kontext/Task:** DTB-19 (P1.2) · PR #48 Review-Finding [MEDIUM] · NF-09 (Audit/Nachvollziehbarkeit) · RB-01.
+  Offen war: Was passiert bei `POST /v1/alarms/{id}/ack`, wenn der Alarm schon quittiert ist?
+- **Entscheidung:** Erneute Quittierung eines bereits `acknowledged`/`cleared` Alarms wird mit **`409
+  Conflict`** abgelehnt — die Operation ist **nicht idempotent**. (Alternative wäre gewesen, ein zweites Ack
+  still als `200` durchzulassen.)
+- **Begründung:** NF-09 verlangt ein nachvollziehbares Audit-Log. Würde ein zweites Ack lautlos als `200`
+  akzeptiert, gäbe es keinen klaren Hinweis auf das versehentliche Doppel-Quittieren, und es bliebe unscharf,
+  welche Quittierung „zählt". Mit `409` lehnt das System die Doppel-Quittierung **explizit** ab: der
+  Alarm-Zustand bleibt eindeutig und jede gültige Quittierung ist genau **ein** Audit-Eintrag. Das `409`
+  signalisiert dem Frontend zudem klar „Zustand bereits geändert" — sauberer als stilles Schlucken, gerade
+  weil bei RB-01 der Mensch die eigentliche Entscheidung trägt.
+- **Alternativen:**
+  - **Idempotent (zweites Ack → `200`, no-op)** — verworfen: schluckt versehentliche Doppel-Acks lautlos,
+    schwächt die Audit-Klarheit (NF-09).
+  - **Jedes Ack erneut loggen (mehrfaches Quittieren erlaubt)** — verworfen: bläht das Audit-Log mit
+    redundanten Einträgen auf; relevant ist die eine Erst-Quittierung.
+- **Ergebnis/Status:** umgesetzt in `openapi.yaml` (`409`-Response + Description, Auslösebedingung
+  `acknowledged`/`cleared`), validiert, Teil von PR #48. Reaktion auf das Reviewer-Finding (Reviewer hatte
+  `409` oder dokumentierte Idempotenz als Optionen genannt).
