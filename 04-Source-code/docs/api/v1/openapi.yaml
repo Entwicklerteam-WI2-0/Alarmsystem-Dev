@@ -407,8 +407,11 @@ components:
           gilt `risk_level=unknown` (nie GRUEN).
         - Bei `risk_level != unknown` sind `surface_temp_c`, `dew_point_c`,
           `delta_t`, `humidity_pct` und `measured_at` nicht-null (eine echte
-          Bewertung hat immer Messwerte). `null`-Messwerte treten nur mit
-          `risk_level=unknown` + `is_stale=true` auf.
+          Bewertung hat immer Messwerte). `null`-Messwerte treten ausschliesslich
+          bei `risk_level=unknown` auf — entweder bei `is_stale=true` (veraltete
+          bzw. keine Daten) oder bei `sensor_status=fault` (Sensor defekt; die
+          Messwerte gelten als nicht vertrauenswuerdig und werden daher nicht
+          ausgewiesen, auch wenn `is_stale=false`).
       required: [risk_level, assessed_at, is_stale, sensor_status]
       properties:
         risk_level:
