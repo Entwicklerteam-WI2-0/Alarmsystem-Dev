@@ -1,6 +1,6 @@
 # Aktueller Stand
 
-> Stand: 2026-06-22 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+> Stand: 2026-06-23 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
 
 ## Woran wir gerade arbeiten
 - **G2 Backend (Alarmsystem ANR):** Woche 2. **Projektplan + Jira-Backlog (Projekt DTB)** steht:
@@ -73,3 +73,19 @@
   `DELETE /rest/api/3/issueLink/10011`). (2) untracked `02-Arbeitsdokumente/Task-Zuweisungsvorschlag-G2.md`
   (nicht vom Architekt) — Ablage/Commit klären. (3) Hysterese-Begriff „untere Schwelle" in §2 präzisieren;
   `assess_ice_risk`-Signatur (RH redundant, da nur `T_d`-Input).
+
+## Update [23.06., ~12:15] — Stack-Pivot E-35 (PyMySQL, kein Docker) + DTB-12 Datenmodell (architekt)
+- **E-35 (revidiert E-29-Umsetzung; DB-Mandat MySQL/MariaDB bleibt):** **kein SQLAlchemy** → rohes PyMySQL
+  hinter Repository-Pattern (parametrisierte Queries Pflicht); **kein Alembic** → handgeschriebenes
+  `schema.sql`; **kein Docker** → native MariaDB (Pi via Tunnel / lokal). Doku: `Stack-Entscheidung-P0.1.md`,
+  Entscheidungslog **E-35** (+ persönl. Lucas-Log). `requirements.txt` bereinigt (SQLAlchemy/Alembic raus).
+- **DTB-12 (P1.1) fertig — PR #37 gemergt:** 6 Pydantic-Modelle + Enums (risk_level inkl. `unknown`/Fail-safe)
+  + `migrations/schema.sql` (DATETIME(3) UTC, CHECK-Enums, FKs) + `tests/test_model.py` (**8 grün**).
+  `reading` = G1-Block (kein `ice_indicator`); `assessment` mit Entscheidungs-Snapshot (audit-fest).
+  **5/6 Entitäten fix; `reading` wartet auf G1-Feldnamen-Freeze (P1.4).**
+- **Jira:** DTB-2/12/28/53/54/55/56 + DTB-11 auf E-35 umgeschrieben; DTB-51-Pfad korrigiert (`src/main.py`).
+- **PR #38 offen:** Fortschrittslog + Lucas-Entscheidungslog (E-35) + README (E-35-Korrekturen, Datenfluss,
+  neue G2→G3-Serving-Sektion).
+- **Offen/weiter:** **Backend-Konzept §6/§7** echte E-35-Prosa (noch SQLAlchemy/Docker) + `docker-compose.yml`
+  entfernen + `Projektplan-Jira-Backlog-G2.md` (SQLite) nachziehen. CI-DB-Bereitstellung (DTB-11) mit Johannes.
+  Jira-Link 10011 (Altbestand) manuell löschen. G1-Seam-Sync (P1.4) → dann DTB-19 OpenAPI + DTB-28 Persistenz.
