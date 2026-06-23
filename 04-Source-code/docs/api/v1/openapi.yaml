@@ -19,9 +19,11 @@
 #
 # Status: ENTWURF — wird eingefroren, sobald G1- und G3-Lead schriftlich
 #        bestaetigt haben (DTB-26, Label seam-sync-confirmed). Dann Tag api-v1.0.
-# OFFEN (DoD-Hinweis): Die DTB-19-DoD nennt ">= 15 Operationen"; die
-#        verbindliche Architekten-Vorlage (Jira DTB-19, Kommentar 23.06.) listet
-#        bewusst ~6 G2- + 2 G1-Operationen. Anzahl-Differenz mit Lucas klaeren.
+# OPERATIONSZAHL: Die urspruengliche DTB-19-DoD nannte ">= 15 Operationen". Diese
+#        ist durch die verbindliche Architekten-Vorlage (Jira DTB-19, Kommentar
+#        23.06., Lucas Voehringer/DRI) UEBERHOLT: massgeblich ist das Lean-Set von
+#        ~6 G2- + 2 G1-Operationen, exakt gegen API_FROZEN_v1.md. Keine Endpoints
+#        erfinden, nur um eine Zahl zu treffen (das waere Drift).
 # =============================================================================
 
 openapi: 3.0.3
