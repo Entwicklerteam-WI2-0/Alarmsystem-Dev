@@ -111,9 +111,7 @@ class Poller:
 
         # Plausibilitaet: Temperatur-/Feuchte-Werte muessen in physikalischen Grenzen liegen.
         if not (MIN_TEMP_C <= surface_temp_c <= MAX_TEMP_C):
-            logger.error(
-                "surface_temp_c ausserhalb des gueltigen Bereichs: %s", surface_temp_c
-            )
+            logger.error("surface_temp_c ausserhalb des gueltigen Bereichs: %s", surface_temp_c)
             return None
         if not (MIN_TEMP_C <= air_temp_c <= MAX_TEMP_C):
             logger.error("air_temp_c ausserhalb des gueltigen Bereichs: %s", air_temp_c)
