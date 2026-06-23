@@ -1,0 +1,14 @@
+{
+  "_warnung_dummy": "PLATZHALTERWERTE aus 02-Arbeitsdokumente/Schwellenwerte.md (Stand 22.06.2026) - NICHT final. Die messtechnisch validierten Schwellen liefert Gruppe 1 (Sensorik) nach. Alle Werte sind parametrierbar (NF-05) und ohne Code-Aenderung austauschbar - kein Hardcode.",
+  "_quelle": "Schwellenwerte.md §2 (priorisierte Kaskade + GELB-Prognoseschwelle)",
+  "_scope": "Bewusst nur echte Vereisungs-Schwellen (Enabler fuer DTB-38). Taupunkt-Konstanten/Hysterese/Datenstatus gehoeren in ihre eigenen Tasks.",
+  "vereisung": {
+    "t_s_gefrierpunkt_c": 0.0,
+    "t_s_gelb_auffang_c": 1.0,
+    "delta_t_kondensation_k": 0.0,
+    "delta_t_feucht_k": 1.0
+  },
+  "prognose": {
+    "t_s_grenz_c": 0.0
+  }
+}
