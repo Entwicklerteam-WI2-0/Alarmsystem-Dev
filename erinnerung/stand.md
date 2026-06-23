@@ -147,3 +147,12 @@
 - **Neu offen:** (1) Branch pushen + PR (DTB-19). (2) **DTB-26 G3-Sign-off** (`seam-sync-confirmed`)
   einsammeln — **G1-Seite: Lucas**. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves
   (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
+
+## Update [23.06., ~16:08] — DTB-19 PR #48 Review-Findings eingearbeitet (backend-dev/Luca)
+- **PR #48 review-fest gemacht** (Commit 18c3648, **gepusht/in sync**): `/v1/alarms/stream` → `503`;
+  `POST /v1/alarms/{id}/ack` → `409` bei Double-Ack (NF-09, nicht idempotent); `AckRequest.operator`
+  → `minLength: 1`; g1-`status` → Sync-Hinweis auf `SensorStatus`. Validator erneut grün; doppelter 503
+  (Web-Fix 865de56 + Fix) konsolidiert. DTB-19 damit fertig & review-fest.
+- **Neu offen:** (1) **PR #48 mergen** (Reviewer/Lucas). (2) **DTB-26 G3-Sign-off** (`seam-sync-confirmed`)
+  — G1-Seite: Lucas. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves offen
+  (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
