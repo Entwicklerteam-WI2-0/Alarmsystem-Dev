@@ -10,6 +10,12 @@
 # (repository.py ist nur ein ABC-Interface; konkrete PyMySQL-Impl erst DTB-28).
 # Sobald DB-Integrationstests dazukommen, wird hier ein MariaDB-services-Container
 # ergaenzt (Devs installieren lokal nichts, ein gemeinsames Coverage-Gate).
+#
+# Python-Matrix (DTB-11b): Die Suite laeuft gegen 3.12 (Floor laut pyproject
+# requires-python>=3.12 + ruff target-version=py312) UND 3.14 (aktuelle Dev-Version),
+# damit Syntax-Drift zwischen lokalen Dev-Maschinen (z.T. 3.13/3.14) und dem CI-Floor
+# fruehzeitig auffaellt. fail-fast:false, damit ein Vorfall auf der einen Version den
+# anderen Run nicht abwuerget (sonst sieht man den eigentlichen Fehler nicht).
 
 name: Tests
 
@@ -27,6 +33,10 @@ jobs:
     defaults:
       run:
         working-directory: 04-Source-code
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.14"]
 
     steps:
       - name: Checkout
@@ -35,7 +45,7 @@ jobs:
       - name: Python einrichten
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: "pip"
           cache-dependency-path: 04-Source-code/requirements-dev.txt
 
