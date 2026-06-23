@@ -62,7 +62,7 @@ class Poller:
         # 2. Antwort als JSON parsen.
         try:
             data = response.json()
-        except Exception as exc:  # pragma: no cover - JSON-Fehler sind schwer robust zu testen
+        except Exception as exc:
             logger.error("G1-Antwort nicht als JSON parsierbar: %s", exc)
             return None
 
@@ -74,7 +74,7 @@ class Poller:
         # 4. Reading ueber das Repository-Interface speichern.
         try:
             reading_id = self.repository.save(reading)
-        except Exception as exc:  # pragma: no cover - Repository-Fehler aus DTB-28
+        except Exception as exc:
             logger.error("Speichern des Readings fehlgeschlagen: %s", exc)
             return None
 

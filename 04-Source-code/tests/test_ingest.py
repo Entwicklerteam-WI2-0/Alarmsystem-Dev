@@ -397,3 +397,42 @@ def test_poll_status_not_a_string_does_not_save(
     assert reading is None
     assert len(fake_repo.readings) == 0
     assert "status" in caplog.text
+
+
+def test_poll_non_json_response_is_failsafe(
+    poller: Poller, fake_repo: FakeRepository, caplog
+) -> None:
+    # Fail-safe (NF-01): eine unparsbare G1-Antwort fuehrt zu None (kein Crash, kein Speichern).
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.side_effect = ValueError("kein gueltiges JSON")
+
+    with patch("src.ingest.poller.httpx.get", return_value=response):
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "parsierbar" in caplog.text
+
+
+def test_poll_repository_error_is_failsafe(caplog) -> None:
+    # Fail-safe (NF-01): ein Fehler in der Persistenz darf poll() nicht crashen -> None.
+    class RaisingRepository(Repository):
+        def save(self, reading: Reading) -> int:
+            raise RuntimeError("DB nicht erreichbar")
+
+    poller = Poller(base_url="http://g1.test", repository=RaisingRepository())
+    snapshot = {
+        "measured_at": "2026-06-23T10:00:00Z",
+        "sensor_id": "anr-rwy-01",
+        "surface_temp_c": -0.4,
+        "air_temp_c": 1.2,
+        "humidity_pct": 96,
+    }
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert "fehlgeschlagen" in caplog.text
