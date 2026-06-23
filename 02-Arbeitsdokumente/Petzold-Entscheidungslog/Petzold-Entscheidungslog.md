@@ -1,5 +1,5 @@
 # Persönliches Entscheidungslog — Johannes Petzold (G2)
-> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-22
+> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-23  ·  **Zeitraum:** 2026-06-22 bis 2026-06-23
 > **Autor:** Johannes Petzold · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
@@ -64,3 +64,30 @@
   - *Status quo (alle Branches geschützt):* blockt Review-Korrekturen auf Feature-Branches und erzwingt Neu-Branch-Workarounds (siehe #4) inkl. Cruft. Verworfen.
   - *Einzel-Bypässe pro Person:* entsperrt nur Einzelne, nicht das Team; intransparent. Verworfen zugunsten einer sauberen teamweiten Lösung über den Owner.
 - **Ergebnis/Status:** in Umsetzung durch Lucas (nach Absprache). Löst das in #4 benannte Grundproblem dauerhaft.
+
+## 2026-06-23 — Config über typisiertes, unveränderliches Modell statt rohem dict
+- **Kontext/Task:** DTB-15 (Config-Infrastructure: thresholds.json + Loader) · P0.5 · NF-05 · Enabler für DTB-38
+- **Entscheidung:** Der Loader gibt die Schwellen als getypte, `frozen` Dataclasses zurück (`Thresholds` → `VereisungsSchwellen`/`PrognoseSchwellen`), nicht als rohes `dict`.
+- **Begründung:** *(Entwurf — bitte prüfen & zu eigen machen)* Ein getyptes Modell gibt DTB-38 typsicheren, autovervollständigbaren Zugriff statt Magic-Strings; Tippfehler in Schlüsseln fallen schon beim Laden auf, nicht erst zur Laufzeit. `frozen` verhindert versehentliches Überschreiben der Schwellen im Code — geändert werden sie ausschließlich über die Config (NF-05).
+- **Alternativen (erwogen/verworfen):**
+  - *Rohes `dict`:* stringly-typed, keine Struktur, Magic-Strings beim Zugriff. Verworfen.
+  - *Pydantic-Model:* komfortablere Validierung, aber zusätzliche Abhängigkeit/Setup; für reine Zahlenfelder reichen `dataclasses`. Zurückgestellt.
+- **Ergebnis/Status:** umgesetzt, Commit `b1a60ae`.
+
+## 2026-06-23 — Loader scheitert *laut* (ConfigError) statt stiller Defaults
+- **Kontext/Task:** DTB-15 · NF-01-Geist (Fail-safe) · Selbstreview-Fund (MEDIUM: Werte-Validierung)
+- **Entscheidung:** `load_thresholds` wirft `ConfigError` bei fehlender Datei, kaputtem JSON, Nicht-Objekt-Root/-Abschnitt, fehlendem Pflicht-Abschnitt/-Schlüssel **und** nicht-numerischem Wert (inkl. `bool`) — kein stiller Default.
+- **Begründung:** *(Entwurf — bitte prüfen & zu eigen machen)* Eine fehlerhafte Schwellen-Config darf nicht still durchrutschen und später in der sicherheitsrelevanten Bewertung (DTB-38) als kryptischer Fehler aufschlagen — besser sofort beim Laden mit klarer Meldung scheitern. Die Werte-Typprüfung fängt u. a. die deutsche Komma-Schreibweise (`"0,0"` als String) ab. Ein stiller Default wäre gefährlich, weil ein falscher Default eine falsche Risikobewertung erzeugen könnte (Fail-safe-Prinzip).
+- **Alternativen (erwogen/verworfen):**
+  - *Stille Defaults bei fehlenden/ungültigen Werten:* verschleiert Konfigfehler — bei Sicherheitslogik inakzeptabel. Verworfen.
+  - *Nur Struktur prüfen, Werte-Typen nicht:* eine String-Schwelle rutscht durch und bricht erst in der Arithmetik (Selbstreview-Fund M1). Verworfen.
+- **Ergebnis/Status:** umgesetzt + getestet (12 Tests, 100 % Line+Branch-Coverage), Commit `b1a60ae`.
+
+## 2026-06-23 — thresholds.json bewusst auf echte Vereisungs-Schwellen begrenzt
+- **Kontext/Task:** DTB-15 · Abgrenzung zu DTB-32 (Taupunkt) / DTB-27 (Hysterese) / DTB-18 (Ingest) / DTB-33 (Prognose) — in Jira **noch nicht zugewiesen**
+- **Entscheidung:** Die Config enthält nur echte Schwellen (`vereisung`-Kaskade + Prognoseschwelle). Magnus-Konstanten, Hysterese-, Datenstatus-Parameter und der Prognosehorizont wurden **wieder entfernt** (zwischenzeitlich vorgebaut).
+- **Begründung:** *(Entwurf — bitte prüfen & zu eigen machen)* Zwei Gründe: (1) **Kategorie** — die Magnus-Konstanten sind feste physikalische Größen, keine tunbaren Schwellen; sie gehören nicht in eine Schwellen-Config (Name = Inhalt). (2) **Owner-Trennung** — die übrigen Parameter gehören zu anderen, noch nicht zugewiesenen Tasks; sie jetzt mit (Dummy-)Werten festzulegen würde fremde Schnittstellen vorprägen. Logisches Vorgreifen wäre bei sauberer Doku vertretbar, hier war der klare Schnitt aber besser.
+- **Alternativen (erwogen/verworfen):**
+  - *Eine große zentrale Config mit allen Parametern:* architektonisch denkbar, prägt aber Werte/Struktur fremder, unzugewiesener Tasks vor und mischt Kategorien (Konstanten vs. Schwellen). Verworfen nach Abgleich mit `Schwellenwerte.md` + Rücksprache.
+  - *Pro-Owner-Konfigdateien jetzt anlegen:* verfrüht — die Tasks sind weder gebaut noch zugewiesen. Den Owner-Tasks überlassen.
+- **Ergebnis/Status:** umgesetzt (getrimmt), Commit `b1a60ae`.
