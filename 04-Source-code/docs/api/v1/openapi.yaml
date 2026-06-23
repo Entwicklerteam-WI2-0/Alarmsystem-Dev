@@ -499,7 +499,7 @@ components:
     Reading:
       type: object
       description: Einzelner Messwert-Snapshot. Sensor-Felder von G1, Rest von G2 berechnet/gesetzt.
-      required: [sensor_id, measured_at, surface_temp_c, air_temp_c, humidity_pct, status, received_at, source]
+      required: [id, sensor_id, measured_at, surface_temp_c, air_temp_c, humidity_pct, status, received_at, source]
       properties:
         id:
           type: integer
@@ -542,7 +542,7 @@ components:
     Alarm:
       type: object
       description: Aus einer Bewertung erzeugter Alarm (kein Aktor, RB-01).
-      required: [assessment_id, severity, raised_at, state]
+      required: [id, assessment_id, severity, raised_at, state]
       properties:
         id:
           type: integer
@@ -578,7 +578,7 @@ components:
     Acknowledgement:
       type: object
       description: Gespeicherte Quittierung (append-only, NF-09).
-      required: [alarm_id, operator, ts]
+      required: [id, alarm_id, operator, ts]
       properties:
         id:
           type: integer
