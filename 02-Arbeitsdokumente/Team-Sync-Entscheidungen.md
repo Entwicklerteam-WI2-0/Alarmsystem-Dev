@@ -4,7 +4,7 @@
 > G1 → G2 → G3 fest (die Antworten, nicht mehr die Fragen). Friert die G2-Seite des Contracts ein (**P1.4**).
 > **Stand:** 2026-06-23 · **Bezug:** DTB-26 (P1.3), Entscheidungslog **E-36** (baut auf **E-31** Pull-Naht),
 > `src/model/schemas.py` (Reading/Assessment), `Umstellung-Pull-3Faktor-Faktenblatt.md`.
-> **Status:** G2-Seite festgelegt; **schriftliche Bestätigung von G1- und G3-Lead steht aus** (DoD).
+> **Status:** **Contract beidseitig eingefroren (P1.4, 2026-06-23)** — G1- und G3-Lead haben den Vertrag bestätigt. Entblockt DTB-19, DTB-28, DTB-38.
 
 ---
 
@@ -84,13 +84,11 @@ G2 ist an dieser Naht **Client**: G2 pollt G1, G1 liefert nur Rohwerte.
 
 ---
 
-## Offen / To-do (DoD DTB-26)
+## Erledigt — Sign-off 2026-06-23 (DoD DTB-26 erfüllt)
 
-1. **G1-Lead** bestätigt schriftlich: Feldnamen/Typen `GET /current` + `humidity_pct` = Luftfeuchte
-   + Einverständnis Poll 30 s / Stale 120 s.
-2. **G3-Lead** bestätigt schriftlich: Punkte 1–4 + **RB-01** (kein Auto-Freigabe-Knopf).
-3. Bestätigung als E-Mail **oder** GitHub-Issue mit Label `seam-sync-confirmed`.
-4. Danach: Contract als **beidseitig eingefroren (P1.4)** markieren → entblockt DTB-19 (OpenAPI),
-   DTB-28 (Persistenz), DTB-38 (Bewertungskern).
+1. ✅ **G1-Lead** hat Feldnamen/Typen `GET /current`, `humidity_pct` = Luftfeuchte sowie Poll 30 s / Stale 120 s bestätigt.
+2. ✅ **G3-Lead** hat Punkte 1–4 + **RB-01** (kein Auto-Freigabe-Knopf) bestätigt.
+3. ✅ Bestätigung beidseitig erteilt (2026-06-23).
+4. ✅ Contract **beidseitig eingefroren (P1.4)** → entblockt DTB-19 (OpenAPI), DTB-28 (Persistenz), DTB-38 (Bewertungskern).
 
-> Versand-Vorlagen für 1./2. liegen als `.txt` auf dem Desktop (`Anfrage-G1.txt`, `Anfrage-G3.txt`).
+> Die Versand-Vorlagen liegen jetzt im Repo: `02-Arbeitsdokumente/Anfrage-G1.md`, `02-Arbeitsdokumente/Anfrage-G3.md`.
