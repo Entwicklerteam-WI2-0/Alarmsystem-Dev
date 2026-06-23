@@ -294,15 +294,17 @@ Dateien unter `erinnerung/` sind **kein Code** und dienen dem geteilten Team-For
 
 ---
 
-## 9. Beispiele aus dem aktuellen Projekt
+## 9. Beispiele für Branch-Namen
 
-| Branch | Typ | Status |
-|---|---|---|
-| `feat/dtb-19-openapi-v1` | Feature | PR #48, review-fertig |
-| `fix/ingest-poller-failsafe-optional` | Fix | Gemergt (#54) |
-| `feat/p1.1-datenmodell` | Feature | Gemergt |
-| `test/dtb-19-enum-sync-guard` | Test | Gemergt (#51) |
-| `ci/python-matrix` | CI | Gemergt (#52) |
+| Branch | Typ |
+|---|---|
+| `feat/dtb-19-openapi-v1` | Feature |
+| `fix/ingest-poller-failsafe-optional` | Fix |
+| `feat/p1.1-datenmodell` | Feature |
+| `test/dtb-19-enum-sync-guard` | Test |
+| `ci/python-matrix` | CI |
+
+> Aktuelle Branch- und PR-Status siehe GitHub (`github.com/Entwicklerteam-WI2-0/Alarmsystem-Dev`) bzw. Jira (Projekt DTB).
 
 ---
 
