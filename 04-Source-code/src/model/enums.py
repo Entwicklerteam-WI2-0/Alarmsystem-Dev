@@ -4,24 +4,24 @@ Feste Wertelisten statt freiem Text -> verhindert Tippfehler/Wildwuchs in DB und
 Die DB spiegelt diese Werte als VARCHAR + CHECK-Constraint (s. migrations/schema.sql).
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class Source(str, Enum):
+class Source(StrEnum):
     """Herkunft eines Messwerts: echter Sensor vs. Simulator (E-09)."""
 
     REAL = "real"
     SIM = "sim"
 
 
-class SensorStatus(str, Enum):
+class SensorStatus(StrEnum):
     """Sensor-/Lieferstatus aus G1s GET /current `status`."""
 
     OK = "ok"
     FAULT = "fault"
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     """Vereisungs-Risikostufe (Schwellenwerte.md §2).
 
     UNKNOWN ist der Fail-safe-Zustand (NF-01): bei veralteten/fehlenden Daten
@@ -36,14 +36,14 @@ class RiskLevel(str, Enum):
     UNKNOWN = "unknown"
 
 
-class AlarmSeverity(str, Enum):
+class AlarmSeverity(StrEnum):
     """Schweregrad eines Alarms (abgeleitet aus der ausloesenden Risikostufe)."""
 
     WARNING = "warning"
     CRITICAL = "critical"
 
 
-class AlarmState(str, Enum):
+class AlarmState(StrEnum):
     """Lebenszyklus eines Alarms. Quittieren ist reine UI-/Audit-Aktion (RB-01)."""
 
     ACTIVE = "active"
@@ -51,7 +51,7 @@ class AlarmState(str, Enum):
     CLEARED = "cleared"
 
 
-class AuditEventType(str, Enum):
+class AuditEventType(StrEnum):
     """Ereignistypen im append-only Audit-Log (NF-09)."""
 
     READING_INGESTED = "reading_ingested"

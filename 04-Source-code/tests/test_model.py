@@ -3,7 +3,7 @@
 Prueft: UTC-Erzwingung (zeitzonenbewusst), Enum-Validierung, Fail-safe-Stufe UNKNOWN.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from pydantic import ValidationError
@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from src.model.enums import AlarmSeverity, AlarmState, RiskLevel, SensorStatus, Source
 from src.model.schemas import Alarm, Assessment, Reading
 
-UTC_NOW = datetime(2026, 6, 22, 14, 3, 5, tzinfo=timezone.utc)
+UTC_NOW = datetime(2026, 6, 22, 14, 3, 5, tzinfo=UTC)
 
 
 def _reading(**overrides):
@@ -30,7 +30,7 @@ def _reading(**overrides):
 
 def test_reading_accepts_tz_aware_and_defaults():
     r = _reading()
-    assert r.measured_at.tzinfo == timezone.utc
+    assert r.measured_at.tzinfo == UTC
     assert r.source is Source.REAL
     assert r.status is SensorStatus.OK
 

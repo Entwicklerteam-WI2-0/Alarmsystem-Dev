@@ -7,7 +7,7 @@ UTC-Erzwingung: alle datetime-Felder muessen zeitzonenbewusst sein und werden au
 normalisiert (MySQL DATETIME ist zeitzonenlos -> es wird ausschliesslich UTC gespeichert).
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -33,7 +33,7 @@ class _Base(BaseModel):
         if isinstance(value, datetime):
             if value.tzinfo is None:
                 raise ValueError("Zeitstempel muss zeitzonenbewusst sein (UTC erwartet).")
-            return value.astimezone(timezone.utc)
+            return value.astimezone(UTC)
         return value
 
 
