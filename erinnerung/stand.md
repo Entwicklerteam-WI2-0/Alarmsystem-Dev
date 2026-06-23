@@ -135,3 +135,15 @@
 - **Offen/weiter:** Branch rebasen + Dublette auflösen; Drift-Fixes + E-37 als PR; `docker-compose.yml` physisch
   entfernen (E-35); DTB-19 `openapi.yaml` (Luca) muss `/v1/alarms/stream` + `/v1/alarms` führen; Tag `api-v1.0`
   erst nach G1/G3-Sign-off.
+
+## Update [23.06., ~15:51] — DTB-19 OpenAPI v1 Spec fertig (backend-dev/Luca)
+- **DTB-19 (P1.2) umgesetzt** (`feat/dtb-19-openapi-v1`, Commits fbadf02 + 778bf40, **lokal/ungepusht**):
+  `04-Source-code/docs/api/v1/openapi.yaml` (G2-API, 6 Ops inkl. `/v1/alarms/stream` SSE + `/v1/alarms`
+  Resync) + `g1-consumed.openapi.yaml` (konsumierter G1-Vertrag, 2 Ops). Formale Abschrift von
+  `API_FROZEN_v1.md`; Fail-safe NF-01 + RB-01 explizit. `openapi-spec-validator` grün; **santa-loop**-Review
+  (3 MEDIUM-Fixes eingearbeitet).
+- **Operationszahl** „≥ 15" (alte DoD) durch Architekten-Vorlage (DRI) **überholt** → Lean-Set ~6+2 maßgeblich
+  (im Datei-Header dokumentiert).
+- **Neu offen:** (1) Branch pushen + PR (DTB-19). (2) **DTB-26 G3-Sign-off** (`seam-sync-confirmed`)
+  einsammeln — **G1-Seite: Lucas**. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves
+  (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
