@@ -84,7 +84,7 @@ Repo `Alarmsystem-Dev` (Remote `Entwicklerteam-WI2-0/Alarmsystem-Dev`, Branch `m
 | `01-quellen/Prüfungsleistung Anforderungen.txt` | Bewertungskriterien (40 % individuell / 60 % Gruppe) + Pflichtdokumente |
 | `02-Arbeitsdokumente/Usecase-quick.md` | Usecase + Anforderungen (FA, NF, RB-01, AE, Konflikte K1–K9) |
 | `02-Arbeitsdokumente/Schwellenwerte.md` | **Vereisungslogik + konkrete Schwellenwerte** (4 Stufen) + Kalibriervorgaben je FA/NFA — ⚠️ **DUMMY-WERTE, s. u.** |
-| `02-Arbeitsdokumente/Backend-Konzept.md` | Architektur der Backend-Gruppe: Module, Datenmodell, Tech-Stack-Optionen, Code-Struktur |
+| `02-Arbeitsdokumente/Backend-Konzept.md` | Architektur der Backend-Gruppe: Module, Datenmodell, Tech-Stack-Optionen, Code-Struktur. **§9 enthält den verbindlichen G1→G2 API-Vertrag (Mandatory Read).** |
 | `02-Arbeitsdokumente/Tasks+Projektplan.md` | Phasen P0–P6, Meilensteine M1–M3, Kanban-Tasks (Owner/DoD/Größe) |
 | `02-Arbeitsdokumente/Team-Organisation+Regeln.md` | Rollen/DRI, Zusammenarbeits-Map, Teamregeln |
 | `02-Arbeitsdokumente/teamstruktur-final.md` | **Finale Rollenaufteilung** des aktiven Entwicklerteams inkl. Begründung |
@@ -114,6 +114,19 @@ Repo `Alarmsystem-Dev` (Remote `Entwicklerteam-WI2-0/Alarmsystem-Dev`, Branch `m
 > - Code, Tests und Konfigurationen müssen den **Austausch durch G1-Finalwerte ohne Refactoring** ermöglichen.
 > - Bis zur Finallieferung von G1: Dummies nur als **Testfixtures/Entwicklungsstände** behandeln,
 >   nicht als fachlich korrekte Werte.
+
+### API-/Datenmodell-Vertrag (Mandatory Read)
+
+Der verbindliche **G1→G2 API-Vertrag** ist in **`02-Arbeitsdokumente/Backend-Konzept.md` §9**
+dokumentiert. Jeder Agent muss diesen Abschnitt lesen, bevor er an der Naht arbeitet:
+
+- G1 stellt eine Sensor-API bereit; G2 pollt sie.
+- `GET /current` → Snapshot mit gemeinsamem `measured_at` (Pflichtfeld, ISO-8601 UTC).
+- `GET /health` → `200 OK` oder `503 Service Unavailable`.
+- Pflicht-Trias für die Bewertung: `surface_temp_c`, `air_temp_c`, `humidity_pct`.
+- `measured_at` und `/health` sind gegenüber G1 **nicht verhandelbar**.
+
+**Direktlink:** `02-Arbeitsdokumente/Backend-Konzept.md` → Abschnitt 9 „Schnittstellen nach außen".
 
 ### Heutiger Stand (16.06.2026)
 
@@ -250,8 +263,11 @@ UI-/Alarm-/Integrationskonzept (G3), Entscheidungslogbuch (laufend), Testprotoko
 ## 11. Hinweise für Agenten
 
 - **Scope respektieren:** G2 = Backend. Sensorik/Frontend **nicht** mitkonzipieren — nur die API-Schnittstelle definieren.
-- **Anforderungs-/Konzeptdokumente beachten:** `Usecase-quick.md`, `Schwellenwerte.md`, `Backend-Konzept.md`,
-  `Tasks+Projektplan.md`, `teamstruktur-final.md` (gemeinsame IDs FA/NF/RB/AE/K, Tasks P#.#).
+- **API-/Datenmodell-Vertrag beachten (Mandatory Read):** Vor jeder Arbeit an der G1→G2-Naht
+  `Backend-Konzept.md` §9 lesen. Der Contract definiert `GET /current` (Snapshot + Pflichtfeld
+  `measured_at`), `GET /health` (`200`/`503`) und die nicht verhandelbaren Pflichtfelder.
+- **Anforderungs-/Konzeptdokumente beachten:** `Usecase-quick.md`, `Schwellenwerte.md`, `Backend-Konzept.md`
+  (§9 API-Vertrag), `Tasks+Projektplan.md`, `teamstruktur-final.md` (gemeinsame IDs FA/NF/RB/AE/K, Tasks P#.#).
 - **Belegbasiert arbeiten:** keine erfundenen Schwellenwerte/Quellen; Unsicheres kennzeichnen; bei Bedarf nachfragen.
 - **⚠️ DUMMY-SCHWELLEN beachten:** Alle Zahlenwerte in `Schwellenwerte.md` sind aktuell **Platzhalterwerte**.
   Die verbindlichen Grenzwerte werden noch von **Gruppe 1 (Sensorik & Daten)** nachgeliefert.
