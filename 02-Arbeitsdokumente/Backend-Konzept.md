@@ -55,13 +55,15 @@ Prognose · API · Logging/Audit · Konfiguration (Schwellen).
 
 | Entität | Felder (Kern) |
 |---|---|
-| `reading` | id · sensor_id · ts(UTC, = G1s `measured_at`) · surface_temp_c · air_temp_c · humidity_pct · dew_point_c(berechnet) · pressure_hpa · ice_indicator · source(`real|sim`) · received_at |
+| `reading` | id · sensor_id · ts(UTC, = G1 `measured_at`) · surface_temp_c · air_temp_c · humidity_pct · dew_point_c(berechnet) · pressure_hpa · status(G1) · ice_indicator(optional/G1/sim) · source(`real|sim`) · received_at |
 | `assessment` | id · ts · reading_id · risk_level(`green|yellow|orange|red`) · driving_factor · threshold_set_id · explanation |
 | `alarm` | id · assessment_id · severity · raised_at · state(`active|acknowledged`) |
 | `acknowledgement` | id · alarm_id · operator · note · ts  *(append-only, NF-09)* |
 | `threshold_set` | id · name · params(json) · valid_from · changed_by  *(NF-05)* |
 | `audit_log` | append-only Event-Log |
 
+> **Mapping G1 → `reading`:** Die Pflichtfelder aus G1s `GET /current` (`measured_at`, `sensor_id`, `surface_temp_c`, `air_temp_c`, `humidity_pct`) landen 1:1 in `reading`. `pressure_hpa` und `status` kommen ebenfalls aus G1, sind aber verhandelbar. `dew_point_c` berechnet G2 intern; `ice_indicator`, `source` und `received_at` sind G2-interne Ergänzungen.
+>
 > **DB-Typen (MySQL/MariaDB):** `id`→`BIGINT AUTO_INCREMENT`, Zeitstempel→`DATETIME(3)` (UTC),
 > `params`→`JSON`, Enums→`VARCHAR`/`ENUM`. Schema versioniert via Alembic (s. §6/§6a).
 
@@ -171,11 +173,42 @@ docker-compose.yml  # MariaDB/MySQL-Container für Dev (dev = prod)
 - **T2:** Quittierung (FA-10), Audit-Trail, Schwellen-Config-Endpoint, Historie.
 - **T3:** 30-min-Prognose, Multi-Sensor (NF-11), Fernwartung + Auth (NF-07).
 
-## 9. Schnittstellen nach außen (abstimmen, nicht bauen)
+## 9. Schnittstellen nach außen
 
-- **von G1 (Sensorik):** G1 stellt **`GET /current`** (Snapshot aller aktuellen Messwerte + gemeinsamer **`measured_at`**) und **`GET /health`** bereit; **G2 pollt** (Intervall ≤ 60 s, selbst bestimmt). Abzustimmen: Feldnamen/Einheiten (Seam-Sync). **An dieser Naht ist G2 _Client_** — G1 definiert den Endpoint-Shape.
-- **zu G3 (Frontend):** `GET`-**Antwortformate** — was angezeigt wird (Seam-Sync).
-- Details in der API-Spezifikation (geplant); Datenmodell s. §4.
+### 9.1 von G1 (Sensorik) — G2 ist Client, G1 liefert folgenden Contract
+
+G1 stellt eine **einzelne Sensor-API** bereit. G2 pollt sie im selbst gewählten Intervall (≤ 60 s).
+
+**`GET /current`** — Snapshot aller aktuellen Messwerte mit gemeinsamem Zeitstempel:
+
+```json
+{
+  "measured_at": "2026-06-22T14:03:05Z",
+  "sensor_id": "anr-rwy-01",
+  "surface_temp_c": -0.4,
+  "air_temp_c": 1.2,
+  "humidity_pct": 96,
+  "pressure_hpa": 1013,
+  "status": "ok"
+}
+```
+
+- **`measured_at`** (ISO-8601 UTC): **PFLICHT** — ein Zeitstempel für alle Werte. Ohne dieses Feld kann G2 keine Stale-Erkennung betreiben.
+- **`sensor_id`**: **PFLICHT** — eindeutige Sensor-Identifikation.
+- **`surface_temp_c`**, **`air_temp_c`**, **`humidity_pct`**: **PFLICHT** — Trias für die Vereisungsbewertung.
+- **`pressure_hpa`**: optional/Kontext.
+- **`status`**: Sensor-Lebenszeichen (`ok` | `fault`).
+
+**`GET /health`** — Verfügbarkeits-Check der G1-API:
+
+- `200 OK` → G1 erreichbar.
+- `503 Service Unavailable` → G1 nicht betriebsbereit / Fehlerzustand.
+
+> **Verhandlungsposition gegenüber G1:** `measured_at` und `/health` sind **nicht verhandelbar**. Feldnamen, Einheiten und optionale Felder können synchronisiert werden (Seam-Sync), solange die Pflicht-Trias erhalten bleibt.
+
+### 9.2 zu G3 (Frontend) — G2 liefert
+
+`GET`-Antwortformate für aktuelle Bewertung, Messwerte und Alarme. Details in der API-Spezifikation (geplant); internes Datenmodell s. §4.
 
 ## 10. Mapping FA/NF → Backend-Modul (Kurzfassung)
 
