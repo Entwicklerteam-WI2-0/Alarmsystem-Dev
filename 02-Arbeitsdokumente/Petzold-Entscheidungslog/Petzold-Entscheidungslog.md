@@ -1,5 +1,5 @@
 # Persönliches Entscheidungslog — Johannes Petzold (G2)
-> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-22
+> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-23  ·  **Zeitraum:** 2026-06-22 bis 2026-06-23
 > **Autor:** Johannes Petzold · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
@@ -64,3 +64,30 @@
   - *Status quo (alle Branches geschützt):* blockt Review-Korrekturen auf Feature-Branches und erzwingt Neu-Branch-Workarounds (siehe #4) inkl. Cruft. Verworfen.
   - *Einzel-Bypässe pro Person:* entsperrt nur Einzelne, nicht das Team; intransparent. Verworfen zugunsten einer sauberen teamweiten Lösung über den Owner.
 - **Ergebnis/Status:** in Umsetzung durch Lucas (nach Absprache). Löst das in #4 benannte Grundproblem dauerhaft.
+
+## 2026-06-23 — Config über typisiertes, unveränderliches Modell statt rohem dict
+- **Kontext/Task:** DTB-15 (Config-Infrastructure: thresholds.json + Loader) · P0.5 · NF-05 · Enabler für DTB-38
+- **Entscheidung:** Der Loader gibt die Schwellen als getypte, `frozen` Dataclasses zurück (`Thresholds` → `VereisungsSchwellen`/`PrognoseSchwellen`), nicht als rohes `dict`.
+- **Begründung:** Ausschlaggebend waren für mich beide Aspekte gleichermaßen: die **Typsicherheit** für das Bewertungsmodul DTB-38, das die Schwellen konsumiert — getypter, autovervollständigbarer Zugriff statt Magic-Strings, und Schlüssel-Tippfehler fallen schon beim Laden auf statt erst in der späteren Verarbeitung. Und der **Schutz** vor versehentlichem Überschreiben der Werte zur Laufzeit: Schwellen sollen ausschließlich über die Config geändert werden (NF-05), und ein `frozen` Modell macht das technisch unmöglich, statt es nur als Konvention zu hoffen. Pydantic habe ich bewusst noch nicht genommen — für reine Zahlenfelder reichen `dataclasses` und sparen eine Abhängigkeit; **Pydantic kann genutzt werden, sobald der Umfang an Abhängigkeiten ohnehin wächst** (z. B. bei größerem Validierungs-/Schemabedarf).
+- **Alternativen (erwogen/verworfen):**
+  - *Rohes `dict`:* stringly-typed, keine Struktur, Magic-Strings beim Zugriff. Verworfen.
+  - *Pydantic-Model:* komfortablere Validierung, aber zusätzliche Abhängigkeit/Setup; für reine Zahlenfelder reichen `dataclasses`. Zurückgestellt.
+- **Ergebnis/Status:** umgesetzt, Commit `b1a60ae`.
+
+## 2026-06-23 — Loader scheitert *laut* (ConfigError) statt stiller Defaults
+- **Kontext/Task:** DTB-15 · NF-01-Geist (Fail-safe) · Selbstreview-Fund (MEDIUM: Werte-Validierung)
+- **Entscheidung:** `load_thresholds` wirft `ConfigError` bei fehlender Datei, kaputtem JSON, Nicht-Objekt-Root/-Abschnitt, fehlendem Pflicht-Abschnitt/-Schlüssel **und** nicht-numerischem Wert (inkl. `bool`) — kein stiller Default.
+- **Begründung:** Lautes Scheitern ist hier klar besser, **weil sofort auffällt, wenn etwas falsch läuft** — der Fehler wird beim Laden mit klarer Meldung sichtbar, statt sich als stiller Default zu tarnen und erst später in der sicherheitsrelevanten Bewertung (DTB-38) als kryptischer Fehler aufzuschlagen. Bei einer Sicherheitsanwendung ist ein Default die gefährlichere Variante: ein falsch angenommener Wert könnte eine falsche Risikobewertung erzeugen, ohne dass es jemand merkt — das widerspricht dem Fail-safe-Prinzip (NF-01). Konkret fängt die Werte-Typprüfung auch typische Eingabefehler ab, etwa die deutsche Komma-Schreibweise `"0,0"` als String statt einer Zahl.
+- **Alternativen (erwogen/verworfen):**
+  - *Stille Defaults bei fehlenden/ungültigen Werten:* verschleiert Konfigfehler — bei Sicherheitslogik inakzeptabel. Verworfen.
+  - *Nur Struktur prüfen, Werte-Typen nicht:* eine String-Schwelle rutscht durch und bricht erst in der Arithmetik (Selbstreview-Fund M1). Verworfen.
+- **Ergebnis/Status:** umgesetzt + getestet (12 Tests, 100 % Line+Branch-Coverage), Commit `b1a60ae`.
+
+## 2026-06-23 — thresholds.json bewusst auf echte Vereisungs-Schwellen begrenzt
+- **Kontext/Task:** DTB-15 · Abgrenzung zu DTB-32 (Taupunkt) / DTB-27 (Hysterese) / DTB-18 (Ingest) / DTB-33 (Prognose) — in Jira **noch nicht zugewiesen**
+- **Entscheidung:** Die Config enthält nur echte Schwellen (`vereisung`-Kaskade + Prognoseschwelle). Magnus-Konstanten, Hysterese-, Datenstatus-Parameter und der Prognosehorizont wurden **wieder entfernt** (zwischenzeitlich vorgebaut).
+- **Begründung:** Der saubere Schnitt war besser als der dokumentierte Vorgriff, weil wir nach dem Durchgehen der Entscheidungen sichergestellt haben, **erstmal nur die Struktur zu bauen und von den weiteren Tasks nichts falsch vorzugreifen** — etwas, das uns später nochmal ärgern oder fremde Schnittstellen vorprägen würde. Außerdem haben wir dabei **nochmal genau definiert, was wirklich Schwellenwerte sind und was hier falsch einsortiert war**: Die Magnus-Konstanten sind feste physikalische Größen und keine tunbaren Schwellen — sie gehören nicht in eine Schwellen-Config (Name = Inhalt). Hysterese- und Datenstatus-Parameter sowie der Prognosehorizont gehören zu anderen, in Jira noch nicht zugewiesenen Tasks (DTB-32/-27/-18/-33); ihre Werte jetzt mit Dummies festzulegen hätte deren Entscheidungen vorweggenommen.
+- **Alternativen (erwogen/verworfen):**
+  - *Eine große zentrale Config mit allen Parametern:* architektonisch denkbar, prägt aber Werte/Struktur fremder, unzugewiesener Tasks vor und mischt Kategorien (Konstanten vs. Schwellen). Verworfen nach Abgleich mit `Schwellenwerte.md` + Rücksprache.
+  - *Pro-Owner-Konfigdateien jetzt anlegen:* verfrüht — die Tasks sind weder gebaut noch zugewiesen. Den Owner-Tasks überlassen.
+- **Ergebnis/Status:** umgesetzt (getrimmt), Commit `b1a60ae`.
