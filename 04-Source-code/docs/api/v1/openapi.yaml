@@ -130,7 +130,7 @@ paths:
                     measured_at: "2026-06-22T13:55:00Z"
                     assessed_at: "2026-06-22T14:03:30Z"
                     is_stale: true
-                    sensor_status: fault
+                    sensor_status: ok
                 failsafe_fault:
                   summary: Fail-safe — Sensor defekt trotz aktueller Daten (NF-01, nie GRUEN)
                   value:
@@ -198,9 +198,21 @@ paths:
             minimum: 1
             maximum: 1000
             default: 100
+        - name: order
+          in: query
+          required: false
+          description: Sortierung nach `measured_at`. Default `desc` (neueste zuerst).
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
       responses:
         "200":
-          description: Liste von Messwerten (neueste zuerst).
+          description: |
+            Liste von Messwerten, sortiert nach `order` (Default `desc`).
+            **Achtung:** bei mehr Treffern als `limit` wird am jeweils *aelteren*
+            Ende abgeschnitten (kein Cursor/Total) — fuer lueckenlose Historie das
+            Fenster per `from`/`to` verkleinern oder `limit` erhoehen.
           content:
             application/json:
               schema:
@@ -232,7 +244,11 @@ paths:
         - name: state
           in: query
           required: false
-          description: Auf einen Alarm-Zustand filtern. Ohne Angabe nur aktive Alarme.
+          description: |
+            Auf einen Alarm-Zustand filtern. Ohne Angabe alle OFFENEN Alarme
+            (`active` + `acknowledged`, ohne `cleared`) — fuer den vollstaendigen
+            Resync nach Disconnect (sonst wuerden quittierte, aber noch offene
+            Alarme aus der G3-Ansicht verschwinden).
           schema:
             $ref: "#/components/schemas/AlarmState"
       responses:
@@ -258,10 +274,17 @@ paths:
       summary: Live-Alarm-Stream (Server-Sent Events)
       description: |
         **Server-Sent Events (SSE)** — G3 haelt **eine** Verbindung offen, G2
-        **pusht** Alarme live (E-37). Jedes SSE-`data:`-Feld enthaelt einen Alarm
-        als JSON (Schema `Alarm`). Kein Polling.
+        **pusht** Alarme live (E-37). Jedes SSE-`data:`-Feld enthaelt **einen
+        Alarm** als JSON, Form exakt nach Schema `Alarm` (siehe `components`).
+        Kein Polling. Content-Type `text/event-stream`.
 
-        Der Response-Stream hat den Content-Type `text/event-stream`.
+        **Frame-Format:** `id:` = Alarm-ID (fuer Reconnect via `Last-Event-ID`),
+        `data:` = Alarm-JSON.
+        **Heartbeat:** G2 sendet ~alle 15 s eine SSE-Kommentarzeile (`:keep-alive`),
+        damit G3 einen still gestorbenen Stream von einem nur ruhigen unterscheidet.
+        **Reconnect:** Bei Abriss reconnectet G3 automatisch (Header `Last-Event-ID`)
+        und ruft anschliessend **zwingend** `GET /v1/alarms` als Resync-Backstop
+        (lueckenlose Zustands-Wiederherstellung, E-37).
       responses:
         "200":
           description: Offener SSE-Stream; jedes Event traegt einen Alarm als JSON.
@@ -312,7 +335,7 @@ paths:
             schema:
               $ref: "#/components/schemas/AckRequest"
             example:
-              operator: "tower-ops-azezoo"
+              operator: "tower-ops-01"
               note: "Gesehen, manuelle Sichtkontrolle eingeleitet."
       responses:
         "200":
@@ -339,8 +362,20 @@ paths:
               example:
                 code: ALARM_ALREADY_ACKNOWLEDGED
                 message: "Alarm 42 ist bereits im Zustand 'acknowledged'."
+        "400":
+          description: "Ungueltiger Pfad-Parameter `id` (z. B. `id=0`, verletzt `minimum: 1`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: BAD_REQUEST
+                message: "Ungueltige Alarm-ID."
         "422":
-          description: Ungueltiger Request-Body (z. B. `operator` fehlt).
+          description: |
+            Ungueltiger Request-Body (Body-Schema-Validierung, z. B. `operator`
+            fehlt). Konvention: `400` = Request-/Pfad-/Geschaeftsregel-Fehler (wie
+            bei `/v1/readings` und `/v1/alarms`); `422` = Body-Schema-Validierung.
           content:
             application/json:
               schema:
@@ -365,11 +400,13 @@ components:
     AlarmSeverity:
       type: string
       description: |
-        Schweregrad eines Alarms, abgeleitet aus der ausloesenden Risikostufe
-        (`RiskLevel`). **Vorgeschlagene Abbildung — TBD, gegen `Schwellenwerte.md`
-        + Architekt zu bestaetigen (noch nicht final entschieden):**
-        `orange → warning`, `red → critical`. `green`/`yellow`/`unknown` loesen
-        keinen Alarm aus.
+        Schweregrad eines Alarms. Die **Ableitung** aus der ausloesenden
+        Risikostufe (`RiskLevel`) ist eine **G2-interne Regel, NICHT Teil des
+        eingefrorenen Wire-Contracts** — G3 konsumiert nur den fertigen
+        `severity`-Wert. Aktuelle Abbildung (deckt sich mit `Schwellenwerte.md`,
+        „Ausloesung ab ORANGE"): `orange → warning`, `red → critical`;
+        `green`/`yellow`/`unknown` loesen keinen Alarm aus. Aenderungen an dieser
+        Ableitung bleiben damit G2-intern und sind kein Breaking Change der Naht.
       enum: [warning, critical]
 
     AlarmState:
@@ -396,8 +433,10 @@ components:
       type: object
       description: |
         Aktuelle Vereisungsbewertung. Felder gemaess `Assessment`-Schema
-        (src/model/schemas.py) plus Naht-Felder `is_stale`/`sensor_status`.
-        Alle Zeitstempel in UTC (ISO-8601).
+        (src/model/schemas.py): `assessed_at` entspricht dort dem Feld `ts`;
+        `measured_at` stammt aus dem verknuepften `Reading` (G1-Snapshot, nicht
+        aus `Assessment`). Naht-Felder `is_stale`/`sensor_status` ergaenzen die
+        Naht-Sicht. Alle Zeitstempel in UTC (ISO-8601).
 
         **Fail-safe-Invarianten (NF-01) — verbindlich, von der `assessment/`-Logik
         garantiert (OpenAPI 3.0.3 kann felduebergreifende Regeln nicht hart
@@ -407,8 +446,12 @@ components:
           gilt `risk_level=unknown` (nie GRUEN).
         - Bei `risk_level != unknown` sind `surface_temp_c`, `dew_point_c`,
           `delta_t`, `humidity_pct` und `measured_at` nicht-null (eine echte
-          Bewertung hat immer Messwerte). `null`-Messwerte treten nur mit
-          `risk_level=unknown` + `is_stale=true` auf.
+          Bewertung hat immer Messwerte). Genullte Messwerte treten **nur** bei
+          `risk_level=unknown` auf — ausgeloest durch `is_stale=true` (veraltet)
+          **oder** `sensor_status=fault` (Sensor defekt). `measured_at` kann dabei
+          im Fault-Fall mit frischen Daten gesetzt sein (Zeitstempel bekannt, Werte
+          aber nicht vertrauenswuerdig); bei reinem Stale traegt es den letzten,
+          alten Zeitstempel.
       required: [risk_level, assessed_at, is_stale, sensor_status]
       properties:
         risk_level:
@@ -456,7 +499,7 @@ components:
     Reading:
       type: object
       description: Einzelner Messwert-Snapshot. Sensor-Felder von G1, Rest von G2 berechnet/gesetzt.
-      required: [sensor_id, measured_at, surface_temp_c, air_temp_c, humidity_pct, status, received_at]
+      required: [sensor_id, measured_at, surface_temp_c, air_temp_c, humidity_pct, status, received_at, source]
       properties:
         id:
           type: integer

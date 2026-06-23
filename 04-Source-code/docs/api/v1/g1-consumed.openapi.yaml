@@ -62,6 +62,11 @@ paths:
                 humidity_pct: 96
                 pressure_hpa: 1013
                 status: ok
+        "503":
+          description: |
+            G1 nicht betriebsbereit / Fehlerzustand (z. B. interner Sensorausfall).
+            G2 wertet jede Nicht-200-Antwort wie "nicht erreichbar" und greift den
+            Fail-safe (kein frischer Snapshot -> `risk_level=unknown`, NF-01).
 
   /health:
     get:
