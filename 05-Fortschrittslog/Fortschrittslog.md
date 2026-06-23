@@ -6,37 +6,42 @@
 > `02-Arbeitsdokumente/`. **Pflege:** bei jedem nennenswerten Merge in `main` einen Eintrag in §2 ergänzen
 > und §1 aktualisieren. Sprache: Deutsch.
 
-## 1. Aktueller Stand — Snapshot (Stand: 2026-06-22)
+## 1. Aktueller Stand — Snapshot (Stand: 2026-06-23)
 
-**Branch-Lage:** `main` ist der konsolidierte Stand. P0-Grundgerüst + MySQL-Setup sind gemergt.
+**Branch-Lage:** `main` = konsolidierter Stand (Stack-Blatt + E-35 gemergt). DTB-12-Datenmodell offen als **PR #37**.
 
 ### Steht / vorhanden
 - **P0-Grundgerüst** (PR #27): FastAPI-Skelett, `GET /health`, Modulstruktur
   `04-Source-code/src/{ingest,model,assessment,storage,api,config,forecast}/`, `tests/test_health.py`.
-- **MySQL/MariaDB-Setup** (PR #26, #21): `04-Source-code/docker-compose.yml` (MariaDB 11), `.env.example`,
-  Dependencies `sqlalchemy 2.0`, `pymysql 1.1`, `alembic 1.13`.
-- **`migrations/`**-Ordner angelegt (Alembic, noch leer).
-- **Doku** MySQL-aktualisiert: Backend-Konzept §6/§6a, README-Tech-Stack, Entscheidungslog **E-29**
-  (DB-Strategie MySQL/MariaDB, GL-Vorgabe).
+- **Stack final (P0.1, E-35):** Python/FastAPI/Pydantic/Uvicorn + **rohes PyMySQL** (kein ORM) +
+  **MySQL/MariaDB** + HTTP-Pull. SQLAlchemy/Alembic **entfernt**; Deps: `fastapi`, `uvicorn[standard]`,
+  `pymysql`. Doku: `Stack-Entscheidung-P0.1.md`, Entscheidungslog **E-35** (revidiert E-29-Umsetzung;
+  DB-Mandat MySQL bleibt).
+- **Datenmodell (DTB-12, PR #37, in Review):** 6 Pydantic-Modelle (`src/model/schemas.py`) + Enums
+  (`enums.py`, inkl. `unknown`/Fail-safe), **`migrations/schema.sql`** (MariaDB-DDL: utf8mb4, DATETIME(3) UTC,
+  CHECK-Enums, FKs), `tests/test_model.py` (**8 grün**).
+- **MySQL/MariaDB-Setup** (PR #26, #21, E-29): native MariaDB 11 (Pi), `.env.example`. **Kein Docker** mehr
+  (E-35) → `docker-compose.yml` noch zu entfernen.
 
 ### Offen — kritischer Pfad (nächste Schritte)
-- **Contract/Naht (E-02):** Datenmodell-Schema + OpenAPI v1 einfrieren. *(Owner: Lucas — festgelegt)*
-- **Persistenz:** SQLAlchemy-Modelle (DTB-12) → erste Alembic-Migration (DTB-54) → Engine-Bootstrap
-  (DTB-55) → Repository (DTB-28).
+- **Naht-Freeze (E-02):** OpenAPI v1 (DTB-19) + `reading`-Felder mit G1 bestätigen (**P1.4**). *(Owner: Lucas)*
+- **Persistenz (DTB-28):** Repository auf **rohem PyMySQL** (parametrisierte Queries) → Connection-Helper
+  (DTB-55) → `schema.sql` einspielen (DTB-54). *(kein ORM/Alembic, E-35)*
 - **Bewertungslogik (DTB-38):** 4-Stufen, DB-frei, Kern-IP; beide Vorfall-Tests + Fail-safe, ≥ 80 % Coverage.
-- **docker-compose (DTB-53):** Healthcheck + utf8mb4 ergänzen (Grundgerüst steht bereits).
+- **CI (DTB-11):** DB-Bereitstellung klären (MySQL-Service-Container vs. nur DB-freie Tests).
 
 ### Bekannte offene Punkte (Doku / Orga)
-- Root-`README.md` Struktur-/Setup-Sektion noch auf `src/`-Root + „noch nicht im Repo" (statt
-  `04-Source-code/`, `pip`/`uvicorn`) — Korrektur ausstehend.
-- E-ID-Kollision im Entscheidungslog (E-29 mehrfach belegt) — Auflösung **E-30/E-31/E-32** ausstehend
-  (DRI Lucas).
-- `Projektplan-Jira-Backlog-G2.md` noch SQLite-Stand; das Jira-Board ist bereits MySQL-überarbeitet.
+- Prosa-Spiegel **Backend-Konzept §6/§7** + **README** noch auf SQLAlchemy/Docker — E-35-Angleich läuft (parallel).
+- `Projektplan-Jira-Backlog-G2.md` noch SQLite-Stand.
+- `docker-compose.yml` entfernen (E-35).
 
 ## 2. Änderungs-Log (Commits / Pull Requests)
 
 | Datum | PR / Commit | Inhalt |
 |---|---|---|
+| 2026-06-23 | #37 (`d24ee92`) | DTB-12 Datenmodell — 6 Pydantic-Modelle + Enums + `schema.sql`, kein ORM (E-35); 8 Tests grün *(in Review)* |
+| 2026-06-23 | `5000baa` | E-35: Wechsel auf rohes PyMySQL, SQLAlchemy/Alembic entfernt |
+| 2026-06-23 | `5c09857` | Stack-Entscheidung P0.1 (Stack-Blatt) |
 | 2026-06-22 | #27 (`29528b4`) | P0-Grundgerüst — FastAPI-Skelett, `/health`, MySQL-Setup |
 | 2026-06-22 | #26 (`f44649c`) | Pi- + MariaDB-Setup |
 | 2026-06-22 | #21 (`bd4950c`) | MySQL-Vorgabe der GL in Backend-Konzept, README & Entscheidungslog (E-29) |

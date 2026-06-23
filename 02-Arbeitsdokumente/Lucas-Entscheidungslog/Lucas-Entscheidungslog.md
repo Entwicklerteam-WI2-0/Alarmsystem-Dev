@@ -1,5 +1,5 @@
 # Persönliches Entscheidungslog — Lucas Vöhringer (G2)
-> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-22
+> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-23
 > **Autor:** Lucas Vöhringer (Systemarchitekt) · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 > Persönliches Log (Einzelleistung). Das zentrale Architektur-Logbuch des Teams ist
@@ -36,3 +36,11 @@
   - *`RH ≥ 90 %` belassen:* verworfen — reproduziert den Fehlalarm, verfehlt das Designziel (K1).
 - **Konsequenz für die G1-Naht:** `humidity_pct` im `GET /current`-Snapshot ist als **Luft**feuchte ausreichend (Input für `T_d`); ein separater Oberflächenfeuchte-Wert ist nicht erforderlich. Im Seam-Sync klarstellen, dass `humidity_pct` = Luftfeuchte.
 - **Ergebnis/Status:** umgesetzt (`Schwellenwerte.md §1/§2/§4`). Schwellen bleiben parametrierbare Dummies (G1-Finalwerte ausstehend, NF-05). PR #32 gemergt.
+
+## 2026-06-23 — Persistenz ohne ORM (rohes PyMySQL) + handgeschriebenes `schema.sql`, kein Docker
+- **Kontext/Task:** P1.1/P2.2 · DTB-12/DTB-28 · revidiert die **Umsetzungsteile** von E-29 (DB-Mandat MySQL/MariaDB bleibt). Zentrales Log: **E-35**. Auslöser: Team-Kritik auf DTB-12 — SQLAlchemy + Docker zu schwer fürs ~2.-Sem.-Anfängerteam.
+- **Entscheidung:** Persistenz über **rohes PyMySQL** hinter dem Repository-Pattern (kein SQLAlchemy), **parametrisierte Queries Pflicht**; DB-Schema als handgeschriebenes **`schema.sql`** (kein Alembic); **kein Docker** — native MariaDB (geteilte Pi-Instanz via Tunnel / lokal).
+- **Begründung:** Für ~6 simple Tabellen in einem 3-Wochen-Prototyp ist ein ORM + Migrationsframework Overkill; rohes, parametrisiertes SQL hinter der Repository-Naht ist verständlicher und hat weniger bewegliche Teile. Die Docker-Parität (E-29-Ziel „dev = prod") ist ohne Docker erreichbar, weil bereits eine native MariaDB auf dem Pi läuft → die Einstiegshürde Docker fällt weg. Es bleibt durchgängig MySQL/MariaDB (kein Dialekt-Drift, E-29-Kern erhalten); nur die Umsetzung ändert sich.
+- **Alternativen (erwogen/verworfen):** SQLAlchemy ORM (Overkill + Lernkurve); SQLAlchemy Core (Injection-Schutz ohne ORM-Last — verworfen zugunsten maximaler Einfachheit, Schutz stattdessen per parametrisierte Queries + Review); Alembic (unnötig bei stabilem `schema.sql`); Docker-Compose (Einstiegshürde Windows/WSL2, Pi existiert nativ).
+- **Bewusster Tradeoff:** ohne ORM mehr manuelles SQL/Mapping; ohne Migrationstool spätere Schema-Änderungen per manueller `schema.sql`-Pflege. Für Prototyp-Scope akzeptiert. Guardrail: parametrisierte Queries (Injection-Schutz), Repository-Pattern bleibt → Bewertungslogik DB-frei.
+- **Ergebnis/Status:** umgesetzt — DTB-12 (Modelle + `schema.sql`, 8 Tests grün, PR #37); E-35 im Architektur-Log; Jira DTB-2/12/28/53/54/55/56 angepasst. Offen: G1-Feldnamen-Freeze (P1.4); Prosa-Spiegel Backend-Konzept/README.
