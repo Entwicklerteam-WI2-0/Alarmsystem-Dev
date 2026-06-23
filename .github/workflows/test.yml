@@ -59,3 +59,25 @@ jobs:
 
       - name: Tests mit Coverage
         run: pytest --cov=src --cov-report=term-missing --cov-fail-under=80
+
+  # Aggregator-Job (DTB-11b): Die Branch-Protection verlangt den Check-Namen
+  # "test". Die Matrix erzeugt "test (3.12)"/"test (3.14)" — daher dieser Job
+  # mit name: test, der per needs: auf die Matrix wartet und genau dann gruen
+  # wird, wenn 3.12 UND 3.14 gruen waren. if: always() stellt sicher, dass er
+  # auch bei Matrix-Fehlern laeuft und dann verlaesslich rot reportet (statt
+  # skipped zu werden) — sonst wuerde der Required-Check nie erfuellt.
+  test_status:
+    name: test
+    needs: test
+    runs-on: ubuntu-latest
+    if: ${{ always() }}
+    permissions:
+      contents: read
+    steps:
+      - name: Matrix-Ergebnis pruefen
+        run: |
+          echo "Matrix result: ${{ needs.test.result }}"
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "Mindestens ein Matrix-Job (3.12 oder 3.14) fehlgeschlagen."
+            exit 1
+          fi
