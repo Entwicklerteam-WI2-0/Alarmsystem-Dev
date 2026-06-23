@@ -272,6 +272,15 @@ paths:
                 description: |
                   SSE-Frames. Beispiel eines Events:
                   `data: {"id":42,"assessment_id":17,"severity":"critical","raised_at":"2026-06-22T14:03:30Z","state":"active"}`
+        "503":
+          description: G2 ist nicht lieferfaehig (z. B. interner Ausfall beim Verbindungsaufbau). Erlaubt G3, "Stream leer" von "G2 weg" zu unterscheiden.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: SERVICE_UNAVAILABLE
+                message: "Alarm-Stream derzeit nicht verfügbar."
 
   /v1/alarms/{id}/ack:
     post:
