@@ -110,5 +110,6 @@ components:
           description: Luftdruck (hPa), optional/Kontext.
         status:
           type: string
-          description: Sensor-/Lieferstatus.
+          # Muss mit SensorStatus in openapi.yaml synchron bleiben (getrennte Specs -> kein $ref moeglich).
+          description: Sensor-/Lieferstatus. Wertemenge identisch zu `SensorStatus` in openapi.yaml.
           enum: [ok, fault]

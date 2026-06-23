@@ -291,6 +291,11 @@ paths:
         Quittiert einen Alarm. **RB-01:** rein dokumentierend (Audit) — die UI
         kann den Alarm damit beenden, aber dies ist **kein** Bahn-Freigabe-/
         Sperr-Befehl. Setzt den Alarm-Zustand auf `acknowledged`.
+
+        **Double-Ack (NF-09, Audit-Integritaet):** Ist der Alarm bereits
+        `acknowledged` oder `cleared`, wird eine erneute Quittierung mit `409`
+        abgelehnt (nicht idempotent, kein lautloses Schlucken) — so bleibt jede
+        Quittierung ein eindeutiger, nachvollziehbarer Audit-Eintrag.
       parameters:
         - name: id
           in: path
@@ -325,6 +330,15 @@ paths:
               example:
                 code: NOT_FOUND
                 message: "Alarm 42 nicht gefunden."
+        "409":
+          description: Alarm ist bereits quittiert/geschlossen — erneute Quittierung abgelehnt (NF-09).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: ALARM_ALREADY_ACKNOWLEDGED
+                message: "Alarm 42 ist bereits im Zustand 'acknowledged'."
         "422":
           description: Ungueltiger Request-Body (z. B. `operator` fehlt).
           content:
@@ -511,6 +525,7 @@ components:
       properties:
         operator:
           type: string
+          minLength: 1  # leer waere kein gueltiger Audit-Eintrag (NF-09)
           description: Kennung der quittierenden Person (Audit).
         note:
           type: string
