@@ -156,3 +156,17 @@
 - **Neu offen:** (1) **PR #48 mergen** (Reviewer/Lucas). (2) **DTB-26 G3-Sign-off** (`seam-sync-confirmed`)
   — G1-Seite: Lucas. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves offen
   (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
+
+## Update [23.06., ~22:00] — DTB-11 Test-CI abgeschlossen + Poller-Fail-safe-Fix (Petzold)
+- **DTB-11 (Test-CI) fertig & gemergt (#50):** `.github/workflows/test.yml` gegen das `04-Source-code/`-Layout
+  (`pytest --cov` ≥ 80 % + `ruff`); veralteter PR #18/`feat/ci-base` abgelöst & geschlossen.
+  **Branch-Schutzregel „Require status checks" mit Check `test` aktiv.** Python-Matrix 3.12/3.14 +
+  Aggregator-Check `test` nachgezogen (DTB-11b, #52).
+- **Poller-Fail-safe-Fix (DTB-12, #53/#54):** beim CI-Selbstreview entdeckter NF-01-Bug (defektes optionales
+  `pressure_hpa` → Crash statt `None`) per TDD gefixt; `poller.py` 100 % Coverage. Im vertieften Review
+  verfeinert: pressure **nicht-blockierend** (loggt + `None`, Reading bleibt), `status=fault`→Ablehnung,
+  `measured_at` **UTC-only**, spezifische `RepositoryError`.
+- **main grün:** 62 Tests, 100 % Coverage, ruff sauber (`d86e8d6`). Lokale Branches aufgeräumt, Remote sauber.
+- **Entscheidungen:** 8 neue Einträge im persönlichen `Petzold-Entscheidungslog` (noch lokal/uncommittet).
+- **Neu offen:** (1) Entscheidungslog-Edit committen/pushen (Doku-PR). (2) DTB-11/DTB-12 Jira-Status manuell.
+  (3) Kritischer Pfad: DB-Setup (DTB-53–56) + Persistenz (DTB-28) → dann Bewertungsmodul DTB-38.
