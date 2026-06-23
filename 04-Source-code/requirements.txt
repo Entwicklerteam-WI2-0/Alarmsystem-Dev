@@ -1,6 +1,5 @@
 # Runtime-Abhängigkeiten des G2-Backends (s. Backend-Konzept.md §6).
+# Persistenz: rohes PyMySQL hinter Repository-Pattern, kein ORM/Migrationsframework (E-35).
 fastapi>=0.115
 uvicorn[standard]>=0.30
-sqlalchemy>=2.0
 pymysql>=1.1
-alembic>=1.13

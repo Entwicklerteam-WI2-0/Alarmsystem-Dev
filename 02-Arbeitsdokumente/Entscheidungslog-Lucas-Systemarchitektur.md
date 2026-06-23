@@ -48,7 +48,20 @@
   - **SQLite-dev + MySQL-prod (gekapselt)** — pragmatisch, aber Dialekt-Drift-Risiko; weicht von „grundsätzlich MySQL" ab.
   - **PostgreSQL/TimescaleDB** — technisch stark bei Zeitreihen, aber im Haus nicht etabliert (GL-Kriterium „bestehende Kompetenz wiederverwenden").
 - *Ergebnis/Status:* vollständig umgesetzt in `Backend-Konzept.md §6/§6a`, `README.md`, `Tasks+Projektplan.md` P0.1 und `Raspberry-Pi-Hosting-Anleitung.md` (22.06.2026, PR #21). G1-Schwellen/reale Last bei Verfügbarkeit gegen §6a plausibilisieren.
-- *Bezug:* E-08 (DB-Teil überholt), `Surprise Anforderungen.txt`, NF-01 (Fail-safe bei DB-Ausfall), Backend-Konzept §6a.
+- *Bezug:* E-08 (DB-Teil überholt), `Surprise Anforderungen.txt`, NF-01 (Fail-safe bei DB-Ausfall), Backend-Konzept §6a. **Umsetzungs-Teile (Persistenz-Tooling SQLAlchemy/Alembic + Docker-Bereitstellung) am 23.06.2026 revidiert → E-35; DB-Mandat MySQL/MariaDB bleibt.**
+
+**E-35 — Persistenz ohne ORM (rohes PyMySQL + `schema.sql`); kein Docker (native MariaDB) — revidiert die Umsetzung von E-29**
+- *Kontext/Task:* Review der Persistenz-/Setup-Tooling-Wahl (23.06.2026) auf der Naht-Task DTB-12 · betrifft DTB-2/12/28 und DTB-53/54/55/56 · revidiert die **Umsetzungs-Teile** von E-29 (Persistenz-Tooling + DB-Bereitstellung). **DB-Mandat MySQL/MariaDB (GL) bleibt unberührt.** *Auslöser:* Team-Kritik auf DTB-12 — SQLAlchemy + Docker zu schwer für ein 3-Wochen-Anfängerteam.
+- *Entscheidung:* (1) **Persistenz über rohes PyMySQL** hinter dem Repository-Pattern — **kein SQLAlchemy**; **parametrisierte Queries verpflichtend** (Injection-Schutz). (2) **Schema als handgeschriebenes `schema.sql` (DDL)** statt ORM-Modelle — **kein Alembic**. (3) **Keine Docker-Pflicht:** DB-Bereitstellung über **native MariaDB** (geteilte Pi-Instanz via Tunnel ODER lokale native MariaDB); `docker-compose.yml` entfällt.
+- *Begründung:* Für ~6 simple Tabellen in einem 3-Wochen-Prototyp eines ~2.-Semester-Teams ist ein ORM + Migrationsframework Overkill; rohes, **parametrisiertes** SQL + `schema.sql` ist verständlicher und hat weniger bewegliche Teile. Die Docker-Parität (E-29-Ziel „dev = prod") ist **ohne Docker erreichbar**, weil bereits eine **echte native MariaDB auf dem Pi** läuft — die Einstiegshürde Docker fällt damit ersatzlos weg. Es bleibt durchgängig MySQL/MariaDB (kein Dialekt-Drift, E-29-Kern erhalten); nur die Umsetzung ändert sich.
+- *Guardrails (nicht verhandelbar):* parametrisierte Queries (nie String-Formatierung), Repository-Pattern bleibt (Bewertungslogik DB-frei → kritischer Pfad/≥80 % Coverage unberührt), MariaDB bleibt (GL), Verbindung config-/`.env`-gesteuert (NF-05/NF-07).
+- *Alternativen (verworfen):*
+  - **SQLAlchemy ORM** — Overkill + Lernkurve für 3 Wochen.
+  - **SQLAlchemy Core** (Kompromiss: Injection-Schutz ohne ORM-Last) — verworfen zugunsten maximaler Einfachheit; Injection-Schutz stattdessen per Disziplin (parametrisierte Queries) + Review.
+  - **Docker-Compose-MariaDB** — Einstiegshürde (Windows/WSL2) ohne Mehrwert, da native Pi-MariaDB existiert.
+  - **Alembic** — Migrationsframework unnötig bei stabilem `schema.sql` für 6 Tabellen.
+- *Konsequenz/offen:* **CI-DB-Bereitstellung** mit DB-Engineer/Johannes klären (MySQL-`service`-Container im Actions-Workflow vs. Coverage-Gate nur auf DB-freien Assessment-Tests). Storage-Integrationstests brauchen eine echte MariaDB (Pi/lokal). Spätere Schema-Änderungen ohne Migrationstool = manuelle `schema.sql`-Pflege (für Prototyp-Scope bewusst akzeptiert).
+- *Bezug:* revidiert **E-29** (Umsetzung); DTB-2/12/28; DTB-53/54/55/56; Backend-Konzept §6/§6a/§7; `Stack-Entscheidung-P0.1.md`.
 
 **E-09 — Sensorik-Pragmatik: ein günstiger echter Sensor für die Kerngröße + Simulator-Feed hinter *einer* Ingest-Schnittstelle**
 - *Begründung:* Reale Vorfeld-Sensorik ist in 3 Wochen unrealistisch und teuer (Konflikte K3/K4). So läuft die Demo zuverlässig; echte Sensoren ersetzen die Simulation später 1:1.
