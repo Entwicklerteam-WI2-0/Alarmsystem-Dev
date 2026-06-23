@@ -98,16 +98,20 @@ class Poller:
                 logger.error("Pflichtfeld in G1-Antwort fehlt: %s", field)
                 return None
 
-        # Typ-Konvertierung der Pflichtfelder (+ optionales pressure_hpa, s. u.) im Fail-safe-try.
+        # Design (NF-01, bewusst defensiv): Ein FEHLENDES optionales Feld ist ok
+        # (pressure_hpa -> None, status -> Default OK). Ein VORHANDENES, aber DEFEKTES
+        # optionales Feld (nicht-numerisches pressure_hpa, ungueltiger status) verwirft
+        # das GESAMTE Reading -- lieber nichts speichern als halb-validierte Daten.
+        # Einheitliches Muster: alle Feld-Parser (Pflicht UND optional) werfen bei
+        # defektem Wert ValueError, die hier zentral fail-safe zu None fuehrt.
         try:
             measured_at = _parse_iso_utc(data["measured_at"])
             sensor_id = _as_string(data["sensor_id"], "sensor_id")
             surface_temp_c = _as_float(data["surface_temp_c"], "surface_temp_c")
             air_temp_c = _as_float(data["air_temp_c"], "air_temp_c")
             humidity_pct = _as_float(data["humidity_pct"], "humidity_pct")
-            # Optionales pressure_hpa MIT in den Fail-safe-try: ein defektes optionales
-            # Feld darf den Poller nicht crashen (NF-01), sondern fuehrt zu None.
             pressure_hpa = _optional_float(data.get("pressure_hpa"), "pressure_hpa")
+            status = _optional_status(data.get("status"))
         except ValueError as exc:
             logger.error("G1-Feld ungueltig: %s", exc)
             return None
@@ -126,11 +130,6 @@ class Poller:
         # Plausibilitaet des optionalen pressure_hpa (Parsing erfolgte oben im Fail-safe-try).
         if pressure_hpa is not None and not (MIN_PRESSURE_HPA <= pressure_hpa <= MAX_PRESSURE_HPA):
             logger.error("pressure_hpa ausserhalb des gueltigen Bereichs: %s", pressure_hpa)
-            return None
-
-        # Optionales Feld status verarbeiten (Default: ok).
-        status = _optional_status(data.get("status"))
-        if status is None:
             return None
 
         # Validierte Werte in das DTB-12 Reading-Schema ueberfuehren.
@@ -186,15 +185,15 @@ def _optional_float(value: object, field: str) -> float | None:
         raise ValueError(f"{field} muss eine Zahl sein, erhalten: {value!r}") from exc
 
 
-def _optional_status(value: object) -> SensorStatus | None:
-    # Optionaler G1-Status: fehlend -> ok, sonst muss Wert im Enum liegen.
+def _optional_status(value: object) -> SensorStatus:
+    # Optionaler G1-Status: fehlend -> Default OK; sonst muss der Wert im Enum liegen.
+    # Defekte Werte werfen ValueError (wie die uebrigen Feld-Parser) -> zentrale
+    # Fail-safe-Behandlung in _build_reading (kein stilles None mehr).
     if value is None:
         return SensorStatus.OK
     if not isinstance(value, str):
-        logger.error("status muss ein String sein, erhalten: %s", type(value))
-        return None
+        raise ValueError(f"status muss ein String sein, erhalten: {type(value)}")
     try:
         return SensorStatus(value)
-    except ValueError:
-        logger.error("Ungueltiger status-Wert: %s", value)
-        return None
+    except ValueError as exc:
+        raise ValueError(f"Ungueltiger status-Wert: {value!r}") from exc

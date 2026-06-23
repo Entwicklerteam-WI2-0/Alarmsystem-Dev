@@ -4,6 +4,7 @@ Der Poller bleibt DB-agnostisch und arbeitet gegen das Repository-Interface
 aus src/storage/repository.py (Implementierung kommt in DTB-28).
 """
 
+import json
 from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
@@ -405,7 +406,8 @@ def test_poll_non_json_response_is_failsafe(
     # Fail-safe (NF-01): eine unparsbare G1-Antwort fuehrt zu None (kein Crash, kein Speichern).
     response = Mock()
     response.raise_for_status.return_value = None
-    response.json.side_effect = ValueError("kein gueltiges JSON")
+    # Echter Fehlertyp von httpx.Response.json() bei kaputtem Body (Subklasse von ValueError).
+    response.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)
 
     with patch("src.ingest.poller.httpx.get", return_value=response):
         reading = poller.poll()
