@@ -66,6 +66,17 @@ def test_database_config_rejects_empty_or_whitespace_host() -> None:
         )
 
 
+def test_database_config_rejects_empty_password() -> None:
+    with pytest.raises(DatabaseConfigError, match="PASSWORD"):
+        DatabaseConfig(
+            host="db.test",
+            port=3306,
+            name="alarmsystem",
+            user="alarm",
+            password="",
+        )
+
+
 def test_database_config_validates_port_in_constructor() -> None:
     with pytest.raises(DatabaseConfigError, match="DB_PORT"):
         DatabaseConfig(
@@ -89,18 +100,16 @@ def test_database_config_validates_connect_timeout_in_constructor() -> None:
         )
 
 
-def test_database_config_rejects_connect_timeout_above_limit(
-    minimal_env, monkeypatch
-) -> None:
+def test_database_config_rejects_connect_timeout_above_limit(minimal_env, monkeypatch) -> None:
     monkeypatch.setenv("DB_CONNECT_TIMEOUT", "301")
 
     with pytest.raises(DatabaseConfigError, match="DB_CONNECT_TIMEOUT"):
         load_database_config_from_env()
 
 
-def test_load_database_config_from_env_parses_all_fields(minimal_env) -> None:
-    os.environ["DB_CONNECT_TIMEOUT"] = "7"
-    os.environ["DB_AUTOCOMMIT"] = "false"
+def test_load_database_config_from_env_parses_all_fields(minimal_env, monkeypatch) -> None:
+    monkeypatch.setenv("DB_CONNECT_TIMEOUT", "7")
+    monkeypatch.setenv("DB_AUTOCOMMIT", "false")
 
     config = load_database_config_from_env()
 
@@ -123,18 +132,14 @@ def test_load_database_config_uses_safe_defaults(minimal_env) -> None:
     assert config.autocommit is False
 
 
-def test_load_database_config_rejects_missing_required_variable(
-    minimal_env, monkeypatch
-) -> None:
+def test_load_database_config_rejects_missing_required_variable(minimal_env, monkeypatch) -> None:
     monkeypatch.delenv("DB_PASSWORD")
 
     with pytest.raises(DatabaseConfigError, match="DB_PASSWORD"):
         load_database_config_from_env()
 
 
-def test_load_database_config_rejects_whitespace_only_value(
-    minimal_env, monkeypatch
-) -> None:
+def test_load_database_config_rejects_whitespace_only_value(minimal_env, monkeypatch) -> None:
     monkeypatch.setenv("DB_PASSWORD", "   ")
 
     with pytest.raises(DatabaseConfigError, match="DB_PASSWORD"):
@@ -148,18 +153,14 @@ def test_load_database_config_rejects_invalid_port(minimal_env, monkeypatch) -> 
         load_database_config_from_env()
 
 
-def test_load_database_config_rejects_out_of_range_port(
-    minimal_env, monkeypatch
-) -> None:
+def test_load_database_config_rejects_out_of_range_port(minimal_env, monkeypatch) -> None:
     monkeypatch.setenv("DB_PORT", "70000")
 
     with pytest.raises(DatabaseConfigError, match="DB_PORT"):
         load_database_config_from_env()
 
 
-def test_load_database_config_rejects_invalid_connect_timeout(
-    minimal_env, monkeypatch
-) -> None:
+def test_load_database_config_rejects_invalid_connect_timeout(minimal_env, monkeypatch) -> None:
     monkeypatch.setenv("DB_CONNECT_TIMEOUT", "0")
 
     with pytest.raises(DatabaseConfigError, match="DB_CONNECT_TIMEOUT"):
@@ -190,9 +191,7 @@ def test_load_database_config_parses_autocommit_values(
     assert config.autocommit is expected
 
 
-def test_load_database_config_rejects_invalid_autocommit(
-    minimal_env, monkeypatch
-) -> None:
+def test_load_database_config_rejects_invalid_autocommit(minimal_env, monkeypatch) -> None:
     monkeypatch.setenv("DB_AUTOCOMMIT", "treu")
 
     with pytest.raises(DatabaseConfigError, match="DB_AUTOCOMMIT"):
@@ -315,7 +314,7 @@ def test_get_connection_wraps_pymysql_error() -> None:
         "src.storage.database.pymysql.connect",
         side_effect=pymysql.Error("Connection refused"),
     ):
-        with pytest.raises(DatabaseConnectionError, match="db.test:3306/alarmsystem"):
+        with pytest.raises(DatabaseConnectionError, match="Verbindung zur Datenbank"):
             with get_connection(config) as conn:
                 conn.cursor()
 
@@ -335,7 +334,7 @@ def test_get_connection_wraps_os_error() -> None:
         "src.storage.database.pymysql.connect",
         side_effect=OSError("network unreachable"),
     ):
-        with pytest.raises(DatabaseConnectionError, match="db.test:3306/alarmsystem"):
+        with pytest.raises(DatabaseConnectionError, match="Verbindung zur Datenbank"):
             with get_connection(config):
                 pass
 
@@ -405,14 +404,36 @@ def test_transaction_wraps_commit_error() -> None:
     mock_conn.close.assert_called_once()
 
 
+def test_transaction_preserves_original_error_when_commit_and_rollback_fail() -> None:
+    """Wenn commit() und rollback() beide fehlschlagen, bleibt der urspruengliche
+    Commit-Fehler als __cause__ erhalten, damit das Debugging nicht erschwert wird.
+    """
+    original_exc = pymysql.Error("constraint violation")
+    rollback_exc = pymysql.Error("connection lost")
+
+    mock_conn = MagicMock()
+    mock_conn.commit.side_effect = original_exc
+    mock_conn.rollback.side_effect = rollback_exc
+
+    with patch("src.storage.database.pymysql.connect", return_value=mock_conn):
+        with pytest.raises(DatabaseConnectionError) as exc_info:
+            with transaction(_valid_config()):
+                pass
+
+    raised = exc_info.value
+    assert "Rollback nach Transaktionsfehler fehlgeschlagen" in str(raised)
+    assert raised.__cause__ is original_exc
+    mock_conn.commit.assert_called_once()
+    mock_conn.rollback.assert_called_once()
+    mock_conn.close.assert_called_once()
+
+
 def test_transaction_wraps_rollback_error() -> None:
     mock_conn = MagicMock()
     mock_conn.rollback.side_effect = pymysql.Error("connection lost")
 
     with patch("src.storage.database.pymysql.connect", return_value=mock_conn):
-        with pytest.raises(
-            DatabaseConnectionError, match="Rollback nach Transaktionsfehler"
-        ):
+        with pytest.raises(DatabaseConnectionError, match="Rollback nach Transaktionsfehler"):
             with transaction(_valid_config()):
                 raise RuntimeError("boom")
 
@@ -500,14 +521,14 @@ def test_ping_returns_false_on_non_pymysql_error() -> None:
         assert ping(_valid_config()) is False
 
 
-def test_ping_logs_and_returns_false_on_unexpected_error(caplog) -> None:
+def test_ping_propagates_unexpected_error() -> None:
+    """Programmierfehler sollen nicht als 'DB nicht erreichbar' maskiert werden."""
     mock_conn = MagicMock()
     mock_conn.ping.side_effect = ValueError("totally unexpected")
 
     with patch("src.storage.database.pymysql.connect", return_value=mock_conn):
-        assert ping(_valid_config()) is False
-
-    assert "Unerwarteter Fehler" in caplog.text
+        with pytest.raises(ValueError, match="totally unexpected"):
+            ping(_valid_config())
 
 
 def test_ping_propagates_config_error(minimal_env, monkeypatch) -> None:

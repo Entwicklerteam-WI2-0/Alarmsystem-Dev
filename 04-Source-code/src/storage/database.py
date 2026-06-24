@@ -61,7 +61,7 @@ class DatabaseConfig:
     autocommit: bool = False
 
     def __post_init__(self) -> None:
-        for field_name in ("host", "name", "user"):
+        for field_name in ("host", "name", "user", "password"):
             value = getattr(self, field_name)
             if value.strip() == "":
                 raise DatabaseConfigError(
@@ -111,9 +111,7 @@ def load_database_config_from_env() -> DatabaseConfig:
 def _getenv_or_raise(name: str) -> str:
     value = os.environ.get(name)
     if value is None or value.strip() == "":
-        raise DatabaseConfigError(
-            f"Umgebungsvariable fehlt oder ist leer: {name}"
-        )
+        raise DatabaseConfigError(f"Umgebungsvariable fehlt oder ist leer: {name}")
     return value
 
 
@@ -125,9 +123,7 @@ def _parse_positive_int(var_name: str, raw: str) -> int:
             f"{var_name} muss eine ganze Zahl sein, erhalten: {raw!r}"
         ) from exc
     if value <= 0:
-        raise DatabaseConfigError(
-            f"{var_name} muss > 0 sein, erhalten: {value}"
-        )
+        raise DatabaseConfigError(f"{var_name} muss > 0 sein, erhalten: {value}")
     return value
 
 
@@ -179,9 +175,16 @@ def get_connection(
             charset="utf8mb4",
         )
     except (PyMySQLError, OSError) as exc:
-        raise DatabaseConnectionError(
-            f"Verbindung zu {cfg.host}:{cfg.port}/{cfg.name} fehlgeschlagen"
-        ) from exc
+        # Infrastruktur-Details separat loggen, nicht in der Exception-Message
+        # weitergeben, damit sie nicht versehentlich nach oben geleakt werden.
+        logger.warning(
+            "Verbindung zu %s:%s/%s fehlgeschlagen: %s",
+            cfg.host,
+            cfg.port,
+            cfg.name,
+            exc,
+        )
+        raise DatabaseConnectionError("Verbindung zur Datenbank fehlgeschlagen") from exc
 
     try:
         yield conn
@@ -233,12 +236,14 @@ def transaction(
     )
 
     with get_connection(tx_cfg) as conn:
+        commit_error: PyMySQLError | None = None
         try:
             yield conn
             try:
                 conn.commit()
             except PyMySQLError as exc:
                 logger.error("DB-Commit fehlgeschlagen: %s", exc)
+                commit_error = exc
                 raise DatabaseConnectionError("Commit fehlgeschlagen") from exc
         except BaseException as exc:
             is_system_signal = isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit))
@@ -256,9 +261,13 @@ def transaction(
                     )
                 else:
                     logger.error("DB-Rollback fehlgeschlagen: %s", rollback_exc)
+                    # Urspruengliche Exception erhalten: wenn ein Commit-Fehler
+                    # vorlag, dessen PyMySQLError als __cause__ verwenden,
+                    # sonst die gerade aktive Exception.
+                    original_exc = commit_error if commit_error is not None else exc
                     raise DatabaseConnectionError(
-                        "Rollback nach Transaktionsfehler fehlgeschlagen"
-                    ) from rollback_exc
+                        f"Rollback nach Transaktionsfehler fehlgeschlagen: {rollback_exc}"
+                    ) from original_exc
             raise
 
 
@@ -281,7 +290,4 @@ def ping(config: DatabaseConfig | None = None) -> bool:
         raise
     except (DatabaseConnectionError, PyMySQLError, OSError) as conn_exc:
         logger.warning("DB-Verbindungspruefung fehlgeschlagen: %s", conn_exc)
-        return False
-    except Exception:
-        logger.exception("Unerwarteter Fehler bei DB-Healthcheck")
         return False
