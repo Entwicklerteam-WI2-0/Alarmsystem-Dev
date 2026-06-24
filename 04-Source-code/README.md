@@ -11,7 +11,7 @@ Backend-Repo der Gruppe 2 (FastAPI · MySQL/MariaDB · rohes PyMySQL, kein ORM).
 - `src/api/` — Serving-Endpoints für G3
 - `src/config/` — Schwellen/Parameter (parametrierbar)
 - `src/forecast/` — 30-min-Prognose (T3)
-- `migrations/` — `schema.sql` (handgeschriebenes DDL; kein Alembic, E-35)
+- `migrations/` — `schema.sql` (handgeschriebenes DDL; kein Alembic, E-35) + `grants.sql` (App-User-Rechte, append-only NF-09)
 - `tests/` — Unit-/Integrationstests
 - `config/` — Default-Schwellenwerte (Dummy, parametrierbar)
 
@@ -23,6 +23,48 @@ Backend-Repo der Gruppe 2 (FastAPI · MySQL/MariaDB · rohes PyMySQL, kein ORM).
     # MariaDB: native — Pi via SSH-Tunnel ODER lokale Installation (kein Docker, E-35)
     # Zugangsdaten über .env (s. .env.example), nie committen
     uvicorn src.main:app --reload    # -> http://127.0.0.1:8000
+
+## Schema & DB-Rechte einspielen (DDL, ersetzt Alembic — E-35)
+
+Kein Migrationsframework. Das Schema wird direkt eingespielt; `schema.sql` ist idempotent
+(`CREATE TABLE IF NOT EXISTS`) — ein **Erst-Apply** ist gefahrlos wiederholbar. **Achtung:** bei
+*geänderter* Tabellenstruktur migriert `IF NOT EXISTS` **nicht** (Drift) → Strukturänderung = manuell
+DROP/ALTER.
+
+**Zwei Rollen** (nicht verwechseln): den **Admin-User `root`** (`DB_ROOT_PASSWORD`) zum Einspielen von
+DDL + Rechten; den **App-User `alarm`** (`DB_USER`) nutzt nur die App. Voraussetzung: laufende MariaDB,
+App-User existiert (DB-Init), Zugangsdaten in `.env` (s. `.env.example`), nie committen.
+
+> Pi via SSH-Tunnel: zuerst `ssh -L 3306:localhost:3306 <pi>` öffnen, dann gegen `127.0.0.1` einspielen.
+> `docker-compose.yml` ist **abgewählt** (E-35: native MariaDB, kein Docker) und wird entfernt — **nicht**
+> `docker compose up` als Setup-Pfad nutzen.
+
+Einspielen **als `root`**, Reihenfolge `schema.sql` → `grants.sql` (cwd = `04-Source-code`):
+
+    # PowerShell (Windows-Standardshell — '<' funktioniert hier NICHT):
+    Get-Content migrations\schema.sql | mysql -h 127.0.0.1 -P 3306 -u root -p alarmsystem
+    Get-Content migrations\grants.sql | mysql -h 127.0.0.1 -P 3306 -u root -p alarmsystem
+
+    # cmd.exe / Linux-Shell (Eingabe-Umleitung '<' ok):
+    mysql -h 127.0.0.1 -P 3306 -u root -p alarmsystem < migrations/schema.sql
+    mysql -h 127.0.0.1 -P 3306 -u root -p alarmsystem < migrations/grants.sql
+
+**Verifikation** (läuft bei der MariaDB-Initialisierung am Pi — DTB-54 DoD-Nachweis, noch offen):
+
+    # 1) alle 6 Tabellen vorhanden:
+    mysql -u root -p -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alarmsystem';" 
+    # erwartet: 6  (reading, assessment, alarm, acknowledgement, threshold_set, audit_log)
+
+    # 2) Typen/Charset/Indizes stichprobenhaft:
+    mysql -u root -p alarmsystem -e "SHOW CREATE TABLE reading\G"
+    mysql -u root -p alarmsystem -e "SHOW INDEX FROM reading;"
+
+    # 3) Idempotenz: schema.sql ein zweites Mal einspielen -> muss fehlerfrei durchlaufen.
+
+    # 4) append-only (NF-09) erzwungen? Rechte des App-Users prüfen + Negativ-Test:
+    mysql -u root  -p -e "SHOW GRANTS FOR 'alarm'@'localhost';"
+    mysql -u alarm -p alarmsystem -e "UPDATE audit_log SET actor='x' WHERE id=1;"
+    # erwartet: ERROR 1142 (UPDATE denied) — der Audit-Trail ist unveränderbar.
 
 ## Tests
     pytest                 # alle Tests
