@@ -7,7 +7,7 @@ Quelle der Parameter: Schwellenwerte.md §1 (a=17,62; b=243,12 °C).
 import math
 
 # Magnus-Koeffizienten (Schwellenwerte.md §1): dimensionsloses a, b in °C.
-# Gueltig fuer Wasser ueber dem Bereich -45 … +60 °C; Standardwerte nach Sonntag/WMO.
+# Gueltig fuer Wasser im Bereich -45 … +60 °C; Standardwerte nach Sonntag/WMO.
 MAGNUS_A = 17.62
 MAGNUS_B = 243.12
 
@@ -15,6 +15,9 @@ MAGNUS_B = 243.12
 # undefiniert (ln(0) -> -inf), ueber 100 % uebersaettigt und nicht plausibel.
 MIN_HUMIDITY_PCT = 0.0
 MAX_HUMIDITY_PCT = 100.0
+
+# Divisor zur Normierung der Prozent-Feuchte auf einen Anteil (0, 1].
+PERCENT_DIVISOR = 100.0
 
 
 def calculate_dew_point(air_temp_c: float, humidity_pct: float) -> float:
@@ -25,17 +28,33 @@ def calculate_dew_point(air_temp_c: float, humidity_pct: float) -> float:
         T_d   = (b * gamma) / (a - gamma)
 
     Args:
-        air_temp_c: Lufttemperatur T_a in °C.
+        air_temp_c: Lufttemperatur T_a in °C (endlich, nicht am Magnus-Pol -b).
         humidity_pct: relative Luftfeuchte RH in Prozent, im Bereich (0, 100].
 
     Returns:
-        Taupunkt T_d in °C (immer <= air_temp_c; Gleichheit bei RH = 100 %).
+        Taupunkt T_d in °C. Im Magnus-Gueltigkeitsbereich gilt T_d <= air_temp_c
+        (Gleichheit bei RH = 100 %).
 
     Raises:
-        ValueError: wenn humidity_pct nicht in (0, 100] liegt.
+        ValueError: wenn humidity_pct nicht in (0, 100] liegt, air_temp_c nicht
+            endlich ist (NaN/inf) oder air_temp_c am Magnus-Pol (-b) liegt.
+
+    Hinweis (Fail-safe, NF-01): Diese Funktion ist ein reiner Rechner und liefert
+    bewusst KEIN stilles Ersatzergebnis. Der Aufrufer (DTB-60 Poller) MUSS den
+    ValueError fangen und den fehlenden Taupunkt als "unbestimmbar" behandeln
+    (dew_point_c=None), damit die Bewertung (DTB-38) konservativ >= GELB einstuft
+    und nie faelschlich GRUEN ausgibt.
     """
     if not (MIN_HUMIDITY_PCT < humidity_pct <= MAX_HUMIDITY_PCT):
         raise ValueError(f"humidity_pct muss in (0, 100] liegen, erhalten: {humidity_pct}")
 
-    gamma = math.log(humidity_pct / 100.0) + (MAGNUS_A * air_temp_c) / (MAGNUS_B + air_temp_c)
+    if not math.isfinite(air_temp_c):
+        raise ValueError(f"air_temp_c muss endlich sein, erhalten: {air_temp_c}")
+
+    if MAGNUS_B + air_temp_c == 0:
+        raise ValueError(f"air_temp_c liegt am Magnus-Pol (-{MAGNUS_B} °C): {air_temp_c}")
+
+    gamma = math.log(humidity_pct / PERCENT_DIVISOR) + (MAGNUS_A * air_temp_c) / (
+        MAGNUS_B + air_temp_c
+    )
     return (MAGNUS_B * gamma) / (MAGNUS_A - gamma)
