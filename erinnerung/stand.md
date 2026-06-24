@@ -1,8 +1,12 @@
 # Aktueller Stand
 
-> Stand: 2026-06-23 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+> Stand: 2026-06-24 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
 
 ## Woran wir gerade arbeiten
+- **DTB-54 (schema.sql einspielen, Andi & Leon):** Apply-Schritt + `migrations/grants.sql` (append-only
+  via GRANT statt Trigger, NF-09) dokumentiert; santa-loop-reviewed; Commit `d2aa4bc` lokal auf
+  `feat/dtb-54-schema-apply` (ungepusht). **Offen:** Init-Schritt (CREATE DB/USER) im README + DoD-Apply-Beweis
+  bei Pi-MariaDB-Init. → Status „Wird überprüft".
 - **G2 Backend (Alarmsystem ANR):** Woche 2. **Projektplan + Jira-Backlog (Projekt DTB)** steht:
   9 Epics / 43 Tasks (DTB-1..DTB-52) + 43 "Blocks"-Abhängigkeitslinks. Begleitdoc:
   `02-Arbeitsdokumente/Projektplan-Jira-Backlog-G2.md`.
