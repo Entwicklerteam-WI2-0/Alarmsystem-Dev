@@ -508,3 +508,34 @@ def test_poll_unexpected_repository_error_is_not_swallowed(caplog) -> None:
         with patch("src.ingest.poller.httpx.get") as mock_get:
             mock_get.return_value = _ok_response(snapshot)
             poller.poll()
+
+
+def test_poll_computes_dew_point(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # DTB-60: Poller berechnet dew_point_c (Magnus) und fuellt es ins Reading.
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(valid_snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    # calculate_dew_point(1.2, 96) ~= 0,63 °C (Magnus, Schwellenwerte.md §1);
+    # konkreter Sollwert faengt auch ein versehentliches Vertauschen der Argumente.
+    assert reading.dew_point_c == pytest.approx(0.63, abs=1e-2)
+
+
+def test_poll_dew_point_none_when_humidity_zero(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Fail-safe (Entscheidungslog DTB-32): RH=0 laesst T_d nicht berechnen ->
+    # calculate_dew_point wirft ValueError -> Poller faengt ihn -> dew_point_c=None.
+    # Das Reading wird trotzdem gespeichert (kein Crash, kein stilles GRUEN downstream).
+    snapshot = {**valid_snapshot, "humidity_pct": 0}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.dew_point_c is None
+    assert len(fake_repo.readings) == 1

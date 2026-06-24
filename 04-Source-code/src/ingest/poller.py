@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from src.assessment.utils import calculate_dew_point
 from src.model.enums import SensorStatus, Source
 from src.model.schemas import Reading
 from src.storage.repository import Repository, RepositoryError
@@ -143,6 +144,17 @@ class Poller:
             logger.error("humidity_pct ausserhalb des gueltigen Bereichs: %s", humidity_pct)
             return None
 
+        # Taupunkt (Magnus, DTB-32) berechnen. Bei nicht bestimmbarer Feuchte (RH=0)
+        # wirft calculate_dew_point ValueError; der Poller faengt ihn und setzt
+        # dew_point_c=None (Fail-safe-Auflage aus DTB-32: fehlender T_d -> die Bewertung
+        # stuft konservativ ein, statt still GRUEN). air_temp_c/humidity_pct sind hier
+        # bereits als endlich und im Plausibilitaetsbereich validiert.
+        try:
+            dew_point_c: float | None = calculate_dew_point(air_temp_c, humidity_pct)
+        except ValueError as exc:
+            logger.warning("Taupunkt nicht berechenbar (dew_point_c=None): %s", exc)
+            dew_point_c = None
+
         # Validierte Werte in das DTB-12 Reading-Schema ueberfuehren.
         return Reading(
             sensor_id=sensor_id,
@@ -150,6 +162,7 @@ class Poller:
             surface_temp_c=surface_temp_c,
             air_temp_c=air_temp_c,
             humidity_pct=humidity_pct,
+            dew_point_c=dew_point_c,
             pressure_hpa=pressure_hpa,
             status=status,
             received_at=datetime.now(UTC),
