@@ -14,24 +14,16 @@ from datetime import UTC, datetime, timedelta
 import httpx
 
 from src.assessment.utils import calculate_dew_point
-from src.config.loader import DatenqualitaetSchwellen
+from src.config.loader import DatenqualitaetSchwellen, PlausibilitaetSchwellen
 from src.model.enums import SensorStatus, Source
 from src.model.schemas import Reading
 from src.storage.repository import Repository, RepositoryError
 
 logger = logging.getLogger(__name__)
 
-# Physikalische Plausibilitaetsgrenzen fuer die Eingangsvalidierung.
-# (Bewertungsschwellen kommen aus config/ und werden hier NICHT hardgecoded.)
-MIN_TEMP_C = -50.0
-MAX_TEMP_C = 50.0
-MIN_HUMIDITY_PCT = 0.0
-MAX_HUMIDITY_PCT = 100.0
-MIN_PRESSURE_HPA = 800.0
-MAX_PRESSURE_HPA = 1100.0
-
 # Pflichtfelder laut G1-Contract (Backend-Konzept §9.1).
 REQUIRED_FIELDS = ("measured_at", "sensor_id", "surface_temp_c", "air_temp_c", "humidity_pct")
+
 
 def _now() -> datetime:
     # In eine Helper-Funktion gekapselt, damit Tests die Uhr deterministisch patchen koennen
@@ -47,16 +39,19 @@ class Poller:
         base_url: str,
         repository: Repository,
         data_quality_thresholds: DatenqualitaetSchwellen,
+        plausibility_thresholds: PlausibilitaetSchwellen,
         timeout: float = 10.0,
     ) -> None:
         # Base-URL ohne abschliessenden Slash, damit /current sauber angehaengt wird.
         self.base_url = base_url.rstrip("/")
         # Speicherschicht wird injiziert -> Poller bleibt DB-agnostisch.
         self.repository = repository
-        # Parametrierbare Grenzwerte fuer Datenqualitaet (Stale-Timeout, Clock-Skew, ...).
+        # Parametrierbare Grenzwerte fuer Datenqualitaet (Stale-Timeout, Clock-Skew, ...)
+        # und fuer die physikalische Plausibilitaet der Eingangswerte.
         # Muessen vom Aufrufer geladen werden (config/thresholds.json), damit NF-05 eingehalten
         # wird und keine Schwellen im Poller hardgecoded sind.
         self.data_quality_thresholds = data_quality_thresholds
+        self.plausibility_thresholds = plausibility_thresholds
         # Timeout fuer den HTTP-Request (Netzwerk/Sensor-Ausfall).
         self.timeout = timeout
 
@@ -143,7 +138,11 @@ class Poller:
             logger.error("G1-Feld ungueltig: %s", exc)
             pressure_hpa = None
 
-        if pressure_hpa is not None and not (MIN_PRESSURE_HPA <= pressure_hpa <= MAX_PRESSURE_HPA):
+        if pressure_hpa is not None and not (
+            self.plausibility_thresholds.min_pressure_hpa
+            <= pressure_hpa
+            <= self.plausibility_thresholds.max_pressure_hpa
+        ):
             logger.error("pressure_hpa ausserhalb des gueltigen Bereichs: %s", pressure_hpa)
             pressure_hpa = None
 
@@ -175,14 +174,27 @@ class Poller:
             )
             return None
 
-        # Plausibilitaet: Temperatur-/Feuchte-Werte muessen in physikalischen Grenzen liegen.
-        if not (MIN_TEMP_C <= surface_temp_c <= MAX_TEMP_C):
+        # Plausibilitaet: Temperatur-/Feuchte-Werte muessen in den parametrierbaren
+        # Grenzen liegen (NF-05: aus config/thresholds.json, nicht hardgecoded).
+        if not (
+            self.plausibility_thresholds.min_temp_c
+            <= surface_temp_c
+            <= self.plausibility_thresholds.max_temp_c
+        ):
             logger.error("surface_temp_c ausserhalb des gueltigen Bereichs: %s", surface_temp_c)
             return None
-        if not (MIN_TEMP_C <= air_temp_c <= MAX_TEMP_C):
+        if not (
+            self.plausibility_thresholds.min_temp_c
+            <= air_temp_c
+            <= self.plausibility_thresholds.max_temp_c
+        ):
             logger.error("air_temp_c ausserhalb des gueltigen Bereichs: %s", air_temp_c)
             return None
-        if not (MIN_HUMIDITY_PCT <= humidity_pct <= MAX_HUMIDITY_PCT):
+        if not (
+            self.plausibility_thresholds.min_humidity_pct
+            <= humidity_pct
+            <= self.plausibility_thresholds.max_humidity_pct
+        ):
             logger.error("humidity_pct ausserhalb des gueltigen Bereichs: %s", humidity_pct)
             return None
 

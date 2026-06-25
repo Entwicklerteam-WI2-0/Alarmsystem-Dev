@@ -44,10 +44,21 @@ class DatenqualitaetSchwellen:
 
 
 @dataclass(frozen=True)
+class PlausibilitaetSchwellen:
+    min_temp_c: float
+    max_temp_c: float
+    min_humidity_pct: float
+    max_humidity_pct: float
+    min_pressure_hpa: float
+    max_pressure_hpa: float
+
+
+@dataclass(frozen=True)
 class Thresholds:
     vereisung: VereisungsSchwellen
     prognose: PrognoseSchwellen
     datenqualitaet: DatenqualitaetSchwellen
+    plausibilitaet: PlausibilitaetSchwellen
 
 
 # Pflicht-Abschnitte der Config und ihr jeweiliger Zieltyp.
@@ -58,6 +69,7 @@ _SECTIONS: dict[str, type[Any]] = {
     "vereisung": VereisungsSchwellen,
     "prognose": PrognoseSchwellen,
     "datenqualitaet": DatenqualitaetSchwellen,
+    "plausibilitaet": PlausibilitaetSchwellen,
 }
 
 
@@ -111,6 +123,8 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
     # sein, damit die Fail-safe-Logik (DTB-13) nicht ins Gegenteil verkehrt.
     if cls is DatenqualitaetSchwellen:
         _validate_datenqualitaet(obj)
+    elif cls is PlausibilitaetSchwellen:
+        _validate_plausibilitaet(obj)
 
     return obj
 
@@ -122,9 +136,7 @@ def _validate_datenqualitaet(schwellen: DatenqualitaetSchwellen) -> None:
     von G1), verhindern aber offensichtliche Fehlkonfigurationen, die Stale-
     oder Sprung-Erkennung praktisch abschalten wuerden (NF-01).
     """
-    _require_positive(
-        schwellen.stale_timeout_s, "datenqualitaet.stale_timeout_s", upper=86_400
-    )
+    _require_positive(schwellen.stale_timeout_s, "datenqualitaet.stale_timeout_s", upper=86_400)
     _require_positive(
         schwellen.max_temp_jump_c_per_min,
         "datenqualitaet.max_temp_jump_c_per_min",
@@ -136,13 +148,26 @@ def _validate_datenqualitaet(schwellen: DatenqualitaetSchwellen) -> None:
     _require_non_negative(
         schwellen.flatline_epsilon_c, "datenqualitaet.flatline_epsilon_c", upper=10.0
     )
-    _require_positive(
-        schwellen.max_clock_skew_s, "datenqualitaet.max_clock_skew_s", upper=3_600
-    )
+    _require_positive(schwellen.max_clock_skew_s, "datenqualitaet.max_clock_skew_s", upper=3_600)
     if not -100.0 <= schwellen.min_plausible_dew_point_c <= 50.0:
         raise ConfigError(
             "datenqualitaet.min_plausible_dew_point_c muss zwischen -100.0 und 50.0 liegen"
         )
+
+
+def _validate_plausibilitaet(schwellen: PlausibilitaetSchwellen) -> None:
+    """Prueft, dass Plausibilitaets-Grenzen sinnvoll sind (min < max).
+
+    Die konkreten Werte kommen von G1 (Sensorik); hier wird nur verhindert,
+    dass aus Versehen Min/Max vertauscht werden und die Validierung dadurch
+    permanent alles verwirft (NF-01).
+    """
+    if schwellen.min_temp_c >= schwellen.max_temp_c:
+        raise ConfigError("plausibilitaet.min_temp_c muss kleiner als max_temp_c sein")
+    if schwellen.min_humidity_pct >= schwellen.max_humidity_pct:
+        raise ConfigError("plausibilitaet.min_humidity_pct muss kleiner als max_humidity_pct sein")
+    if schwellen.min_pressure_hpa >= schwellen.max_pressure_hpa:
+        raise ConfigError("plausibilitaet.min_pressure_hpa muss kleiner als max_pressure_hpa sein")
 
 
 def _require_positive(value: float, name: str, upper: float) -> None:

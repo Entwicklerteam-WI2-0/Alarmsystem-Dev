@@ -31,6 +31,12 @@ def test_default_config_laedt_kaskaden_schwellen_aus_schwellenwerte_md():
     assert thresholds.datenqualitaet.flatline_epsilon_c == 0.01
     assert thresholds.datenqualitaet.max_clock_skew_s == 5.0
     assert thresholds.datenqualitaet.min_plausible_dew_point_c == -50.0
+    assert thresholds.plausibilitaet.min_temp_c == -50.0
+    assert thresholds.plausibilitaet.max_temp_c == 50.0
+    assert thresholds.plausibilitaet.min_humidity_pct == 0.0
+    assert thresholds.plausibilitaet.max_humidity_pct == 100.0
+    assert thresholds.plausibilitaet.min_pressure_hpa == 800.0
+    assert thresholds.plausibilitaet.max_pressure_hpa == 1100.0
 
 
 def test_eigener_pfad_ist_parametrierbar(tmp_path):
@@ -180,5 +186,13 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "flatline_epsilon_c": 0.01,
             "max_clock_skew_s": 5.0,
             "min_plausible_dew_point_c": -50.0,
+        },
+        "plausibilitaet": {
+            "min_temp_c": -50.0,
+            "max_temp_c": 50.0,
+            "min_humidity_pct": 0.0,
+            "max_humidity_pct": 100.0,
+            "min_pressure_hpa": 800.0,
+            "max_pressure_hpa": 1100.0,
         },
     }

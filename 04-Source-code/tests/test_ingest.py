@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
-from src.config.loader import DatenqualitaetSchwellen
+from src.config.loader import DatenqualitaetSchwellen, PlausibilitaetSchwellen
 from src.ingest.poller import Poller
 from src.model.enums import SensorStatus
 from src.model.schemas import Reading
@@ -57,6 +57,18 @@ def quality_thresholds() -> DatenqualitaetSchwellen:
     )
 
 
+@pytest.fixture
+def plausibility_thresholds() -> PlausibilitaetSchwellen:
+    return PlausibilitaetSchwellen(
+        min_temp_c=-50.0,
+        max_temp_c=50.0,
+        min_humidity_pct=0.0,
+        max_humidity_pct=100.0,
+        min_pressure_hpa=800.0,
+        max_pressure_hpa=1100.0,
+    )
+
+
 @pytest.fixture(autouse=True)
 def frozen_now(request):
     # Deterministische Uhr fuer die Stale-Erkennung: 60 s nach dem measured_at der
@@ -72,11 +84,16 @@ def frozen_now(request):
 
 
 @pytest.fixture
-def poller(fake_repo: FakeRepository, quality_thresholds: DatenqualitaetSchwellen) -> Poller:
+def poller(
+    fake_repo: FakeRepository,
+    quality_thresholds: DatenqualitaetSchwellen,
+    plausibility_thresholds: PlausibilitaetSchwellen,
+) -> Poller:
     return Poller(
         base_url="http://g1.test",
         repository=fake_repo,
         data_quality_thresholds=quality_thresholds,
+        plausibility_thresholds=plausibility_thresholds,
     )
 
 
@@ -378,6 +395,37 @@ def test_poll_humidity_at_boundaries_saves(
     assert len(fake_repo.readings) == 1
 
 
+def test_poll_uses_configured_plausibility_thresholds(
+    fake_repo: FakeRepository,
+    quality_thresholds: DatenqualitaetSchwellen,
+    valid_snapshot: dict,
+) -> None:
+    # NF-05: Plausibilitaets-Grenzen muessen aus der Config kommen, nicht hardgecoded sein.
+    # Wenn wir die Grenzen verschärfen, wird ein vorher gueltiger Wert verworfen.
+    strict_plausibility = PlausibilitaetSchwellen(
+        min_temp_c=-10.0,
+        max_temp_c=10.0,
+        min_humidity_pct=0.0,
+        max_humidity_pct=100.0,
+        min_pressure_hpa=800.0,
+        max_pressure_hpa=1100.0,
+    )
+    poller = Poller(
+        base_url="http://g1.test",
+        repository=fake_repo,
+        data_quality_thresholds=quality_thresholds,
+        plausibility_thresholds=strict_plausibility,
+    )
+    snapshot = {**valid_snapshot, "surface_temp_c": 20.0}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+
+
 def test_poll_measured_at_not_a_string_does_not_save(
     poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
 ) -> None:
@@ -507,7 +555,9 @@ def test_poll_non_json_response_is_failsafe(
 
 
 def test_poll_repository_error_is_failsafe(
-    caplog, quality_thresholds: DatenqualitaetSchwellen
+    caplog,
+    quality_thresholds: DatenqualitaetSchwellen,
+    plausibility_thresholds: PlausibilitaetSchwellen,
 ) -> None:
     class RaisingRepository(Repository):
         def save(self, reading: Reading) -> int:
@@ -521,6 +571,7 @@ def test_poll_repository_error_is_failsafe(
         base_url="http://g1.test",
         repository=repo,
         data_quality_thresholds=quality_thresholds,
+        plausibility_thresholds=plausibility_thresholds,
     )
     snapshot = {
         "measured_at": "2026-06-23T10:00:00Z",
@@ -539,7 +590,9 @@ def test_poll_repository_error_is_failsafe(
 
 
 def test_poll_unexpected_repository_error_is_not_swallowed(
-    caplog, quality_thresholds: DatenqualitaetSchwellen
+    caplog,
+    quality_thresholds: DatenqualitaetSchwellen,
+    plausibility_thresholds: PlausibilitaetSchwellen,
 ) -> None:
     # Nur RepositoryError soll fail-safe abgefangen werden; andere Exceptions
     # muessen hochgereicht werden, um Programmierfehler nicht zu verschleiern.
@@ -554,6 +607,7 @@ def test_poll_unexpected_repository_error_is_not_swallowed(
         base_url="http://g1.test",
         repository=BuggyRepository(),
         data_quality_thresholds=quality_thresholds,
+        plausibility_thresholds=plausibility_thresholds,
     )
     snapshot = {
         "measured_at": "2026-06-23T10:00:00Z",
