@@ -23,7 +23,7 @@ Erfassung und Bewertung von Vereisungsbedingungen** am fiktiven Flughafen **ANR 
 
 **Stand:** Die **Anforderungs-/Planungsphase ist weitgehend abgeschlossen** (Anforderungen, Schwellenwerte,
 Backend-Konzept, Projektplan liegen vor). Das Repo geht in die **Implementierungsphase** über — Quellcode
-(`src/`, `tests/`) entsteht hier. Der konkrete Technologiestack ist noch nicht final festgelegt.
+(`src/`, `tests/`) entsteht hier. Der Technologiestack ist final: **Python + FastAPI + rohes PyMySQL + native MariaDB** (kein SQLAlchemy/Alembic/Docker, E-35).
 
 > **Repo-Rollen-Trennung (wichtig):** Dieses Repo ist die **Code-/Use-Case-Source** (Doku, Requirements,
 > Backend-Code). Das **gesamte Claude-Tooling** — Skills, Commands, Hooks, das Team-OS — lebt
@@ -163,7 +163,7 @@ Woche 2 final. In `Backend-Konzept.md` ist dies als die *einzige* Naht herausgea
 
 ## 4. Technologiestack
 
-Der konkrete Stack ist **noch nicht final** und gehört begründet ins Entscheidungslogbuch.
+Der Stack ist **final** (FastAPI + rohes PyMySQL + native MariaDB, E-35; begründet im Entscheidungslogbuch E-29/E-35).
 Optionen + Empfehlung in **`Backend-Konzept.md` §6**:
 
 - **Backend:** Python **FastAPI** (Empfehlung) · Flask · Node/Express
@@ -199,7 +199,7 @@ Zentrale Schnittstelle aller Gruppen = **API/Datenmodell der Gruppe 2**, bis End
 
 ## 6. Build- und Testbefehle
 
-**Noch nicht final** (Stack offen). Nach Stack-Entscheidung hier ergänzen:
+Stack final (FastAPI + PyMySQL + MariaDB, E-35). Befehle:
 
 ```bash
 # Backend starten / Tests ausführen — nach Stack-Wahl konkretisieren

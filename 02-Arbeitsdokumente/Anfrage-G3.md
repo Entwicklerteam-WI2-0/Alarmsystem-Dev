@@ -2,22 +2,20 @@
 
 ---
 
-Betreff: Seam-Sync G2 -> G3 — Abstimmung + Bestaetigung fuer den API-Vertrag (v1)
+Betreff: Bestaetigung G2 -> G3 API-Vertrag (v1) — VERTRAG EINGEFROREN
 
-Hi [Name G3-Lead],
+Hi Lucas / G2,
 
-wir (G2, Backend) bauen die API, gegen die ihr euer Frontend baut. Hier ist unser Entwurf plus
-fuenf Punkte, zu denen wir kurz eure Sicht brauchen. Eine kurze Antwort-Mail oder ein
-GitHub-Issue mit Label "seam-sync-confirmed" reicht.
+wir (G3, Frontend) bestaetigen hiermit schriftlich den API-Vertrag fuer euer Backend.
+Die folgenden Punkte sind von unserer Seite abgestimmt und gelten ab sofort als
+eingefrorene Naht fuer den Prototypen:
 
-WICHTIG ZUR ROLLENVERTEILUNG (damit das klar ist):
-WIR (G2) sind der SERVER. Wir stellen die Endpoints bereit, ihr (G3) ruft sie ab.
-Ihr muesst NICHTS hosten und keinen eigenen Endpoint bauen - ihr holt euch die Daten
-per GET bei uns ab (genau wie ein Browser eine Webseite laedt). Einzige Ausnahme:
-Alarme pushen WIR euch live ueber einen Stream (SSE), den ihr bei uns abonniert -
-auch da hostet ihr nichts, ihr haltet nur die Verbindung offen.
+ROLLENVERTEILUNG (bestaetigt)
+G2 ist der SERVER. G2 stellt die Endpoints bereit, G3 ruft sie per GET ab.
+G3 hostet keine eigenen Endpoints. Ausnahme: Alarme werden von G2 live per SSE-Stream
+uebertragen; G3 haelt dabei nur die Verbindung zu G2 offen.
 
-UNSER ENTWURF: GET /v1/assessment/current liefert euch Ampel + Messwerte in einem:
+UNSER ENTWURF: GET /v1/assessment/current (bestaetigt)
 {
   "risk_level": "yellow",        // green | yellow | orange | red | unknown
   "driving_factor": "dew_point",
@@ -31,32 +29,50 @@ UNSER ENTWURF: GET /v1/assessment/current liefert euch Ampel + Messwerte in eine
   "is_stale": false,             // true = Daten veraltet, Fallback aktiv
   "sensor_status": "ok"
 }
-Hinweis: Alle Endpoints liegen unter /v1/ (z. B. /v1/assessment/current). Falls wir spaeter
-etwas grundlegend aendern muessen, machen wir /v2/ daneben auf - euer /v1/ bricht nicht.
+Alle Endpoints liegen unter /v1/. Spaetere grundlegende Aenderungen werden ueber /v2/
+bereitgestellt; /v1/ bleibt stabil.
 
-FRAGEN AN EUCH:
+ABGESTIMMTE PUNKTE (bestaetigt):
 
-1) ANZEIGE: Reicht euch die Risiko-Ampel (gruen/gelb/orange/rot/unbekannt) + Zeitstempel,
-   oder wollt ihr auch die Roh-Messwerte dahinter anzeigen?
-   (Wir koennen euch problemlos alles mitschicken - sagt einfach, was ihr anzeigt.)
+1) ANZEIGE: Wir benoetigen die Risiko-Ampel (gruen/gelb/orange/rot/unbekannt) plus
+   Zeitstempel. Roh-Messwerte duerfen mitgeschickt werden; welche Werte wir anzeigen,
+   entscheiden wir im Frontend.
 
-2) DATENABRUF: Wollt ihr jederzeit ALLE Daten abrufen koennen (aktuelle Bewertung, Historie,
-   Alarmliste), oder reicht fuer den Prototyp der aktuelle Alarm + die 30-min-Prognose?
+2) DATENABRUF: Fuer den Prototypen reichen aktuelle Bewertung, Alarmliste und
+   Resync-Endpoint. Historie und 30-min-Prognose sind als Erweiterung vorgesehen.
 
-3) QUITTIERUNG & BAHNFREIGABE (Sicherheitsregel RB-01 - WICHTIG, bitte schriftlich bestaetigen):
-   Eure UI darf einen Alarm selbst quittieren/beenden (= "gesehen", nur fuers Protokoll).
-   ABER: Die Freigabe oder Sperrung der Startbahn macht IMMER ein Mensch. Unser System gibt
-   KEINEN automatischen Freigabe-/Sperr-Befehl - es ist reine Entscheidungsunterstuetzung.
-   Bitte plant KEINEN Knopf ein, der die Startbahn automatisch freigibt oder sperrt.
+3) QUITTIERUNG & BAHNFREIGABE (RB-01 bestaetigt):
+   Unsere UI quittiert Alarme nur protokollierend ("gesehen").
+   Die Freigabe oder Sperrung der Startbahn erfolgt ausschliesslich durch einen Menschen.
+   G2 gibt KEINEN automatischen Freigabe-/Sperr-Befehl ab. Unser Frontend enthaelt
+   KEINEN Knopf zur automatischen Startbahnfreigabe oder -sperrung.
 
-4) 30-MINUTEN-PROGNOSE: wollt ihr eine Prognose-Ampel (Risiko in 30 min) oder konkrete
-   Werte/Trend? (Kommt spaeter, aber wir reservieren jetzt den Platz im Vertrag.)
+4) 30-MINUTEN-PROGNOSE: Der Platz im Vertrag ist reserviert. Konkrete Umsetzung folgt
+   spaeter; vorerst reicht uns die Reservierung des Feldes/Endpoints.
 
-5) SCHWELLENWERT-MENUE (nur zur Info): Ihr baut ein Menue zum Anpassen der Grenzwerte. Zum
-   Lesen geben wir die Werte frei; das Aendern sichern wir spaeter mit einer Anmeldung ab.
+5) SCHWELLENWERT-MENUE: Zur Kenntnis genommen. Schwellenwerte werden von G2 zum Lesen
+   bereitgestellt; das Aendern wird spaeter durch Anmeldung abgesichert.
 
-Wenn ihr mir zu 1-4 kurz antwortet und 3 (RB-01) bestaetigt, finalisiere ich den Vertrag.
-Danke!
+Mit dieser Bestaetigung ist die G2->G3 Naht auf unserer Seite eingefroren.
 
-Viele Gruesse
-[Lucas / G2]
+Bestaetigt von G3:
+Name:       Nick (G3-Lead)
+Datum:      2026-06-23
+Status:     seam-sync-confirmed G2->G3 v1
+
+---
+
+## Versandbegleittext G2 -> G3 (Hinweise zur eingefrorenen v1-Spec)
+
+Geht zusammen mit der bereinigten `openapi.yaml`-Versandkopie an G3 — bewusste Design-Entscheidungen,
+keine Spec-Luecken:
+
+1. **Quittierung ist (noch) nicht authentifiziert.** `POST /v1/alarms/{id}/ack` hat im Prototyp (M2)
+   **kein** Security-Requirement; das `operator`-Feld ist aktuell der einzige Audit-Anker. Ein
+   Credential-/Auth-Konzept ist ein **offener Backlog-Punkt fuer M3** (analog zum Schwellenwert-Aendern,
+   Punkt 5 oben). **Bitte den Ack-Aufruf so bauen, dass spaeter ein Auth-Header ergaenzt werden kann** —
+   nicht davon ausgehen, dass der Endpoint dauerhaft offen bleibt.
+2. **SSE-Alarm-Events tragen `severity` + `assessment_id`, aber kein `risk_level`.** Bewusst (E-37): ein
+   Alarm ist ein Ereignis, kein Bewertungs-Snapshot. Fuer den Ampel-/Risiko-Kontext (Initial-Load bzw. je
+   Event) einen Folge-Call `GET /v1/assessment/current` machen (siehe auch die `AlarmSeverity`-Beschreibung
+   in der Spec).
