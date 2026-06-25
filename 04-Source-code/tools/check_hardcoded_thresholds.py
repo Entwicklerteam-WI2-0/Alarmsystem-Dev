@@ -127,7 +127,7 @@ def _hat_marker(kommentar: str) -> bool:
     return naechstes == "" or not (naechstes.isalnum() or naechstes in "-_")
 
 
-def _noqa_zeilen(quelltext: str) -> set[int]:
+def _noqa_zeilen(quelltext: str, dateiname: str) -> set[int]:
     """Zeilennummern mit dem Escape-Marker — nur echte Kommentare (nicht Strings)."""
     zeilen: set[int] = set()
     try:
@@ -135,7 +135,9 @@ def _noqa_zeilen(quelltext: str) -> set[int]:
             if tok.type == tokenize.COMMENT and _hat_marker(tok.string):
                 zeilen.add(tok.start[0])
     except (tokenize.TokenError, IndentationError):
-        pass  # unvollständiger Tokenstrom — Marker-Erkennung entfällt, Scan läuft weiter
+        # Marker-Erkennung entfällt (unvollständiger Tokenstrom) — sichtbar machen, sonst
+        # greift ein korrektes # noqa unbemerkt nicht und es gibt einen Fehlalarm ohne Grund.
+        print(f"WARNUNG: {dateiname}: noqa-Marker nicht lesbar (Tokenisierung unvollständig).")
     return zeilen
 
 
@@ -168,7 +170,7 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
             )
         ]
 
-    noqa = _noqa_zeilen(quelltext)
+    noqa = _noqa_zeilen(quelltext, dateiname)
     quellzeilen = quelltext.splitlines()
     roh: list[tuple[int, int, Verstoss]] = []  # (zeile, spalte) für stabile Sortierung
 

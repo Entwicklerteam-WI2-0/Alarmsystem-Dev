@@ -97,6 +97,16 @@ def test_isclose_toleranz_kwarg_ist_kein_fehlalarm():
     assert _scan("import math\nif math.isclose(t_s, x, rel_tol=0.01):\n    pass\n") == []
 
 
+def test_isclose_abs_tol_kwarg_ist_kein_fehlalarm():
+    # abs_tol ist ebenfalls eine Toleranz (eigener Negativfall, sichert _TOLERANZ_KWARGS ab).
+    assert _scan("import math\nif math.isclose(t_s, x, abs_tol=0.01):\n    pass\n") == []
+
+
+def test_bool_literal_im_vergleich_ist_kein_fehlalarm():
+    # bool ist Unterklasse von int — `flag > True` darf NICHT als Schwellen-Literal zählen.
+    assert _scan("if flag > True:\n    pass\n") == []
+
+
 def test_isclose_keyword_vergleichswert_wird_erkannt():
     # B-1: math.isclose(a=t_s, b=0.0) — b=0.0 ist ein Vergleichswert (kein Toleranz-Kwarg).
     assert _scan("import math\nif math.isclose(a=t_s, b=0.0):\n    pass\n")
