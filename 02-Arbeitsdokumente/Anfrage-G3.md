@@ -56,7 +56,7 @@ ABGESTIMMTE PUNKTE (bestaetigt):
 Mit dieser Bestaetigung ist die G2->G3 Naht auf unserer Seite eingefroren.
 
 Bestaetigt von G3:
-Name:       [Name G3-Lead]
+Name:       Nick (G3-Lead)
 Datum:      2026-06-23
 Status:     seam-sync-confirmed G2->G3 v1
 

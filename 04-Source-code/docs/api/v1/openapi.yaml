@@ -328,6 +328,10 @@ paths:
         `acknowledged` oder `cleared`, wird eine erneute Quittierung mit `409`
         abgelehnt (nicht idempotent, kein lautloses Schlucken) — so bleibt jede
         Quittierung ein eindeutiger, nachvollziehbarer Audit-Eintrag.
+
+        **Auth (M2/M3):** Im Prototyp (M2) kein Auth-Header erforderlich.
+        Implementierung so aufbauen, dass `Authorization` in M3 ohne Breaking
+        Change ergaenzt werden kann (vgl. Versandbegleittext G3).
       parameters:
         - name: id
           in: path
@@ -353,6 +357,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Acknowledgement"
+        "400":
+          description: "Ungueltiger Pfad-Parameter `id` (z. B. `id=0`, verletzt `minimum: 1`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: BAD_REQUEST
+                message: "Ungueltige Alarm-ID."
         "404":
           description: Alarm mit dieser ID existiert nicht.
           content:
@@ -371,15 +384,6 @@ paths:
               example:
                 code: ALARM_ALREADY_ACKNOWLEDGED
                 message: "Alarm 42 ist bereits im Zustand 'acknowledged'."
-        "400":
-          description: "Ungueltiger Pfad-Parameter `id` (z. B. `id=0`, verletzt `minimum: 1`)."
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example:
-                code: BAD_REQUEST
-                message: "Ungueltige Alarm-ID."
         "422":
           description: |
             Ungueltiger Request-Body (Body-Schema-Validierung, z. B. `operator`

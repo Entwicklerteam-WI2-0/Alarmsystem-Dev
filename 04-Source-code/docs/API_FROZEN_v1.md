@@ -117,7 +117,6 @@ Eingetragen/dokumentiert durch: **L. Vöhringer** (Systemarchitekt G2), 2026-06-
 
 > **Nachvollziehbarkeit:** Für einen harten Audit-Trail kann die jeweilige Original-Bestätigung
 > (Antwort-Mail bzw. GitHub-Issue mit Label `seam-sync-confirmed`) nachgereicht und hier verlinkt werden.
-> Der G3-Lead-Name ist im Repo noch nicht hinterlegt (in `Anfrage-G3.md` als `[Name G3-Lead]` offen) —
-> bei Bedarf nachtragen.
+> G3-Lead: **Nick**; G1-Lead: **Nils** (eingetragen 2026-06-25).
 
 **Damit gilt der G1↔G2↔G3-Contract als beidseitig eingefroren (P1.4).** Entblockt: DTB-19, DTB-28, DTB-38.
