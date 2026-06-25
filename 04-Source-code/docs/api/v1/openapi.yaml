@@ -17,8 +17,8 @@
 #        risk_level=unknown + is_stale=true (200). 503 nur bei echter
 #        G2-Nichtverfuegbarkeit.
 #
-# Status: ENTWURF — wird eingefroren, sobald G1- und G3-Lead schriftlich
-#        bestaetigt haben (DTB-26, Label seam-sync-confirmed). Dann Tag api-v1.0.
+# Status: EINGEFROREN (v1.0, 2026-06-24) — G1- und G3-Lead haben bestaetigt
+#        (DTB-26, seam-sync-confirmed). Git-Tag api-v1.0 ausstehend (Freigabe Lucas).
 # OPERATIONSZAHL: Die urspruengliche DTB-19-DoD nannte ">= 15 Operationen". Diese
 #        ist durch die verbindliche Architekten-Vorlage (Jira DTB-19, Kommentar
 #        23.06., Lucas Voehringer/DRI) UEBERHOLT: massgeblich ist das Lean-Set von
@@ -30,7 +30,7 @@ openapi: 3.0.3
 
 info:
   title: Alarmsystem-Backend G2 — API v1 (Vereisungserkennung ANR)
-  version: 1.0.0-draft
+  version: 1.0.0
   description: |
     REST-Schnittstelle des G2-Backends (Erfassung & Bewertung von
     Vereisungsbedingungen am Regionalflughafen ANR). **G2 ist hier Server**,
@@ -69,7 +69,7 @@ paths:
       tags: [Health]
       operationId: getHealth
       summary: Verfuegbarkeit von G2
-      description: Liveness-Check des G2-Backends. `200` = erreichbar.
+      description: Liveness-Check des G2-Backends. `200` = erreichbar, `503` = (noch) nicht lieferfaehig.
       responses:
         "200":
           description: G2 ist erreichbar.
@@ -79,6 +79,15 @@ paths:
                 $ref: "#/components/schemas/Health"
               example:
                 status: ok
+        "503":
+          description: G2 ist (noch) nicht lieferfaehig (z. B. Startup vor dem ersten Messwert / interner Ausfall).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: SERVICE_UNAVAILABLE
+                message: "G2 noch nicht bereit."
 
   /v1/assessment/current:
     get:
@@ -251,6 +260,18 @@ paths:
             Alarme aus der G3-Ansicht verschwinden).
           schema:
             $ref: "#/components/schemas/AlarmState"
+        - name: limit
+          in: query
+          required: false
+          description: |
+            Maximale Anzahl zurueckgegebener Alarme. Fuer M2/Prototyp optional
+            (Alarmzahl bleibt ueberschaubar); fuer M3 empfohlen, damit ein
+            Resync nach laengerem Disconnect keine sehr grosse Response erzeugt.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
       responses:
         "200":
           description: Liste der Alarme.
@@ -319,6 +340,10 @@ paths:
         `acknowledged` oder `cleared`, wird eine erneute Quittierung mit `409`
         abgelehnt (nicht idempotent, kein lautloses Schlucken) — so bleibt jede
         Quittierung ein eindeutiger, nachvollziehbarer Audit-Eintrag.
+
+        **Auth (M2/M3):** Im Prototyp (M2) kein Auth-Header erforderlich.
+        Implementierung so aufbauen, dass `Authorization` in M3 ohne Breaking
+        Change ergaenzt werden kann (vgl. Versandbegleittext G3).
       parameters:
         - name: id
           in: path
@@ -344,6 +369,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Acknowledgement"
+        "400":
+          description: "Ungueltiger Pfad-Parameter `id` (z. B. `id=0`, verletzt `minimum: 1`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: BAD_REQUEST
+                message: "Ungueltige Alarm-ID."
         "404":
           description: Alarm mit dieser ID existiert nicht.
           content:
@@ -362,15 +396,6 @@ paths:
               example:
                 code: ALARM_ALREADY_ACKNOWLEDGED
                 message: "Alarm 42 ist bereits im Zustand 'acknowledged'."
-        "400":
-          description: "Ungueltiger Pfad-Parameter `id` (z. B. `id=0`, verletzt `minimum: 1`)."
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-              example:
-                code: BAD_REQUEST
-                message: "Ungueltige Alarm-ID."
         "422":
           description: |
             Ungueltiger Request-Body (Body-Schema-Validierung, z. B. `operator`
@@ -426,6 +451,7 @@ components:
       properties:
         status:
           type: string
+          enum: [ok]
           example: ok
 
     # --- Aktuelle Bewertung (G2 -> G3), flach (E-36) ---
@@ -444,25 +470,30 @@ components:
         - `risk_level=green` ist NUR zulaessig, wenn `is_stale=false` UND
           `sensor_status=ok`. Bei `is_stale=true` oder `sensor_status=fault`
           gilt `risk_level=unknown` (nie GRUEN).
+        - `measured_at` ist auf einer 200-Antwort **immer** gesetzt (auch bei
+          `risk_level=unknown`); der Fall „gar keine Daten" wird mit **HTTP 503**
+          signalisiert, nicht mit `null`.
         - Bei `risk_level != unknown` sind `surface_temp_c`, `dew_point_c`,
-          `delta_t`, `humidity_pct` und `measured_at` nicht-null (eine echte
+          `delta_t` und `humidity_pct` nicht-null (eine echte
           Bewertung hat immer Messwerte). Genullte Messwerte treten **nur** bei
           `risk_level=unknown` auf — ausgeloest durch `is_stale=true` (veraltet)
           **oder** `sensor_status=fault` (Sensor defekt). `measured_at` kann dabei
           im Fault-Fall mit frischen Daten gesetzt sein (Zeitstempel bekannt, Werte
           aber nicht vertrauenswuerdig); bei reinem Stale traegt es den letzten,
           alten Zeitstempel.
-      required: [risk_level, assessed_at, is_stale, sensor_status]
+      required: [risk_level, assessed_at, is_stale, sensor_status, measured_at]
       properties:
         risk_level:
           $ref: "#/components/schemas/RiskLevel"
         driving_factor:
           type: string
           nullable: true
+          maxLength: 64  # = VARCHAR(64) in migrations/schema.sql (assessment.driving_factor)
           description: Hauptfaktor der Bewertung (z. B. `dew_point`, `surface_temp`).
         explanation:
           type: string
           nullable: true
+          maxLength: 512  # = VARCHAR(512) in migrations/schema.sql (assessment.explanation)
           description: Menschenlesbare Begruendung der Stufe.
         surface_temp_c:
           type: number
@@ -483,8 +514,10 @@ components:
         measured_at:
           type: string
           format: date-time
-          nullable: true
-          description: G1-Messzeitpunkt (UTC). `null`, wenn keine Daten vorliegen.
+          description: |
+            G1-Messzeitpunkt des zugrundeliegenden Readings (UTC). Auf einer 200-Antwort
+            immer gesetzt (bei `is_stale=true` = letzter bekannter Zeitstempel). Der Fall
+            „gar keine Daten vorhanden" wird mit HTTP 503 signalisiert, nicht mit `null`.
         assessed_at:
           type: string
           format: date-time
@@ -507,6 +540,7 @@ components:
           readOnly: true
         sensor_id:
           type: string
+          maxLength: 64  # = VARCHAR(64) in migrations/schema.sql (reading.sensor_id)
           example: anr-rwy-01
         measured_at:
           type: string
@@ -569,10 +603,12 @@ components:
         operator:
           type: string
           minLength: 1  # leer waere kein gueltiger Audit-Eintrag (NF-09)
+          maxLength: 128  # = VARCHAR(128) in migrations/schema.sql (acknowledgement.operator)
           description: Kennung der quittierenden Person (Audit).
         note:
           type: string
           nullable: true
+          maxLength: 512  # = VARCHAR(512) in migrations/schema.sql (acknowledgement.note)
           description: Optionale Notiz.
 
     Acknowledgement:

@@ -13,7 +13,7 @@ app = FastAPI(
 )
 
 
-@app.get("/health")
+@app.get("/v1/health")
 def health() -> dict[str, str]:
     """Liveness-Check (P0.3): bestätigt, dass der Server erreichbar ist."""
     return {"status": "ok"}
