@@ -34,8 +34,9 @@ Bekannte Grenzen (bewusst). Zwei Ursachen:
     `def f(g=1.0)`, `{"rot": 1.0}`, `min(1.0, max(0.0, p))`) — kein Vergleich.
 (b) Strukturell — kein direkter `ast.Compare`-Operand:
   - Literale in Sammlungen (`if stufe in (0.0, 1.0)`) und match/case-Muster (`case 1.0:`).
-  - Indirekte Vergleiche nur als `operator.gt(...)`/`math.isclose(...)` in Punktschreibweise
-    erkannt — nicht bei bare-Import (`from operator import gt`) oder Fremd-Libs (`np.greater`).
+  - Indirekte Vergleiche nur als `operator.gt(...)`/`math.isclose(...)` in unveränderter
+    Modul-Schreibweise erkannt — nicht bei Alias (`import operator as op` → `op.gt(...)`),
+    bare-Import (`from operator import gt`) oder Fremd-Libs (`np.greater`).
   - Verkettete Vergleiche (`0.0 < t_s < 1.0`) zählen als ein Befund (ein Compare-Knoten).
   - Nur UTF-8-Quellen; abweichende PEP-263-`coding:`-Deklarationen werden fail-closed gemeldet.
 Diese Fälle bleiben dem Code-Review (zweite Instanz) überlassen. Legitime Nicht-Schwellen-
@@ -138,6 +139,13 @@ def _noqa_zeilen(quelltext: str) -> set[int]:
     return zeilen
 
 
+def _ist_schwellen_treffer(knoten: ast.AST) -> bool:
+    """True, wenn der Knoten ein Vergleich gegen ein Zahl-Literal ist (direkt oder indirekt)."""
+    if isinstance(knoten, ast.Compare):
+        return any(_ist_zahl_literal(op) for op in [knoten.left, *knoten.comparators])
+    return _ist_vergleichs_call(knoten)
+
+
 def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     """Findet Schwellen-Literale in Vergleichen via AST.
 
@@ -165,10 +173,7 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     roh: list[tuple[int, int, Verstoss]] = []  # (zeile, spalte) für stabile Sortierung
 
     for knoten in ast.walk(baum):
-        ist_vergleich = isinstance(knoten, ast.Compare) and any(
-            _ist_zahl_literal(op) for op in [knoten.left, *knoten.comparators]
-        )
-        if not (ist_vergleich or _ist_vergleichs_call(knoten)):
+        if not _ist_schwellen_treffer(knoten):
             continue
         nr = knoten.lineno
         if nr in noqa:  # Marker auf der Vergleichszeile (Zeile des linken Operanden)
@@ -191,20 +196,22 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     return [verstoss for _, _, verstoss in roh]
 
 
-def _py_dateien(verzeichnisse: Iterable[str | Path]) -> list[Path]:
-    """Sammelt alle existierenden `.py`-Dateien unter den Verzeichnissen (sortiert)."""
+def _py_dateien(ziele: Iterable[str | Path]) -> list[Path]:
+    """Sammelt prüfbare `.py`-Dateien aus den Zielen — Datei direkt, Verzeichnis rekursiv."""
     dateien: list[Path] = []
-    for verzeichnis in verzeichnisse:
-        pfad = Path(verzeichnis)
-        if pfad.exists():
+    for ziel in ziele:
+        pfad = Path(ziel)
+        if pfad.is_file() and pfad.suffix == ".py":
+            dateien.append(pfad)
+        elif pfad.is_dir():
             dateien.extend(sorted(pfad.rglob("*.py")))
     return dateien
 
 
-def pruefe_verzeichnisse(verzeichnisse: Iterable[str | Path]) -> list[Verstoss]:
-    """Scannt alle `.py`-Dateien unter den angegebenen Verzeichnissen."""
+def pruefe_dateien(dateien: Iterable[Path]) -> list[Verstoss]:
+    """Scannt eine Liste von `.py`-Dateien auf Schwellen-Literale."""
     verstoesse: list[Verstoss] = []
-    for py_datei in _py_dateien(verzeichnisse):
+    for py_datei in dateien:
         # utf-8-sig entfernt eine evtl. BOM (Windows-Editoren); errors="replace" sorgt
         # dafür, dass eine einzelne defekte Datei das Gate nicht mit Traceback abbricht.
         text = py_datei.read_text(encoding="utf-8-sig", errors="replace")
@@ -212,47 +219,56 @@ def pruefe_verzeichnisse(verzeichnisse: Iterable[str | Path]) -> list[Verstoss]:
     return verstoesse
 
 
+def pruefe_verzeichnisse(verzeichnisse: Iterable[str | Path]) -> list[Verstoss]:
+    """Scannt alle `.py`-Dateien unter den angegebenen Zielen (Verzeichnisse oder Dateien)."""
+    return pruefe_dateien(_py_dateien(verzeichnisse))
+
+
+def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:
+    """Druckt den FEHLER-Block (Verstöße + Behebungs-Hinweis) für `main`."""
+    print("FEHLER: hartcodierte Schwellen oder nicht prüfbare Dateien (NF-05 — config/ nutzen):\n")
+    for verstoss in verstoesse:
+        print(f"  {verstoss.datei}:{verstoss.zeile}: {verstoss.inhalt.strip()}")
+    print(
+        f"\n{len(verstoesse)} Verstoß/Verstöße. Schwellen über config/ laden "
+        f"(src/config/loader.py) oder begründete Ausnahme mit '# {ERLAUBT_MARKER}' "
+        f"auf der gemeldeten Zeile markieren (bei mehrzeiligem Vergleich: erste Zeile)."
+    )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI-Einstieg: Exit 0 = sauber, 1 = Verstoß gefunden."""
     args = list(argv) if argv is not None else sys.argv[1:]
     verzeichnisse = args if args else list(SCAN_DIRS)
 
-    vorhanden = [d for d in verzeichnisse if Path(d).exists()]
+    gescannte = _py_dateien(verzeichnisse)
     fehlend = [str(d) for d in verzeichnisse if not Path(d).exists()]
 
-    # Fail-closed: existiert KEIN Scan-Ziel (z. B. nach Rename/Verschieben der Module),
-    # kann der Guard nichts prüfen — dann das Gate rot färben statt still grün zu melden.
-    if not vorhanden:
+    # Fail-closed an der RICHTIGEN Invariante: nicht „existiert ein Pfad?", sondern
+    # „wurde eine prüfbare .py-Datei gefunden?". Sonst gäbe ein leeres/falsches Ziel
+    # (fehlend, leerer Ordner, Datei ohne .py) still grün, ohne etwas zu prüfen.
+    if not gescannte:
         print(
-            f"FEHLER: kein Scan-Verzeichnis gefunden ({', '.join(fehlend)}) — "
-            f"Schwellen-Check nicht möglich (Gate fail-closed)."
+            f"FEHLER: keine prüfbare .py-Datei in den Scan-Zielen gefunden "
+            f"({', '.join(map(str, verzeichnisse))}) — Gate fail-closed."
         )
         return 1
 
-    # Einzelne fehlende Ziele nur melden (mind. eines existiert) — Scan läuft weiter.
+    # Einzelne fehlende Ziele nur melden (es wurde trotzdem etwas gefunden) — Scan läuft weiter.
     if fehlend:
-        print(f"WARNUNG: Scan-Verzeichnis(se) nicht gefunden, übersprungen: {', '.join(fehlend)}")
+        print(f"WARNUNG: Scan-Ziel(e) nicht gefunden, übersprungen: {', '.join(fehlend)}")
 
-    verstoesse = pruefe_verzeichnisse(verzeichnisse)
+    verstoesse = pruefe_dateien(gescannte)
 
     # Verstöße zuerst behandeln und früh zurückkehren — sonst widerspräche der
     # Stub-HINWEIS unten einem Verstoß, der in genau diesen Dateien gefunden wurde.
     if verstoesse:
-        print(
-            "FEHLER: hartcodierte Schwellen oder nicht prüfbare Dateien (NF-05 — config/ nutzen):\n"
-        )
-        for verstoss in verstoesse:
-            print(f"  {verstoss.datei}:{verstoss.zeile}: {verstoss.inhalt.strip()}")
-        print(
-            f"\n{len(verstoesse)} Verstoß/Verstöße. Schwellen über config/ laden "
-            f"(src/config/loader.py) oder begründete Ausnahme mit '# {ERLAUBT_MARKER}' "
-            f"auf der gemeldeten Zeile markieren (bei mehrzeiligem Vergleich: erste Zeile)."
-        )
+        _melde_verstoesse(verstoesse)
         return 1
 
     # Sauberer Lauf: sichtbar machen, wie viel tatsächlich geprüft wurde — ein Lauf
     # über reine __init__.py-Stubs (noch keine Bewertungslogik) ist "OK", prüft aber nichts.
-    substanziell = [p for p in _py_dateien(verzeichnisse) if p.name != "__init__.py"]
+    substanziell = [p for p in gescannte if p.name != "__init__.py"]
     if not substanziell:
         print(
             "HINWEIS: Keine Schwellen-Module mit Code gefunden (nur Stubs) — Guard ist als "

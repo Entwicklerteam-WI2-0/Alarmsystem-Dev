@@ -317,6 +317,27 @@ def test_main_teilweise_fehlend_warnt_und_laeuft_weiter(tmp_path, capsys):
     assert "OK" in ausgabe
 
 
+def test_main_leeres_verzeichnis_ist_fail_closed(tmp_path, capsys):
+    # Existierendes, aber leeres Verzeichnis (0 .py) -> nichts geprüft -> Exit 1.
+    d = tmp_path / "assessment"
+    d.mkdir()
+    code = main([str(d)])
+    ausgabe = capsys.readouterr().out
+    assert code == 1
+    assert "fail-closed" in ausgabe
+
+
+def test_main_datei_als_argument_wird_geprueft(tmp_path, capsys):
+    # Eine .py-Datei direkt als Argument muss gescannt werden (nicht still grün).
+    f = tmp_path / "core.py"
+    f.write_text("if t_s > 1.0:\n    pass\n", encoding="utf-8")
+    code = main([str(f)])
+    ausgabe = capsys.readouterr().out
+    assert code == 1
+    assert "FEHLER" in ausgabe
+    assert "core.py" in ausgabe
+
+
 def test_isclose_kwargs_entpackung_kein_fehlalarm():
     # kw.arg is None bei **tol-Entpackung -> übersprungen, kein Kandidat, kein Fehlalarm.
     assert _scan("import math\ntol = {}\nif math.isclose(t_s, x, **tol):\n    pass\n") == []
