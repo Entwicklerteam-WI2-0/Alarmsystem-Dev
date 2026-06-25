@@ -55,9 +55,9 @@
   G1-Daten-Klärung **offen für Anpassung**.
 
 ## 2026-06-25 — MySQL-Treiber: PyMySQL (synchron, direkt) statt async-Treiber oder ORM-Connection-String
-- **Kontext/Task:** DTB-53 (MySQL-Treiber festlegen & verankern) · E-35 · `Backend-Konzept §6a(2)`.
+- **Kontext/Task:** DTB-56 (MySQL-Treiber festlegen & verankern) · E-35 · `Backend-Konzept §6a(2)`.
   FastAPI ist async-fähig; der Treiber sollte trotzdem festgezurrt werden. Im Log war bisher nur „kein
-  ORM/Alembic" begründet — offen war die explizite Abwägung **sync vs. async** (DTB-53-DoD nennt sie ausdrücklich).
+  ORM/Alembic" begründet — offen war die explizite Abwägung **sync vs. async** (DTB-56-DoD nennt sie ausdrücklich).
 - **Entscheidung:** **PyMySQL** als Treiber — **synchron**, reines Python, **direkt** verwendet (nicht über
   einen SQLAlchemy-Connection-String). DB-Calls laufen synchron im Repository-Pattern.
 - **Begründung:** FastAPI führt **synchrone** Pfad-Operationen (`def` statt `async def`) automatisch in einem
@@ -76,4 +76,4 @@
 - **Ergebnis/Status:** umgesetzt & verankert — `pymysql>=1.1` in `requirements.txt` + `pyproject.toml`
   (SQLAlchemy/Alembic repo-weit entfernt), Connection-Schema in `.env.example`
   (Host/Port/DB/User + Timeout/Charset/Autocommit), Connection-Helper `src/storage/database.py`
-  (DTB-55, #63 gemerged). Damit ist die DTB-53-DoD inkl. sync-vs-async-Begründung vollständig.
+  (DTB-55, #63 gemerged). Damit ist die DTB-56-DoD inkl. sync-vs-async-Begründung vollständig.
