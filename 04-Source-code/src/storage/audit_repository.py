@@ -9,9 +9,19 @@ die konkrete MySQL-Implementierung (rohes PyMySQL, parametrisierte Queries) komm
 DTB-28/DTB-55. Diese Datei haelt die DB-agnostische Naht + ein In-Memory-Double.
 """
 
+import json
 from abc import ABC, abstractmethod
 
 from src.model.schemas import AuditLogEntry
+from src.storage.database import DatabaseConfig, DatabaseConnectionError, transaction
+from src.storage.repository import RepositoryError
+
+# Spaltenreihenfolge des INSERT -- entspricht migrations/schema.sql (audit_log).
+# id ist AUTO_INCREMENT und wird NICHT gesetzt; ts..detail werden parametrisiert.
+_INSERT_SQL = (
+    "INSERT INTO audit_log (ts, event_type, entity_type, entity_id, actor, detail) "
+    "VALUES (%s, %s, %s, %s, %s, %s)"
+)
 
 
 class AuditRepository(ABC):
@@ -53,3 +63,40 @@ class InMemoryAuditRepository(AuditRepository):
     def all(self) -> list[AuditLogEntry]:
         """Liest alle Eintraege in Einfuege-Reihenfolge (nur lesen)."""
         return list(self._entries)
+
+
+class MySqlAuditRepository(AuditRepository):
+    """append-only Audit-Log auf MariaDB/MySQL via rohem PyMySQL (DTB-29, E-35).
+
+    Nutzt den zentralen Connection-Helper (database.py, DTB-55). Schreibt
+    ausschliesslich per parametrisiertem INSERT (Injection-Schutz, nie
+    String-Formatierung); es gibt bewusst keinen UPDATE-/DELETE-Pfad.
+
+    Die zweite append-only-Absicherung liegt auf DB-Ebene (eingeschraenkte
+    Grants: kein UPDATE/DELETE-Recht fuer den App-Benutzer, DTB-54).
+    """
+
+    def __init__(self, config: DatabaseConfig | None = None) -> None:
+        # Optionale Config (sonst aus Env via database.py); erleichtert Tests.
+        self._config = config
+
+    def append(self, entry: AuditLogEntry) -> int:
+        # JSON-Feld als String serialisieren (MySQL-Spalte detail ist JSON).
+        detail_json = json.dumps(entry.detail) if entry.detail is not None else None
+        params = (
+            entry.ts,
+            entry.event_type.value,
+            entry.entity_type,
+            entry.entity_id,
+            entry.actor,
+            detail_json,
+        )
+        try:
+            with transaction(self._config) as conn, conn.cursor() as cursor:
+                cursor.execute(_INSERT_SQL, params)
+                # AUTO_INCREMENT-ID des gerade eingefuegten Eintrags.
+                return int(cursor.lastrowid)
+        except DatabaseConnectionError as exc:
+            # Treiber-/Verbindungsfehler auf die Domaenen-Exception herunterbrechen,
+            # damit Aufrufer fail-safe reagieren koennen (NF-01) statt zu crashen.
+            raise RepositoryError("Audit-Eintrag konnte nicht gespeichert werden") from exc

@@ -5,11 +5,21 @@ Es gibt bewusst KEIN Aendern und KEIN Loeschen -- append-only schon per Design
 der Schnittstelle (zweite Absicherung folgt auf DB-Ebene via Trigger/Grants).
 """
 
+import json
 from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from src.model.enums import AuditEventType
 from src.model.schemas import AuditLogEntry
-from src.storage.audit_repository import AuditRepository, InMemoryAuditRepository
+from src.storage.audit_repository import (
+    AuditRepository,
+    InMemoryAuditRepository,
+    MySqlAuditRepository,
+)
+from src.storage.database import DatabaseConnectionError
+from src.storage.repository import RepositoryError
 
 UTC_NOW = datetime(2026, 6, 25, 10, 0, 0, tzinfo=UTC)
 
@@ -50,3 +60,60 @@ def test_repository_is_append_only_by_design():
     # So kann ein Tagebuch-Eintrag per Design nicht geaendert/geloescht werden.
     assert not hasattr(AuditRepository, "update")
     assert not hasattr(AuditRepository, "delete")
+
+
+# --- MySqlAuditRepository (DTB-29 / DTB-55): rohes PyMySQL, nur INSERT ---
+
+
+def _mock_transaction(lastrowid: int = 1):
+    """Baut ein Mock fuer den transaction()-Kontextmanager mit Cursor."""
+    cursor = MagicMock()
+    cursor.lastrowid = lastrowid
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cursor
+    tx = MagicMock()
+    tx.__enter__.return_value = conn
+    return tx, cursor
+
+
+def test_mysql_append_uses_parametrized_insert_only():
+    # Arrange
+    tx, cursor = _mock_transaction(lastrowid=42)
+    with patch("src.storage.audit_repository.transaction", return_value=tx):
+        repo = MySqlAuditRepository()
+        # Act
+        new_id = repo.append(_entry())
+    # Assert: ID kommt aus der DB (lastrowid).
+    assert new_id == 42
+    # Assert: genau ein execute, und zwar ein INSERT (kein UPDATE/DELETE).
+    cursor.execute.assert_called_once()
+    sql, params = cursor.execute.call_args[0]
+    assert sql.strip().upper().startswith("INSERT INTO AUDIT_LOG")
+    # Assert: parametrisiert -- Werte stehen in params, NICHT im SQL-String
+    # (Schutz vor SQL-Injection; nie String-Formatierung).
+    assert "%s" in sql
+    assert "assessment_made" not in sql
+    assert "assessment_made" in params
+
+
+def test_mysql_append_serializes_detail_as_json():
+    # Arrange
+    tx, cursor = _mock_transaction()
+    with patch("src.storage.audit_repository.transaction", return_value=tx):
+        # Act
+        MySqlAuditRepository().append(_entry(detail={"risk": "orange"}))
+    # Assert: das JSON-Feld wird als JSON-String uebergeben.
+    _, params = cursor.execute.call_args[0]
+    assert json.dumps({"risk": "orange"}) in params
+
+
+def test_mysql_append_wraps_db_error_failsafe():
+    # Arrange: die Transaktion schlaegt fehl (DB nicht erreichbar).
+    with patch(
+        "src.storage.audit_repository.transaction",
+        side_effect=DatabaseConnectionError("DB weg"),
+    ):
+        # Assert: DB-Fehler wird als RepositoryError nach oben gereicht
+        # (Aufrufer kann fail-safe reagieren), nicht als roher Treiberfehler.
+        with pytest.raises(RepositoryError):
+            MySqlAuditRepository().append(_entry())
