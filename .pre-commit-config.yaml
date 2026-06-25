@@ -15,4 +15,6 @@ repos:
         entry: python 04-Source-code/tools/check_hardcoded_thresholds.py
         language: system
         pass_filenames: false
-        always_run: true
+        # Nur bei Python-Aenderungen laufen (Hardcodes koennen nur in .py entstehen) —
+        # spart Laeufe bei reinen Docs-/Config-Commits; scannt via SCAN_DIRS (pass_filenames: false).
+        types: [python]

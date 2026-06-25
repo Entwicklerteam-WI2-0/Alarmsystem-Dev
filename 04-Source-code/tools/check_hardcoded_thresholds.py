@@ -183,7 +183,9 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     Docstrings lösen keinen Fehlalarm aus; `# noqa: hardcoded-threshold` auf der
     Vergleichszeile unterdrückt. Nicht parsebarer Code wird fail-closed gemeldet.
     """
-    quelltext = quelltext.lstrip("\ufeff")  # evtl. BOM entfernen (utf-8-sig deckt Dateien ab)
+    # BOM nur f\u00fcr direkte Text-Aufrufe (z. B. Tests) entfernen \u2014 beim Datei-Pfad strippt
+    # utf-8-sig die BOM bereits, hier also redundant, aber defensiv.
+    quelltext = quelltext.lstrip("\ufeff")
     try:
         baum = ast.parse(quelltext)
     except SyntaxError as exc:
@@ -287,15 +289,26 @@ def pruefe_dateien(dateien: Iterable[Path]) -> list[Verstoss]:
 
 
 def pruefe_verzeichnisse(verzeichnisse: Iterable[str | Path]) -> list[Verstoss]:
-    """Scannt alle `.py`-Dateien unter den angegebenen Zielen (Verzeichnisse oder Dateien).
+    """Scannt alle `.py`-Dateien unter den Zielen (Verzeichnisse oder Dateien), fail-closed.
 
-    ⚠️ Gibt NUR die Verstöße zurück und verhält sich NICHT fail-closed: fehlende oder
-    nicht-`.py`-Ziele werden hier still übersprungen (`pruefe_verzeichnisse(["gibt/es/nicht"])`
-    → `[]`, kein Fehler/Log) — anders als `main()`, das in dieser Lage mit Exit 1 fail-closed
-    reagiert. Wer programmatisch eine fail-closed-Pfadprüfung braucht, nutzt
-    `_klassifiziere_ziele()` (liefert auch die fehlenden/ignorierten Ziele) bzw. `main()`.
+    Konsistent zu `main()`: Wird KEINE prüfbare `.py`-Datei gefunden (fehlende/leere/
+    falsche Ziele), liefert die Funktion einen `fail_closed`-Verstoss statt eine stille
+    leere Liste — ein Aufrufer darf „leeres Ergebnis = sauber" nicht fehlinterpretieren.
+    Für die einzelnen fehlenden/ignorierten Ziele siehe `_klassifiziere_ziele()`.
     """
-    return pruefe_dateien(_py_dateien(verzeichnisse))
+    ziele = list(verzeichnisse)
+    dateien = _py_dateien(ziele)
+    if not dateien:
+        return [
+            Verstoss(
+                datei=", ".join(str(z) for z in ziele) or "<keine Ziele>",
+                zeile=1,
+                inhalt="<keine prüfbare .py-Datei in den Zielen>",
+                grund="keine prüfbare .py-Datei — Gate fail-closed",
+                fail_closed=True,
+            )
+        ]
+    return pruefe_dateien(dateien)
 
 
 def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:

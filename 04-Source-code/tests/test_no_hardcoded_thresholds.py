@@ -266,8 +266,11 @@ def test_bom_datei_wird_geprueft(tmp_path):
     assert len(verstoesse) == 1
 
 
-def test_nicht_existierendes_verzeichnis_wird_uebersprungen():
-    assert pruefe_verzeichnisse(["gibt/es/nicht"]) == []
+def test_pruefe_verzeichnisse_ist_fail_closed_bei_0_dateien():
+    # Konsistent zu main(): keine prüfbare .py -> fail_closed-Verstoss, NICHT stilles [].
+    verstoesse = pruefe_verzeichnisse(["gibt/es/nicht"])
+    assert len(verstoesse) == 1
+    assert verstoesse[0].fail_closed is True
 
 
 def test_non_utf8_datei_ist_fail_closed(tmp_path):
