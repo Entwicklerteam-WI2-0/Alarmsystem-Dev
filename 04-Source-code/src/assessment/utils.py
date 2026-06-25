@@ -25,18 +25,6 @@ PERCENT_DIVISOR = 100.0
 # Nachbarwerte (z. B. -243,120000000001) still durchrutschen -> Fail-safe-Luecke.
 POLE_TOLERANCE_C = 1e-9
 
-# Toleranz fuer die Naehe zum Magnus-Pol -b: (b + T_a) wird zum Divisor; liegt der
-# Betrag darunter, ist das Ergebnis numerisch instabil/physikalisch unsinnig. Ein
-# exakter ==0-Vergleich greift nur beim Idealwert -243,12 und laesst gerundete
-# Nachbarwerte (z. B. -243,120000000001) still durchrutschen -> Fail-safe-Luecke.
-POLE_TOLERANCE_C = 1e-9
-
-# Toleranz fuer die Naehe zum Magnus-Pol -b: (b + T_a) wird zum Divisor; liegt der
-# Betrag darunter, ist das Ergebnis numerisch instabil/physikalisch unsinnig. Ein
-# exakter ==0-Vergleich greift nur beim Idealwert -243,12 und laesst gerundete
-# Nachbarwerte (z. B. -243,120000000001) still durchrutschen -> Fail-safe-Luecke.
-POLE_TOLERANCE_C = 1e-9
-
 
 def calculate_dew_point(air_temp_c: float, humidity_pct: float) -> float:
     """Berechnet den Taupunkt T_d (°C) aus Lufttemperatur und relativer Feuchte.
