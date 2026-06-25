@@ -1,0 +1,19 @@
+# DTB-22 — optionaler lokaler No-Hardcode-Guard (Enabler, NF-05).
+# Das zuverlaessige Gate ist die GitHub-Action "lint-config"; dieser pre-commit-Hook
+# gibt dasselbe Feedback bereits vor dem Commit. Aktivieren (einmalig, aus Repo-Root):
+#   pip install pre-commit && pre-commit install
+# Hinweis: Backend-Root ist 04-Source-code/, pre-commit laeuft im Repo-Root ->
+# die Scan-Verzeichnisse werden explizit als Argumente uebergeben.
+# WICHTIG: Diese Pfade mit SCAN_DIRS in tools/check_hardcoded_thresholds.py
+# synchron halten — wird SCAN_DIRS erweitert (z. B. um ingest), hier mitpflegen,
+# sonst pruefen lokales pre-commit und CI Unterschiedliches.
+
+repos:
+  - repo: local
+    hooks:
+      - id: no-hardcoded-thresholds
+        name: Keine hartcodierten Schwellen (config/ laden)
+        entry: python 04-Source-code/tools/check_hardcoded_thresholds.py 04-Source-code/src/assessment 04-Source-code/src/forecast
+        language: system
+        pass_filenames: false
+        files: ^04-Source-code/src/(assessment|forecast)/.*\.py$

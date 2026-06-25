@@ -1,0 +1,38 @@
+# DTB-22 — No-Hardcode-Guard fuer Schwellenwerte (Enabler, NF-05).
+# Stellt sicher, dass Vereisungs-/Prognose-Schwellen aus config/ geladen werden
+# (DTB-15 loader.py) und nicht als Literal im Code stehen — sonst lassen sich die
+# ausstehenden G1-Finalwerte nicht ohne Code-Aenderung austauschen.
+#
+# Backend-Root liegt unter 04-Source-code/ (PR #29) -> run-Schritte laufen dort.
+# Reiner Stdlib-Check (kein pip install noetig). Default-Scan: src/assessment +
+# src/forecast (erweiterbar in tools/check_hardcoded_thresholds.py SCAN_DIRS).
+
+name: Lint Config
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  no-hardcoded-thresholds:
+    name: lint-config
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: 04-Source-code
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Schwellen-Guard ausfuehren
+        run: python tools/check_hardcoded_thresholds.py
