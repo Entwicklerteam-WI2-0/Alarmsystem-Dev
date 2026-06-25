@@ -175,6 +175,17 @@ def _ist_schwellen_treffer(knoten: ast.AST) -> bool:
     return _ist_vergleichs_call(knoten)
 
 
+def _fail_closed_verstoss(datei: str, zeile: int, beschreibung: str) -> Verstoss:
+    """Einheitlicher fail-closed-Verstoss: Datei nicht prüfbar -> Gate rot statt still grün."""
+    return Verstoss(
+        datei=datei,
+        zeile=zeile,
+        inhalt=f"<{beschreibung} — fail-closed>",
+        grund=f"{beschreibung} — Gate fail-closed",
+        fail_closed=True,
+    )
+
+
 def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     """Findet Schwellen-Literale in Vergleichen via AST.
 
@@ -191,13 +202,7 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     except SyntaxError as exc:
         # Fail-closed: eine nicht prüfbare Schwellen-Datei darf das Gate nicht grün lassen.
         return [
-            Verstoss(
-                datei=dateiname,
-                zeile=exc.lineno or 1,
-                inhalt="<Datei nicht parsebar — Schwellen-Check fail-closed>",
-                grund="Datei nicht parsebar (SyntaxError) — Gate fail-closed",
-                fail_closed=True,
-            )
+            _fail_closed_verstoss(dateiname, exc.lineno or 1, "Datei nicht parsebar (SyntaxError)")
         ]
 
     noqa = _noqa_zeilen(quelltext, dateiname)
@@ -275,12 +280,8 @@ def pruefe_dateien(dateien: Iterable[Path]) -> list[Verstoss]:
             text = py_datei.read_text(encoding="utf-8-sig")
         except (OSError, UnicodeDecodeError) as exc:
             verstoesse.append(
-                Verstoss(
-                    datei=str(py_datei),
-                    zeile=1,
-                    inhalt=f"<Datei nicht lesbar/dekodierbar: {exc.__class__.__name__}>",
-                    grund="Datei nicht lesbar/dekodierbar — Gate fail-closed",
-                    fail_closed=True,
+                _fail_closed_verstoss(
+                    str(py_datei), 1, f"Datei nicht lesbar/dekodierbar ({exc.__class__.__name__})"
                 )
             )
             continue
@@ -299,15 +300,8 @@ def pruefe_verzeichnisse(verzeichnisse: Iterable[str | Path]) -> list[Verstoss]:
     ziele = list(verzeichnisse)
     dateien = _py_dateien(ziele)
     if not dateien:
-        return [
-            Verstoss(
-                datei=", ".join(str(z) for z in ziele) or "<keine Ziele>",
-                zeile=1,
-                inhalt="<keine prüfbare .py-Datei in den Zielen>",
-                grund="keine prüfbare .py-Datei — Gate fail-closed",
-                fail_closed=True,
-            )
-        ]
+        ziel_text = ", ".join(str(z) for z in ziele) or "<keine Ziele>"
+        return [_fail_closed_verstoss(ziel_text, 1, "keine prüfbare .py-Datei in den Zielen")]
     return pruefe_dateien(dateien)
 
 
