@@ -1,5 +1,5 @@
 # Persönliches Entscheidungslog — Luca Ganter (G2)
-> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-24 · **Zeitraum:** 2026-06-23 bis 2026-06-24
+> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-25 · **Zeitraum:** 2026-06-23 bis 2026-06-25
 > **Autor:** Luca Ganter · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
@@ -88,3 +88,36 @@
   `feat/dtb-32-taupunkt-magnus` gepusht (PR/Merge offen, Lucas-Freigabe). **Offene Folge-Auflage:** Bei der
   Umsetzung von DTB-60 den `ValueError` fangen → `dew_point_c = None` → DTB-38 fail-safe ≥ GELB; dort
   verifizieren.
+
+## 2026-06-25 — Unplausiblen Taupunkt verwerfen statt speichern (DTB-60)
+- **Kontext/Task:** DTB-60 (Taupunkt im Poller) · NF-01 (Fail-safe) · `Schwellenwerte.md` §3 (Sensor-Defekt).
+  DTB-60 setzt die Folge-Auflage aus DTB-32 um: der Poller ruft `calculate_dew_point(air_temp_c,
+  humidity_pct)` und füllt `Reading.dew_point_c`, fängt den `ValueError` (RH=0) → `dew_point_c=None`. Ein
+  santa-loop-Review fand danach einen **weiteren stillen Fail-safe-Bruch (H1):** Der Poller lässt
+  `humidity_pct` in `[0, 100]` zu, `calculate_dew_point` wirft aber nur bei *exakt* RH=0. Im Spalt knapp
+  über 0 (z. B. 0,01 %, ein defekter Sensorwert) liefert die Formel einen absurden Taupunkt
+  (−83 / −143 °C), der klaglos gespeichert würde → downstream riesiges ΔT → „keine Feuchte" → fälschlich GRÜN.
+- **Entscheidung:** Den **berechneten Taupunkt plausibilisieren**: liegt `dew_point_c` unter der ohnehin
+  gültigen Sensor-Temperaturgrenze `MIN_TEMP_C` (−50 °C), wird er als unplausibel verworfen →
+  `dew_point_c=None` (derselbe Fail-safe-Pfad wie bei RH=0). Das Reading wird mit den übrigen gültigen
+  Werten trotzdem gespeichert.
+- **Begründung:** Ein Taupunkt unter −50 °C ist bei einem Sensor, der selbst nur bis −50 °C plausibel misst,
+  physikalisch nicht haltbar und ein klares Indiz für einen defekten Eingangswert (`Schwellenwerte.md` §3).
+  Ich prüfe bewusst das **Ergebnis** statt eine neue Feuchte-Untergrenze einzuführen: das nutzt eine
+  **bereits existierende, begründete Konstante** (`MIN_TEMP_C`) wieder, erfindet keinen zusätzlichen
+  Domänen-Schwellenwert, der separat abgestimmt/parametriert werden müsste, und schließt den ganzen
+  „RH-fast-0"-Spalt in einem Schritt. Frost-Taupunkte (z. B. −12,8 °C) bleiben unangetastet — der
+  Use-Case-Kern (Vereisung unter 0 °C) wird nicht beschnitten. Konsistent mit der DTB-32-Linie: lieber
+  `None` (klares „unbestimmbar") als ein plausibel aussehender, aber falscher Wert.
+- **Alternativen:**
+  - **Untere Feuchte-Plausibilitätsgrenze im Poller** (z. B. RH < 1 % = defekt): verworfen — schließt zwar
+    die Quelle direkt, führt aber einen neuen, frei gewählten Domänen-Schwellenwert ein, der gegen Realdaten
+    begründet und (NF-05) parametriert werden müsste — mehr Begründungslast für denselben Schutz.
+  - **H1 als Folge-Ticket vertagen** (Validierung in DTB-12): verworfen — der stille-GRÜN-Pfad bliebe bis
+    dahin offen; bei einem Sicherheitssystem nicht akzeptabel, wenn ein kleiner, lokaler Fix genügt.
+- **Ergebnis/Status:** umgesetzt. Poller berechnet **und** plausibilisiert `dew_point_c`; 4 neue
+  Poller-Tests (Berechnung 1,2/96 → 0,63 °C; Frost −5/80 → −7,92 °C; RH=0 → None; RH=0,01 → None), volle
+  Suite 86 grün, Coverage `poller.py` = 100 %. Branch `feat/dtb-60-poller-taupunkt` (gestapelt auf DTB-32)
+  gepusht; PR/Merge offen (Lucas-Freigabe, nach DTB-32). **Offene Folge-Auflage (an DTB-38/DTB-12):** Die
+  Bewertung muss `dew_point_c=None` explizit als „Feuchte vorhanden = wahr" behandeln (`Schwellenwerte.md`
+  §2 → nie GRÜN); als eigenes Ticket zu verlinken.
