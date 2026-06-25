@@ -22,7 +22,17 @@
   - Stale, DB-Ausfall und unplausible Daten bleiben ** drei getrennte Fälle**, liefern aber
     gemeinsam `RiskLevel.UNKNOWN`.
 
-- **Begründung:** *(noch vom Autor zu vervollständigen)*
+- **Begründung:**   Die Fail-safe-Logik sollte vor der eigentlichen Vereisungsbewertung erkennen, ob die übermittelten Daten überhaupt verwertbar sind. NF-01
+   verlangt, dass das System bei unsicheren oder veralteten Daten nie GRÜN anzeigt; E-34 hat mit RiskLevel.UNKNOWN einen eigenen            
+   Fail-safe-Zustand eingeführt, der genau diesen Fall abbildet. Indem ich Stale-Daten, DB-Ausfall und unplausible Werte als drei getrennte 
+   Fälle erfasse, aber alle auf UNKNOWN abbilde, bleibt die Fehlerursache für Audit/Log nachvollziehbar, während G3 ein eindeutiges Ergebnis
+   erhält.                                                                                                                                  
+                                                                                                                                            
+   Die Wahl von 120 s für stale_timeout_s habe ich bewusst konservativer als die 180 s aus Schwellenwerte.md §3 gewählt, weil das System bei
+   ausgefallenen oder hängenden Sensoren möglichst schnell in den sicheren Zustand wechseln soll. Die paarweise Plausibilitätsprüfung       
+   (aktuelles Reading gegen Repository.get_latest()) habe ich gewählt, weil das Repository-Interface dadurch schmal bleibt und DTB-13 als   
+   Enabler für DTB-28 nicht zusätzlich blockiert. Für die Flatline-Erkennung habe ich eine kleine Epsilon-Toleranz (0,01 °C) eingeführt, um 
+   reales Sensorrauschen zu tolerieren und False-Positives zu vermeiden. 
 
 - **Alternativen:**
   - **Stale-Schwelle = 180 s (3 × Messintervall)** wie in Schwellenwerte.md §3 — verworfen,
