@@ -327,6 +327,31 @@ def test_main_leeres_verzeichnis_ist_fail_closed(tmp_path, capsys):
     assert "fail-closed" in ausgabe
 
 
+def test_main_nicht_py_datei_als_arg_ist_fail_closed(tmp_path, capsys):
+    # Eine existierende Nicht-.py-Datei ist nichts Prüfbares -> fail-closed (nicht still grün).
+    f = tmp_path / "notiz.txt"
+    f.write_text("if t_s > 1.0: egal\n", encoding="utf-8")
+    code = main([str(f)])
+    ausgabe = capsys.readouterr().out
+    assert code == 1
+    assert "fail-closed" in ausgabe
+
+
+def test_main_nicht_py_datei_neben_gueltigem_ziel_wird_gemeldet(tmp_path, capsys):
+    # Existierende Nicht-.py-Datei neben gültigem Ziel darf nicht still verschluckt werden:
+    # sichtbare WARNUNG, kein lautloses Übergehen (Safety-Gate: lieber laut als still).
+    d = tmp_path / "assessment"
+    d.mkdir()
+    (d / "core.py").write_text("if t_s > schw.x:\n    pass\n", encoding="utf-8")
+    notiz = tmp_path / "notiz.txt"
+    notiz.write_text("egal\n", encoding="utf-8")
+    code = main([str(d), str(notiz)])
+    ausgabe = capsys.readouterr().out
+    assert code == 0
+    assert "WARNUNG" in ausgabe
+    assert "notiz.txt" in ausgabe
+
+
 def test_main_datei_als_argument_wird_geprueft(tmp_path, capsys):
     # Eine .py-Datei direkt als Argument muss gescannt werden (nicht still grün).
     f = tmp_path / "core.py"

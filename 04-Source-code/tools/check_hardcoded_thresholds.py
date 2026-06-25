@@ -196,19 +196,25 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     return [verstoss for _, _, verstoss in roh]
 
 
-def _klassifiziere_ziele(ziele: Iterable[str | Path]) -> tuple[list[Path], list[str]]:
-    """Ein Durchlauf: (prüfbare `.py`-Dateien dedupliziert, nicht existente Ziele).
+def _klassifiziere_ziele(
+    ziele: Iterable[str | Path],
+) -> tuple[list[Path], list[str], list[str]]:
+    """Ein Durchlauf: (prüfbare `.py`-Dateien dedupliziert, fehlende Ziele, ignorierte Ziele).
 
     Klassifiziert jedes Ziel mit einer stat-Runde (`is_file`/`is_dir`) statt zusätzlich
-    `exists()` — Datei direkt, Verzeichnis rekursiv, sonst „fehlend".
+    `exists()`: `.py`-Datei → prüfbar; Verzeichnis → rekursiv; existierende Nicht-`.py`-Datei
+    → „ignoriert" (sichtbar machen, nicht still verschlucken); sonst → „fehlend".
     """
     dateien: list[Path] = []
     fehlend: list[str] = []
+    ignoriert: list[str] = []
     for ziel in ziele:
         pfad = Path(ziel)
         if pfad.is_file():
             if pfad.suffix == ".py":
                 dateien.append(pfad)
+            else:
+                ignoriert.append(str(ziel))  # existiert, ist aber keine .py-Datei
         elif pfad.is_dir():
             dateien.extend(sorted(pfad.rglob("*.py")))
         else:
@@ -218,7 +224,7 @@ def _klassifiziere_ziele(ziele: Iterable[str | Path]) -> tuple[list[Path], list[
     eindeutig: dict[Path, Path] = {}
     for datei in dateien:
         eindeutig.setdefault(datei.resolve(), datei)
-    return list(eindeutig.values()), fehlend
+    return list(eindeutig.values()), fehlend, ignoriert
 
 
 def _py_dateien(ziele: Iterable[str | Path]) -> list[Path]:
@@ -269,7 +275,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = list(argv) if argv is not None else sys.argv[1:]
     verzeichnisse = args if args else list(SCAN_DIRS)
 
-    gescannte, fehlend = _klassifiziere_ziele(verzeichnisse)
+    gescannte, fehlend, ignoriert = _klassifiziere_ziele(verzeichnisse)
 
     # Fail-closed an der RICHTIGEN Invariante: nicht „existiert ein Pfad?", sondern
     # „wurde eine prüfbare .py-Datei gefunden?". Sonst gäbe ein leeres/falsches Ziel
@@ -281,9 +287,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 1
 
-    # Einzelne fehlende Ziele nur melden (es wurde trotzdem etwas gefunden) — Scan läuft weiter.
+    # Fehlende/ignorierte Ziele sichtbar machen (nicht still verschlucken) — Scan läuft weiter.
     if fehlend:
         print(f"WARNUNG: Scan-Ziel(e) nicht gefunden, übersprungen: {', '.join(fehlend)}")
+    if ignoriert:
+        print(f"WARNUNG: keine .py-Datei, übersprungen: {', '.join(ignoriert)}")
 
     verstoesse = pruefe_dateien(gescannte)
 
