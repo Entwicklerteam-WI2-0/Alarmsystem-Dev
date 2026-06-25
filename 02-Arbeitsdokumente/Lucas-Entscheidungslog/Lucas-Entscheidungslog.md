@@ -75,3 +75,22 @@
   - *Ungültige Prognose ebenfalls als `UNKNOWN` behandeln:* verworfen — die Prognose ist optionaler Zusatzinput; ihr Ausfall darf einen aktuell gültigen Zustand nicht auf `UNKNOWN` hochstufen. Ignorieren ist konservativer als GRÜN erzwingen.
   - *Taupunktberechnung in DTB-38 mitaufnehmen:* verworfen — DTB-32 (Magnus-Formel) war bereits in Arbeit; Mischen würde die Review- und Testbarkeit verschlechtern.
 - **Ergebnis/Status:** umgesetzt (`src/assessment/core.py`, `tests/test_assessment.py`, 21 Tests, 100 % Coverage, ruff sauber). Review-Protokoll `02-Arbeitsdokumente/DTB-38-Review-Protokoll.md` dokumentiert den Review-Befund und die Nachbesserung. PR offen.
+
+## 2026-06-25 — DTB-22: No-Hardcode-Guard für Vereisungs-Schwellen + CI-Gate
+- **Kontext/Task:** P2.x · DTB-22 (Enabler) · NF-05 (Schwellenwerte parametrierbar austauschbar) · `Schwellenwerte.md §1`. Auslöser: Die numerischen Grenzwerte in `Schwellenwerte.md` sind **Dummies**; Gruppe 1 liefert die finalen, sensorspezifisch kalibrierten Werte noch nach. Sobald im Bewertungs-/Prognosecode Literale wie `t_s > 1.0` stehen, lassen sich diese Finalwerte nicht ohne Code-Änderung einspielen.
+- **Entscheidung:** Ein automatisierter **No-Hardcode-Guard** einführen:
+  1. AST-basiertes Tool `tools/check_hardcoded_thresholds.py` erkennt numerische Literale in Vergleichen (`ast.Compare` mit Zahl-Operand) sowie indirekte Vergleiche `operator.gt` / `math.isclose`.
+  2. Scan-Scope bewusst auf `src/assessment` + `src/forecast` beschränkt — die einzigen Module, in denen fachliche Vereisungs-/Prognose-Schwellen entstehen dürfen.
+  3. CI-Gate `.github/workflows/lint-config.yml` läuft auf `push: main` und auf jedem PR; optionaler lokaler pre-commit-Hook für frühes Feedback.
+  4. Begründete Ausnahme via `# noqa: hardcoded-threshold` auf der Vergleichszeile.
+  5. **Fail-closed:** Nicht parsebare oder nicht lesbare Dateien werden als Verstoß gemeldet, statt still grün durchzurutschen.
+- **Begründung:** Ein reaktiver Code-Review reicht nicht, wenn mehrere Entwickler parallel an der Bewertungskaskade arbeiten und G1-Finalwerte kurzfristig eingespielt werden müssen. AST statt Regex, weil Regex auf Textebene Fehlalarme in Strings, Kommentaren, Docstrings und Mehrzeiligkeit produziert — genau die Fälle, die im Team-Review als lästig aufgefallen wären. Die Scope-Beschränkung verhindert, dass Status-Codes, Indizes oder Pagination-Werte in `src/ingest` / `src/api` fälschlich als Schwellen flaggt werden.
+- **Alternativen (erwogen/verworfen):**
+  - *Regex-basierter Guard (`>\s*[0-9.]` etc.):* verworfen — bricht an escaped quotes, Kommentaren, f-strings und Mehrzeiligkeit; würde Entwickler zum Ausnahme-Noise zwingen und damit das Gate entwerten.
+  - *Globaler Scan über alle `*.py`:* verworfen — würde `len(x) > 0`, `range(0, 10)`, HTTP-Status-Codes etc. als Fehlalarme melden; Scope auf assessment/forecast ist präziser.
+  - *Nur manueller Review ohne Tool:* verworfen — skaliert nicht bei mehreren Beteiligten und wiederholten Schwellen-Updates; menschliches Auge übersieht Literale in komplexen Kaskaden.
+- **Bewusster Tradeoff / Grenzen:**
+  - Der Guard erkennt **keine** Literale, die erst einer Variable zugewiesen werden (`grenze = 1.0; if t_s > grenze`). Das bleibt dem menschlichen Review überlassen und ist im Docstring dokumentiert.
+  - Indirekte Vergleiche nur als `operator.gt`/`math.isclose` in unveränderter Modul-Schreibweise; Alias-/bare-Import oder `np.greater` werden nicht erfasst.
+  - Verkettete Vergleiche (`0.0 < t_s < 1.0`) zählen als ein Befund — ausreichend für das Gate.
+- **Ergebnis/Status:** umgesetzt (`tools/check_hardcoded_thresholds.py`, `tests/test_no_hardcoded_thresholds.py` mit 66 Tests, 98 % Coverage, `ruff` sauber), CI-Gate `lint-config.yml`, PR-Template um Schwellen-Hinweis erweitert, optionaler pre-commit-Hook. PR #73 offen.
