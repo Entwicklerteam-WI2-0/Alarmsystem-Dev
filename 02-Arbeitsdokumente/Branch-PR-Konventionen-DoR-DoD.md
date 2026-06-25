@@ -262,7 +262,7 @@ Das System gibt die Startbahn **nie** automatisch frei oder gesperrt. Im Code be
 
 Bei Ausfall, Stale-Daten oder Defekt **nie GRÜN**:
 
-- Stale > 180 s → `unknown` oder GELB + Warnung.
+- Stale > 120 s → `unknown` oder GELB + Warnung.
 - Sensor-Defekt → GELB/unknown + Warnung.
 - DB-Fehler → GELB/unknown + Warnung.
 

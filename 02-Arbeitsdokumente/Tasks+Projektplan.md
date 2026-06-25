@@ -43,7 +43,7 @@
 - **P2.6** Unit-Tests Bewertung (≥ 80 % Coverage, inkl. 2 Vorfälle) — `[Test&Qualität]` Test · DoD: Tests grün; **benannter Testfall Vorfall 1 → GELB** (92 % Luft-RH bei trockener Oberfläche, `ΔT > 1,0` ⇒ keine Feuchte, kein Fehlalarm — der frühere `RH ≥ 90 %`-Term hätte fälschlich ORANGE erzeugt, entfernt → E-33) · **M**
 
 ### P3 — T1 Kernfunktion
-- **P3.1** Plausibilität + Stale-Erkennung (> 180 s) — `[Backend-Impl]` Backend-Dev · FA veraltete Daten · **M**
+- **P3.1** Plausibilität + Stale-Erkennung (> 120 s) — `[Backend-Impl]` Backend-Dev · FA veraltete Daten · **M**
 - **P3.2** Sensor-Defekt-Erkennung (Flatline/Sprung/Timeout) — `[Backend-Impl]` Backend-Dev · FA defekte Sensoren · **M**
 - **P3.3** Alarm-Generierung + Schweregrad + Hysterese/Entprellung — `[Backend-Impl]` Backend-Dev · FA Alarmierung · **M**
 - **P3.4** `GET /alarms` — `[Backend-Impl]` Backend-Dev · **S**

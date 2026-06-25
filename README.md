@@ -56,11 +56,10 @@ Alarmsystem-Dev/
 │   │   ├── api/                         # API-Endpoints für G3 (Frontend)
 │   │   ├── config/                      # Schwellen/Parametrierung
 │   │   ├── forecast/                    # 30-min-Prognose (T3)
-│   │   └── main.py                      # Einstiegspunkt (FastAPI), GET /health
+│   │   └── main.py                      # Einstiegspunkt (FastAPI), GET /v1/health
 │   ├── tests/                           # Unit/Integrationstests
 │   ├── migrations/                      # handgeschriebenes schema.sql (kein Alembic, E-35)
 │   ├── config/                          # Default-Schwellenwerte (parametrierbar)
-│   ├── docker-compose.yml               # DEPRECATED (E-35: kein Docker; native MariaDB) — wird entfernt
 │   ├── .env.example                     # DB-Zugangsdaten (Platzhalter; keine Secrets)
 │   ├── pyproject.toml · requirements*.txt
 │   └── README.md                        # Setup + Struktur des Backends
@@ -89,7 +88,7 @@ Alarmsystem-Dev/
 
 ---
 
-> **Hinweis zur Struktur:** Der Backend-Code liegt unter **`04-Source-code/`** — das **P0-Grundgerüst steht** (FastAPI-Skelett, `GET /health`, MariaDB-Setup **nativ** (Pi via Tunnel / lokal; kein Docker → E-35)). Struktur-/Setup-Detail siehe `04-Source-code/README.md` und `Backend-Konzept §7`. `.github/workflows/` (CI/CD) ist noch geplant.
+> **Hinweis zur Struktur:** Der Backend-Code liegt unter **`04-Source-code/`** — das **P0-Grundgerüst steht** (FastAPI-Skelett, `GET /v1/health`, MariaDB-Setup **nativ** (Pi via Tunnel / lokal; kein Docker → E-35)). Struktur-/Setup-Detail siehe `04-Source-code/README.md` und `Backend-Konzept §7`. `.github/workflows/` (CI/CD) ist noch geplant.
 
 
 
@@ -284,7 +283,7 @@ pip install -r requirements-dev.txt
 
 ### 4. Server starten
 ```bash
-# T0-Ziel: GET /health → 200 OK
+# T0-Ziel: GET /v1/health → 200 OK
 uvicorn src.main:app --reload                # → http://127.0.0.1:8000
 ```
 
@@ -379,8 +378,8 @@ tests/
 - **Seam-Sync:** 1×/Woche (Anfang Woche 2)
 
 #### zu G3 (Frontend)
-- **`GET /assessment/current`-Response** — welche Felder, Formatierung?
-- **`GET /alarms`** — wie werden Alarme visualisiert?
+- **`GET /v1/assessment/current`-Response** — welche Felder, Formatierung?
+- **`GET /v1/alarms`** — wie werden Alarme visualisiert?
 - **Seam-Sync:** 1×/Woche (Anfang Woche 2)
 
 ---
@@ -462,4 +461,4 @@ tests/
 
 **Viel Erfolg bei der Implementierung!** 🚀
 
-*Letzte Aktualisierung: 22.06.2026 — G2 Backend & Entscheidungslogik (MySQL-Vorgabe eingearbeitet)*
+*Letzte Aktualisierung: 25.06.2026 — G2 Backend & Entscheidungslogik (API-Contract v1.0 eingefroren; `/v1`-Endpoints; E-35 PyMySQL/native MariaDB)*

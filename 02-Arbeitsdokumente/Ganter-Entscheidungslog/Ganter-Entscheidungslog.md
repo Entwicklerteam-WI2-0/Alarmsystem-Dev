@@ -1,4 +1,5 @@
 # Persönliches Entscheidungslog — Luca Ganter (G2)
+
 > **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-25 · **Zeitraum:** 2026-06-23 bis 2026-06-25
 > **Autor:** Luca Ganter · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).

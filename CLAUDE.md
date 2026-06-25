@@ -2,6 +2,30 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⛔ Pflichtlektüre & Source-of-Truth — VOR jeder Arbeit (verhindert Kontext-Misses)
+
+**Maßgeblich ist der LIVE-Stand, nicht alte Planungs-Docs.** Bei jeder Task in dieser Reihenfolge orientieren:
+
+1. **`erinnerung/stand.md`** — aktueller Gesamtstand + offene Punkte (zuerst).
+2. **Live-Jira (Projekt `DTB`)** + offene GitHub-PRs — was real offen/erledigt ist.
+3. **Anforderungen `02-Arbeitsdokumente/Usecase-quick.md`** (FA/NF/RB) — u. a. **RB-01** (kein Aktor) und **Alarm-Clearing = REIN MANUELL** (ein Mensch beendet den Alarm; **kein** Auto-Clear, kein `cleared_at`-Automatismus).
+4. **Bewertungslogik `02-Arbeitsdokumente/Schwellenwerte.md`** (4 Stufen; Dummy-Werte → parametrierbar, NIE hardcoden).
+5. **Architektur/Naht `02-Arbeitsdokumente/Backend-Konzept.md`** (§9 = G1→G2-Contract).
+6. **Entscheidungen** `02-Arbeitsdokumente/Entscheidungslog-Lucas-Systemarchitektur.md` (zentral, E-xx) + `02-Arbeitsdokumente/Lucas-Entscheidungslog/Lucas-Entscheidungslog.md` (persönlich).
+
+### API-Vertrag — EINGEFROREN (einhalten, NICHT „verbessern")
+- **`04-Source-code/docs/API_FROZEN_v1.md`** = eingefrorener G1↔G2↔G3-Vertrag v1.0 (DTB-35).
+- **`04-Source-code/docs/api/v1/openapi.yaml`** = formale G2-Spec · `g1-consumed.openapi.yaml` = konsumierter G1-Vertrag.
+- **HARTE REGEL:** „API FROZEN" = **dagegen implementieren**, nicht umschreiben. Die Spec wird **NICHT** für Review-Nitpicks (enum/maxLength/Beschreibungen) editiert. Echte Änderungen nur über `/v2/` bzw. bewusste Architektenentscheidung. **Review-Befunde sammeln, priorisieren, NUR Blocker fixen** — kein Befund-für-Befund-Abarbeiten an einer eingefrorenen Datei.
+
+### Bekannte Fakten (nicht erneut erfragen)
+- **G3-Lead = Nick.** G1-Lead = Nils.
+- Alarm-Clearing = **manuell** (FA / RB-01).
+- Inter-Gruppen-Kommunikation (G1/G3) → als **versandfertige `.txt` auf den Desktop** legen.
+- Aktiver Stand/Plan bis M3: siehe `erinnerung/stand.md` + Desktop-Plan (`Plan-bis-M3.md`).
+
+> **Zweck:** Kontext-Misses und ineffizientes Nachfragen/Re-Editieren vermeiden. Im Zweifel: `stand.md` + Live-Jira + obige Doks lesen, dann handeln.
+
 ## ⚠️ Die „40 % Einzelleistung" ist NUR ein Prüfungs-Notengewicht — keine Arbeits-/Architekturregel
 
 Die „40 % individuell / 60 % Gruppe" (aus `01-quellen/Prüfungsleistung Anforderungen.txt`) sind ausschließlich
