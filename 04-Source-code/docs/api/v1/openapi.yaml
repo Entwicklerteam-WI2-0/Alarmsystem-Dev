@@ -251,6 +251,18 @@ paths:
             Alarme aus der G3-Ansicht verschwinden).
           schema:
             $ref: "#/components/schemas/AlarmState"
+        - name: limit
+          in: query
+          required: false
+          description: |
+            Maximale Anzahl zurueckgegebener Alarme. Fuer M2/Prototyp optional
+            (Alarmzahl bleibt ueberschaubar); fuer M3 empfohlen, damit ein
+            Resync nach laengerem Disconnect keine sehr grosse Response erzeugt.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
       responses:
         "200":
           description: Liste der Alarme.
