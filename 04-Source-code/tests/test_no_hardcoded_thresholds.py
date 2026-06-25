@@ -362,6 +362,29 @@ def test_main_nicht_py_datei_neben_gueltigem_ziel_wird_gemeldet(tmp_path, capsys
     assert "notiz.txt" in ausgabe
 
 
+def test_main_unlesbare_datei_ist_fail_closed(tmp_path, monkeypatch, capsys):
+    # Eine nicht lesbare Datei (PermissionError) darf nicht mit Traceback crashen,
+    # sondern fail-closed melden (analog SyntaxError).
+    import pathlib
+
+    d = tmp_path / "assessment"
+    d.mkdir()
+    (d / "core.py").write_text("x = 1\n", encoding="utf-8")
+    original = pathlib.Path.read_text
+
+    def kein_zugriff(self, *args, **kwargs):
+        if self.name == "core.py":
+            raise PermissionError("kein Zugriff")
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "read_text", kein_zugriff)
+    code = main([str(d)])
+    ausgabe = capsys.readouterr().out
+    assert code == 1
+    assert "nicht lesbar" in ausgabe
+    assert "fail-closed" in ausgabe
+
+
 def test_main_datei_als_argument_wird_geprueft(tmp_path, capsys):
     # Eine .py-Datei direkt als Argument muss gescannt werden (nicht still grün).
     f = tmp_path / "core.py"
@@ -381,7 +404,7 @@ def test_main_syntaxfehler_meldung_raet_zu_reparatur(tmp_path, capsys):
     code = main([str(d)])
     ausgabe = capsys.readouterr().out
     assert code == 1
-    assert "reparieren" in ausgabe
+    assert "beheben" in ausgabe  # Reparatur-Hinweis (Syntax/Encoding/Berechtigung)
     assert "Schwellen über config/ laden" not in ausgabe
 
 

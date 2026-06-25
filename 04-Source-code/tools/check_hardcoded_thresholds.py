@@ -240,7 +240,20 @@ def pruefe_dateien(dateien: Iterable[Path]) -> list[Verstoss]:
     for py_datei in dateien:
         # utf-8-sig entfernt eine evtl. BOM (Windows-Editoren); errors="replace" sorgt
         # dafür, dass eine einzelne defekte Datei das Gate nicht mit Traceback abbricht.
-        text = py_datei.read_text(encoding="utf-8-sig", errors="replace")
+        try:
+            text = py_datei.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError as exc:
+            # Datei nicht lesbar (z. B. PermissionError) -> fail-closed statt Traceback:
+            # eine nicht prüfbare Schwellen-Datei darf das Gate nicht grün lassen.
+            verstoesse.append(
+                Verstoss(
+                    datei=str(py_datei),
+                    zeile=1,
+                    inhalt=f"<Datei nicht lesbar: {exc.__class__.__name__}>",
+                    grund="Datei nicht lesbar — Gate fail-closed",
+                )
+            )
+            continue
         verstoesse.extend(finde_verstoesse(text, str(py_datei)))
     return verstoesse
 
@@ -256,15 +269,18 @@ def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:
     for verstoss in verstoesse:
         print(f"  {verstoss.datei}:{verstoss.zeile}: {verstoss.inhalt.strip()}")
     print(f"\n{len(verstoesse)} Verstoß/Verstöße.")
-    # Rat getrennt nach Fund-Art — für eine nicht parsebare Datei ist „config/ laden" falsch.
-    if any("nicht parsebar" not in v.grund for v in verstoesse):
+    # Rat getrennt nach Fund-Art — für eine nicht prüfbare Datei ist „config/ laden" falsch.
+    # Marker „fail-closed" im Grund = nicht prüfbare Datei (Syntax/Encoding/Lesefehler).
+    if any("fail-closed" not in v.grund for v in verstoesse):
         print(
             f"  → Schwellen über config/ laden (src/config/loader.py) oder begründete Ausnahme "
             f"mit '# {ERLAUBT_MARKER}' auf der gemeldeten Zeile markieren "
             f"(bei mehrzeiligem Vergleich: erste Zeile)."
         )
-    if any("nicht parsebar" in v.grund for v in verstoesse):
-        print("  → Nicht parsebare Dateien reparieren (Syntax/Encoding) — sie sind nicht prüfbar.")
+    if any("fail-closed" in v.grund for v in verstoesse):
+        print(
+            "  → Nicht prüfbare Dateien beheben (Syntax/Encoding/Berechtigung) — Gate fail-closed."
+        )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
