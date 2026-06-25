@@ -256,3 +256,4 @@
   gefunden & fail-closed geschlossen. 199 Tests grün.
 - **Entscheidungslog:** 11 DTB-22-Einträge + Save-Session auf `docs/dtb-22-entscheidungslog` **gepusht**.
 - **Team-OS:** `/update` gelaufen (`claude-sync.md` +89 Z., 53 uni-Skills, v1.6.0) → **Claude Code neu starten**.
+- **Status: ✅ DTB-22 vollständig abgeschlossen** (Code auf `main`, Doku gepusht).
