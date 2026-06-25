@@ -14,6 +14,9 @@ dependencies = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "real_clock: Test laeuft gegen die echte Uhr (ohne die frozen_now-Fixture)",
+]
 
 [tool.ruff]
 line-length = 100

@@ -39,6 +39,7 @@ class DatenqualitaetSchwellen:
     max_temp_jump_c_per_min: float
     flatline_timeout_min: float
     flatline_epsilon_c: float
+    max_clock_skew_s: float
 
 
 @dataclass(frozen=True)
@@ -123,3 +124,5 @@ def _validate_datenqualitaet(schwellen: DatenqualitaetSchwellen) -> None:
         raise ConfigError("datenqualitaet.flatline_timeout_min muss groesser als 0 sein")
     if schwellen.flatline_epsilon_c < 0:
         raise ConfigError("datenqualitaet.flatline_epsilon_c darf nicht negativ sein")
+    if schwellen.max_clock_skew_s <= 0:
+        raise ConfigError("datenqualitaet.max_clock_skew_s muss groesser als 0 sein")

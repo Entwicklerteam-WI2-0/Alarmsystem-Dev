@@ -26,6 +26,7 @@ def quality_thresholds() -> DatenqualitaetSchwellen:
         max_temp_jump_c_per_min=5.0,
         flatline_timeout_min=15.0,
         flatline_epsilon_c=0.01,
+        max_clock_skew_s=5.0,
     )
 
 
