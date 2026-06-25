@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING
 
 import pymysql
 from pymysql import Error as PyMySQLError
+from pymysql.cursors import DictCursor
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +177,7 @@ def get_connection(
             connect_timeout=cfg.connect_timeout,
             autocommit=cfg.autocommit,
             charset=cfg.charset,
+            cursorclass=DictCursor,
         )
     except (PyMySQLError, OSError) as exc:
         # Infrastruktur-Details separat loggen, nicht in der Exception-Message

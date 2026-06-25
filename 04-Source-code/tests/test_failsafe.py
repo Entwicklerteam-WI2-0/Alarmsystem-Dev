@@ -224,13 +224,15 @@ def test_build_unknown_assessment_sanitizes_newlines() -> None:
     assert "line1 line2" in assessment.explanation
 
 
-def test_build_unknown_assessment_sanitizes_unicode_control_chars() -> None:
+def test_build_unknown_assessment_sanitizes_unicode_line_separators() -> None:
     ts = datetime.now(UTC)
     assessment = build_unknown_assessment(reason="foo\u2028bar\u2029baz", ts=ts)
 
     assert "\u2028" not in assessment.explanation
     assert "\u2029" not in assessment.explanation
-    assert "foobarbaz" in assessment.explanation
+    # Unicode-Zeilentrenner werden wie \n/\r durch Leerzeichen ersetzt, damit
+    # Worte nicht zusammenwachsen (DTB-93 LOW).
+    assert "foo bar baz" in assessment.explanation
 
 
 def test_build_unknown_assessment_truncates_long_reason() -> None:

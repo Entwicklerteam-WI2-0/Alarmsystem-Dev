@@ -175,7 +175,10 @@ class ReadingRepository(Repository):
 
         Raises:
             RepositoryError: Bei Datenbankfehlern.
+            ValueError: Wenn since nicht zeitzonenbewusst ist.
         """
+        if since.tzinfo is None:
+            raise ValueError("since muss zeitzonenbewusst sein (UTC)")
         return self._execute_read(self._SINCE_SQL, (sensor_id, since, limit))
 
     def _execute_read(self, sql: str, params: tuple) -> Sequence[Reading]:
@@ -221,7 +224,10 @@ class ReadingRepository(Repository):
             rows = cursor.fetchall()
         try:
             return tuple(ReadingRepository._row_to_reading(row) for row in rows)
-        except ValueError as exc:
+        except (ValueError, KeyError, TypeError) as exc:
+            # ValueError: ungueltiger Enum-Wert nach DB-Korruption/Migration.
+            # KeyError/TypeError: Schema-Drift oder falscher Cursor-Typ (z. B. Tupel
+            # statt Dict) -> immer als RepositoryError fail-safe behandeln.
             raise RepositoryError(
                 f"Reading konnte nicht gelesen werden: {exc}"
             ) from exc

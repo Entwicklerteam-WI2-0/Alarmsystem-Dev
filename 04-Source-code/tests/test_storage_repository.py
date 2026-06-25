@@ -292,6 +292,72 @@ def test_get_latest_wraps_row_to_reading_value_error_as_repository_error(
         repository.get_latest(sensor_id="anr-rwy-05")
 
 
+def test_get_latest_wraps_key_error_as_repository_error(
+    repository: ReadingRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KeyError aus _row_to_reading muss als RepositoryError fail-safe werden."""
+
+    def _failing_row_to_reading(_row: dict) -> Reading:
+        raise KeyError("source")
+
+    monkeypatch.setattr(
+        ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading)
+    )
+    repository.save(
+        Reading(
+            sensor_id="anr-rwy-key",
+            measured_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            received_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            surface_temp_c=0.0,
+            air_temp_c=1.0,
+            humidity_pct=80.0,
+            source=Source.REAL,
+            status=SensorStatus.OK,
+        )
+    )
+
+    with pytest.raises(RepositoryError, match="Reading konnte nicht gelesen werden"):
+        repository.get_latest(sensor_id="anr-rwy-key")
+
+
+def test_get_latest_wraps_type_error_as_repository_error(
+    repository: ReadingRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TypeError aus _row_to_reading muss als RepositoryError fail-safe werden."""
+
+    def _failing_row_to_reading(_row: dict) -> Reading:
+        raise TypeError("tuple indices must be integers or slices, not str")
+
+    monkeypatch.setattr(
+        ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading)
+    )
+    repository.save(
+        Reading(
+            sensor_id="anr-rwy-type",
+            measured_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            received_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            surface_temp_c=0.0,
+            air_temp_c=1.0,
+            humidity_pct=80.0,
+            source=Source.REAL,
+            status=SensorStatus.OK,
+        )
+    )
+
+    with pytest.raises(RepositoryError, match="Reading konnte nicht gelesen werden"):
+        repository.get_latest(sensor_id="anr-rwy-type")
+
+
+def test_get_since_rejects_naive_datetime(repository: ReadingRepository) -> None:
+    """since muss zeitzonenbewusst sein, sonst ValueError (DTB-93 LOW)."""
+    naive_since = datetime(2026, 6, 23, 10, 0, 0)
+
+    with pytest.raises(ValueError, match="since muss zeitzonenbewusst sein"):
+        repository.get_since(sensor_id="anr-rwy-01", since=naive_since)
+
+
 def test_get_latest_isolated_per_sensor(repository: ReadingRepository) -> None:
     for sensor_id, temp in [("anr-a", 1.0), ("anr-b", 2.0)]:
         repository.save(

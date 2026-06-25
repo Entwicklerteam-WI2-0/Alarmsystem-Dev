@@ -126,8 +126,15 @@ def _sanitize_reason(reason: str) -> str:
     aufblasen oder Formatierungsprobleme verursachen. Entfernt
     Zeilenumbrueche, Tabs und alle Control Characters (ASCII + Unicode).
     """
-    # Zeilenumbrueche und Tabs durch Leerzeichen ersetzen.
-    cleaned = reason.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    # Zeilenumbrueche und Tabs durch Leerzeichen ersetzen (inkl. Unicode-
+    # Zeilentrenner U+2028/U+2029, damit Worte nicht zusammenwachsen).
+    cleaned = (
+        reason.replace("\n", " ")
+        .replace("\r", " ")
+        .replace("\t", " ")
+        .replace("\u2028", " ")
+        .replace("\u2029", " ")
+    )
     # Alle Control Characters entfernen (ASCII 0x00-0x1f und Unicode Cc/Zl/Zp).
     # U+007F (DEL) ist ueber Unicode-Kategorie "Cc" mit abgedeckt.
     cleaned = "".join(

@@ -224,6 +224,7 @@ def test_get_connection_yields_open_connection_and_closes_it() -> None:
         connect_timeout=5,
         autocommit=False,
         charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
     )
     mock_conn.close.assert_called_once()
 
@@ -253,6 +254,7 @@ def test_get_connection_passes_connect_timeout_and_autocommit() -> None:
         connect_timeout=10,
         autocommit=True,
         charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
     )
 
 
