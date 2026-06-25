@@ -100,3 +100,59 @@ def test_fehlender_taupunkt_bei_warmer_oberflaeche_ist_gelb(thresholds):
 def test_fehlender_taupunkt_mit_prognose_bleibt_konservativ(thresholds):
     """Auch mit Prognose darf fehlendes T_d nicht zu GRÜN führen."""
     assert assess_ice_risk(2.0, None, thresholds, forecast_surface_temp_c=5.0) == RiskLevel.YELLOW
+
+
+# ---------------------------------------------------------------------------
+# Grenzwerte
+# ---------------------------------------------------------------------------
+
+
+def test_grenzwert_t_s_genau_0_mit_delta_t_0_ist_rot(thresholds):
+    assert assess_ice_risk(0.0, 0.0, thresholds) == RiskLevel.RED
+
+
+def test_grenzwert_t_s_genau_0_mit_delta_t_1_ist_orange(thresholds):
+    # ΔT = 1.0 -> genau Feuchte-Schwelle, aber nicht Kondensation
+    assert assess_ice_risk(0.0, -1.0, thresholds) == RiskLevel.ORANGE
+
+
+def test_grenzwert_t_s_genau_1_ohne_feuchte_ist_gelb(thresholds):
+    # T_s = +1.0 -> genau GELB-Auffang, T_d weit weg -> nicht feucht
+    assert assess_ice_risk(1.0, -10.0, thresholds) == RiskLevel.YELLOW
+
+
+def test_grenzwert_t_s_knapp_ueber_1_ist_gruen(thresholds):
+    assert assess_ice_risk(1.01, -10.0, thresholds) == RiskLevel.GREEN
+
+
+# ---------------------------------------------------------------------------
+# Ungültige Zahlen (NF-01)
+# ---------------------------------------------------------------------------
+
+
+def test_nan_oberflaechentemperatur_ist_unknown(thresholds):
+    assert assess_ice_risk(float("nan"), 0.0, thresholds) == RiskLevel.UNKNOWN
+
+
+def test_inf_oberflaechentemperatur_ist_unknown(thresholds):
+    assert assess_ice_risk(float("inf"), 0.0, thresholds) == RiskLevel.UNKNOWN
+
+
+def test_nan_taupunkt_ist_unknown(thresholds):
+    assert assess_ice_risk(0.0, float("nan"), thresholds) == RiskLevel.UNKNOWN
+
+
+def test_inf_taupunkt_ist_unknown(thresholds):
+    assert assess_ice_risk(0.0, float("inf"), thresholds) == RiskLevel.UNKNOWN
+
+
+def test_ungueltige_prognose_wird_ignoriert(thresholds):
+    """NaN/inf in der optionalen Prognose darf nicht GRÜN erzwingen."""
+    assert (
+        assess_ice_risk(2.0, 0.0, thresholds, forecast_surface_temp_c=float("nan"))
+        == RiskLevel.GREEN
+    )
+    assert (
+        assess_ice_risk(2.0, 0.0, thresholds, forecast_surface_temp_c=float("inf"))
+        == RiskLevel.GREEN
+    )

@@ -5,19 +5,20 @@ Netzwerk-Abhängigkeiten — alle Schwellen kommen aus der Config (NF-05, DTB-15
 
 Bewertungsmodell (priorisierte Kaskade, Schwellenwerte.md §2, E-34):
     ROT    -> T_s ≤ Gefrierpunkt  UND  ΔT ≤ Kondensation
-    ORANGE -> T_s ≤ Gefrierpunkt  UND  Feuchte vorhanden (ΔT ≤ Feuchte)
+    ORANGE -> T_s ≤ Gefrierpunkt  UND  Feuchte vorhanden (ΔT ≤ Feucht)
     GELB   -> T_s ≤ GELB-Auffang  ODER  Prognose T_s ≤ Gefrierpunkt
     GRUEN  -> sonst
 
 Fail-safe (NF-01):
     * Fehlt der Taupunkt T_d, gilt Feuchte = wahr (konservativ).
-    * Fehlende/veraltete Daten führen nie zu GRÜN.
-    * Die Funktion selbst liefert kein `unknown`; `unknown` entsteht erst im
-      Aufrufer (Poller/Serving), wenn das Reading ungültig/stale ist.
+    * Fehlende/veraltete oder ungültige (NaN/inf) Daten führen nie zu GRÜN.
+    * Bei ungültigem T_s oder T_d wird `unknown` zurückgegeben.
 
 Die Taupunkt-Berechnung selbst liegt in DTB-32; diese Funktion erwartet T_d
 als berechneten Input. So bleiben Berechnung und Bewertung getrennt testbar.
 """
+
+import math
 
 from src.config.loader import Thresholds
 from src.model.enums import RiskLevel
@@ -32,16 +33,25 @@ def assess_ice_risk(
     """Bewertet das Vereisungsrisiko nach der priorisierten 4-Stufen-Kaskade.
 
     Args:
-        surface_temp_c: Oberflächentemperatur T_s in °C.
-        dew_point_c: Taupunkt T_d in °C; None -> Feuchte unbestimmbar (Fail-safe).
+        surface_temp_c: Endliche Oberflächentemperatur T_s in °C.
+        dew_point_c: Endlicher Taupunkt T_d in °C; None -> Feuchte unbestimmbar.
         thresholds: Geladene, validierte Schwellenwerte (DTB-15).
         forecast_surface_temp_c: Optionale Prognose-T_s für GELB-Vorwarnung.
 
     Returns:
-        Die höchste zutreffende Risikostufe (ROT > ORANGE > GELB > GRÜN).
+        Die höchste zutreffende Risikostufe (ROT > ORANGE > GELB > GRÜN) oder
+        `unknown`, wenn die Eingaben ungültig sind (NaN/inf) — nie GRÜN.
     """
     v = thresholds.vereisung
     p = thresholds.prognose
+
+    # Fail-safe: ungültige (nicht-endliche) Eingaben -> unknown, nie GRÜN.
+    if not math.isfinite(surface_temp_c):
+        return RiskLevel.UNKNOWN
+    if dew_point_c is not None and not math.isfinite(dew_point_c):
+        return RiskLevel.UNKNOWN
+    if forecast_surface_temp_c is not None and not math.isfinite(forecast_surface_temp_c):
+        forecast_surface_temp_c = None
 
     # Feuchte-Vorhandensein: ΔT = T_s - T_d. Fehlt T_d -> konservativ wahr.
     if dew_point_c is None:
