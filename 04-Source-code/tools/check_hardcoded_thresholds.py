@@ -196,21 +196,34 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     return [verstoss for _, _, verstoss in roh]
 
 
-def _py_dateien(ziele: Iterable[str | Path]) -> list[Path]:
-    """Sammelt prüfbare `.py`-Dateien aus den Zielen — Datei direkt, Verzeichnis rekursiv."""
+def _klassifiziere_ziele(ziele: Iterable[str | Path]) -> tuple[list[Path], list[str]]:
+    """Ein Durchlauf: (prüfbare `.py`-Dateien dedupliziert, nicht existente Ziele).
+
+    Klassifiziert jedes Ziel mit einer stat-Runde (`is_file`/`is_dir`) statt zusätzlich
+    `exists()` — Datei direkt, Verzeichnis rekursiv, sonst „fehlend".
+    """
     dateien: list[Path] = []
+    fehlend: list[str] = []
     for ziel in ziele:
         pfad = Path(ziel)
-        if pfad.is_file() and pfad.suffix == ".py":
-            dateien.append(pfad)
+        if pfad.is_file():
+            if pfad.suffix == ".py":
+                dateien.append(pfad)
         elif pfad.is_dir():
             dateien.extend(sorted(pfad.rglob("*.py")))
+        else:
+            fehlend.append(str(ziel))  # existiert nicht (weder Datei noch Verzeichnis)
     # Überlappende Ziele (Datei zweimal, oder Datei + ihr Verzeichnis) deduplizieren,
     # damit kein Verstoß doppelt gemeldet/gezählt wird; Reihenfolge bleibt erhalten.
     eindeutig: dict[Path, Path] = {}
     for datei in dateien:
         eindeutig.setdefault(datei.resolve(), datei)
-    return list(eindeutig.values())
+    return list(eindeutig.values()), fehlend
+
+
+def _py_dateien(ziele: Iterable[str | Path]) -> list[Path]:
+    """Prüfbare `.py`-Dateien aus den Zielen (Datei direkt, Verzeichnis rekursiv, dedupliziert)."""
+    return _klassifiziere_ziele(ziele)[0]
 
 
 def pruefe_dateien(dateien: Iterable[Path]) -> list[Verstoss]:
@@ -256,8 +269,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = list(argv) if argv is not None else sys.argv[1:]
     verzeichnisse = args if args else list(SCAN_DIRS)
 
-    gescannte = _py_dateien(verzeichnisse)
-    fehlend = [str(d) for d in verzeichnisse if not Path(d).exists()]
+    gescannte, fehlend = _klassifiziere_ziele(verzeichnisse)
 
     # Fail-closed an der RICHTIGEN Invariante: nicht „existiert ein Pfad?", sondern
     # „wurde eine prüfbare .py-Datei gefunden?". Sonst gäbe ein leeres/falsches Ziel
