@@ -45,8 +45,20 @@ MAX_VALID_HUMIDITY_PCT = 100.0
 # T_d hat dort keinen eigenen Sensor/Messbereich).
 MIN_PLAUSIBLE_DEW_POINT_C = MIN_TEMP_C
 
+# Maximales Alter eines G1-Snapshots, ab dem er als veraltet (stale) gilt und fail-safe
+# verworfen wird (FA-04, NF-01: veraltete Daten nie als aktuell speichern/GRUEN ausgeben).
+# Bewusst als benannte Konstante; die Config-Anbindung (stale_timeout_s) liegt an der
+# Lese-Grenze (DTB-43).
+STALE_MAX_AGE_S = 120
+
 # Pflichtfelder laut G1-Contract (Backend-Konzept §9.1).
 REQUIRED_FIELDS = ("measured_at", "sensor_id", "surface_temp_c", "air_temp_c", "humidity_pct")
+
+
+def _now() -> datetime:
+    # In eine Helper-Funktion gekapselt, damit Tests die Uhr deterministisch patchen koennen
+    # (die Stale-Erkennung haengt von der aktuellen Zeit ab).
+    return datetime.now(UTC)
 
 
 class Poller:
@@ -130,6 +142,19 @@ class Poller:
             logger.error("G1-Feld ungueltig: %s", exc)
             return None
 
+        # Stale-Erkennung (FA-04, NF-01): zu alte Snapshots fail-safe verwerfen, damit kein
+        # veralteter Wert als aktuell gespeichert wird (downstream nie still GRUEN). received_at
+        # wird einmal bestimmt und sowohl fuer die Pruefung als auch fuers Reading genutzt.
+        received_at = _now()
+        age_s = (received_at - measured_at).total_seconds()
+        if age_s > STALE_MAX_AGE_S:
+            logger.error(
+                "G1-Snapshot veraltet (%.0f s > %s s), Reading wird verworfen",
+                age_s,
+                STALE_MAX_AGE_S,
+            )
+            return None
+
         # Optionales pressure_hpa: defekter Wert wird geloggt und auf None gesetzt,
         # das Reading wird trotzdem gespeichert (Kontextfeld darf die Pflicht-Trias
         # aus surface_temp_c, air_temp_c und humidity_pct nicht blockieren).
@@ -175,7 +200,7 @@ class Poller:
             dew_point_c=dew_point_c,
             pressure_hpa=pressure_hpa,
             status=status,
-            received_at=datetime.now(UTC),
+            received_at=received_at,
             source=Source.REAL,
         )
 

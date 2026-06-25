@@ -54,6 +54,16 @@ def valid_snapshot() -> dict:
     }
 
 
+@pytest.fixture(autouse=True)
+def frozen_now():
+    # Deterministische Uhr fuer die Stale-Erkennung: 60 s nach dem measured_at der
+    # valid_snapshot-Fixture -> Standard-Snapshots gelten als frisch (< 120 s).
+    # Stale-Tests setzen measured_at bewusst weiter in die Vergangenheit.
+    fixed = datetime(2026, 6, 23, 10, 1, 0, tzinfo=UTC)
+    with patch("src.ingest.poller._now", return_value=fixed):
+        yield
+
+
 def _ok_response(snapshot: dict) -> Mock:
     response = Mock()
     response.json.return_value = snapshot
@@ -83,6 +93,22 @@ def test_poll_valid_snapshot_saves_reading(
     assert reading.measured_at == datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
     assert len(fake_repo.readings) == 1
     assert fake_repo.readings[0].sensor_id == "anr-rwy-01"
+
+
+def test_poll_stale_snapshot_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # measured_at liegt 6 min vor der eingefrorenen Uhr (> 120 s) -> stale -> verwerfen
+    # (FA-04, NF-01: keine veralteten Werte als aktuell speichern/GRUEN ausgeben).
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T09:55:00Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "veraltet" in caplog.text
 
 
 def test_poll_missing_required_field_does_not_save(
