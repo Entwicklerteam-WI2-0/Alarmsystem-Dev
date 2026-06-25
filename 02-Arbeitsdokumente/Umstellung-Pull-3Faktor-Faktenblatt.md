@@ -19,7 +19,7 @@
   (≤ 60 s)** abruft, `GET /health` als Erreichbarkeits-Check nutzt, validiert (Bereich, Stale, Defekt),
   persistiert, bewertet.
 - **Fail-safe (NF-01):** Erreichbarkeit (`/health`/Timeout) **getrennt** von Datenaktualität
-  (`measured_at` älter als 3 × Intervall / > 180 s → stale) prüfen → bei beidem **nie GRÜN**, sondern
+  (`measured_at` älter als der Stale-Timeout `120 s` → stale) prüfen → bei beidem **nie GRÜN**, sondern
   GELB/„unbekannt".
 - **Kein** von G2 gehosteter `POST /readings`-Endpoint mehr.
 

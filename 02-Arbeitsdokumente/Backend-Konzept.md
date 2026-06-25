@@ -34,7 +34,7 @@ Prognose · API · Logging/Audit · Konfiguration (Schwellen).
 | Modul | Aufgabe | Anf. |
 |---|---|---|
 | **Ingest** | Messwerte bei G1 **pollen** (`GET /current`, Intervall selbst bestimmt) + `GET /health`, Eingangsvalidierung | FA-Schnittstellen |
-| **Validierung/Plausibilität** | Bereichscheck, Stale-Erkennung (>180 s), Sensor-Defekt (Flatline/Sprung/Timeout) | FA „veraltete Daten/defekte Sensoren", NF-01 |
+| **Validierung/Plausibilität** | Bereichscheck, Stale-Erkennung (>120 s), Sensor-Defekt (Flatline/Sprung/Timeout) | FA „veraltete Daten/defekte Sensoren", NF-01 |
 | **Persistenz** | Speichern von Messwerten, Bewertungen, Alarmen, Quittierungen | FA Datenspeicherung, NF-09 |
 | **Bewertung** | **Vereisungsrisiko** (4-Stufen-Logik) aus T_s/T_d/RH | FA Risikobewertung, `Schwellenwerte.md §2` |
 | **Alarm** | Schwellüberschreitung → Alarm-Objekt + Schweregrad | FA Alarmierung, NF-08 |

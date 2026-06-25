@@ -17,8 +17,7 @@ Namen, die `source/`-Vorlage projektpassende:
 | `DB_USER` | `alarm` | `anr_app` |
 | `DB_HOST` | `localhost` | `127.0.0.1` |
 
-→ **Vor dem Scaffolding-Abschluss festlegen**, welches DB-Naming gilt, und es mit
-`04-Source-code/docker-compose.yml` konsistent machen.
+→ DB-Naming ist festgelegt; native MariaDB ohne Docker (E-35, `docker-compose.yml` entfernt).
 
 ## Gesicherte Vorlage `.env.example` (NF-07)
 

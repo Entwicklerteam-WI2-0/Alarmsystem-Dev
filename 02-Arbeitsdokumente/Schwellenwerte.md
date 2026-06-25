@@ -81,7 +81,7 @@ Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist 
 | Luftdruck p | 300 … 1100 hPa | Tendenz ±0,12 hPa | 0,1 hPa | ≤ 60 s | nur Prognose (Tendenz), nicht QNH |
 
 **Datenstatus-Schwellen (FA „veraltete Daten erkennen" / „defekte Sensoren erkennen"):**
-- **Veraltet (stale):** letzter Messwert älter als `3 × Intervall` (> 180 s bei 60 s) → Status „veraltet";
+- **Veraltet (stale):** letzter Messwert älter als der **Stale-Timeout `120 s`** (NF-02 final/Contract; parametrierbar in `config/`) → Status „veraltet";
   Risiko **nicht** auf GRÜN herabstufen (fail-safe → mindestens GELB / „unbekannt").
 - **Sensor defekt**, wenn: Wert außerhalb Messbereich · **Flatline** (keine Änderung > 15 min trotz erwartetem
   Rauschen) · unplausibler **Sprung > 5 °C/min** · NaN/Timeout. → Sensor markieren → Redundanz nutzen oder sicheren Zustand.
@@ -98,7 +98,7 @@ Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist 
 | Luftdruck | Drucktendenz `< −1 hPa / 3 h` ⇒ Wetterverschlechterung → Prognose-Input |
 | Schnittstellen | REST-API (**Pull**: G2 pollt G1s `GET /current` ≤ 60 s, Intervall selbst bestimmt); Datenmodell s. API-Spezifikation |
 | Datenspeicherung | Messwerte + Bewertungen + Alarme + Quittierungen; Aufbewahrung ≥ Projektdauer; append-only |
-| Vorhersage + Analyse + Wettervorhersage + veraltete Daten | 30-min-Trend (Extrapolation T_s, T_d, Drucktendenz); externe Wettervorhersage als Zusatzeingang; stale > 180 s |
+| Vorhersage + Analyse + Wettervorhersage + veraltete Daten | 30-min-Trend (Extrapolation T_s, T_d, Drucktendenz); externe Wettervorhersage als Zusatzeingang; stale > 120 s |
 | Defekte Sensoren erkennen | Kriterien s. §3 (Bereich / Flatline / Sprung / Timeout) |
 | 30-min-Vorlaufzeit | Prognosehorizont **30 min**; GELB-Vorwarnung, wenn progn. `T_s ≤ 0 °C` in ≤ 30 min |
 | Fernwartung | nur **authentifiziert + verschlüsselt** (NF-07); Lese- + Konfigzugriff |

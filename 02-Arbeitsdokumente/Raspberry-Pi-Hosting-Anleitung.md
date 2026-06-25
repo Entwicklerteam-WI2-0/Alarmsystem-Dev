@@ -94,7 +94,6 @@ Erst manuell starten zum Testen. Dann als **Dienst**, damit es nach Logout/Reboo
 
 - **Node:** `pm2 start ...` (am simpelsten) oder systemd
 - **Python/sonstiges:** ein **systemd-Service** (überlebt Reboot, Auto-Restart)
-- oder generisch: **Docker** (`docker compose up -d`)
 
 > **Häufige Stolperfalle:** Das Backend muss auf `0.0.0.0` lauschen, **nicht** auf
 > `127.0.0.1`/`localhost`. Sonst ist es nur auf dem Pi selbst erreichbar, nicht von
@@ -132,5 +131,5 @@ Diese drei Punkte entscheiden, ob der Plan so trägt:
 | Verbinden | `ssh lucas@devpi.local` |
 | VS Code | Extension „Remote - SSH" → Connect to Host |
 | Code holen | `git clone <repo-url>` (auf dem Pi) |
-| Dauerbetrieb | systemd / `pm2` / `docker compose up -d` |
+| Dauerbetrieb | systemd / `pm2` (kein Docker, E-35) |
 | Erreichbarkeit | lokal: `http://devpi.local:<port>` · extern: Tailscale / Cloudflare Tunnel |
