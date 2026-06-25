@@ -69,7 +69,7 @@ paths:
       tags: [Health]
       operationId: getHealth
       summary: Verfuegbarkeit von G2
-      description: Liveness-Check des G2-Backends. `200` = erreichbar.
+      description: Liveness-Check des G2-Backends. `200` = erreichbar, `503` = (noch) nicht lieferfaehig.
       responses:
         "200":
           description: G2 ist erreichbar.
@@ -79,6 +79,15 @@ paths:
                 $ref: "#/components/schemas/Health"
               example:
                 status: ok
+        "503":
+          description: G2 ist (noch) nicht lieferfaehig (z. B. Startup vor dem ersten Messwert / interner Ausfall).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: SERVICE_UNAVAILABLE
+                message: "G2 noch nicht bereit."
 
   /v1/assessment/current:
     get:
@@ -463,6 +472,7 @@ components:
         driving_factor:
           type: string
           nullable: true
+          maxLength: 64  # = VARCHAR(64) in migrations/schema.sql (assessment.driving_factor)
           description: Hauptfaktor der Bewertung (z. B. `dew_point`, `surface_temp`).
         explanation:
           type: string
