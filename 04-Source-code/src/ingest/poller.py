@@ -24,10 +24,18 @@ logger = logging.getLogger(__name__)
 # (Bewertungsschwellen kommen aus config/ und werden hier NICHT hardgecoded.)
 MIN_TEMP_C = -50.0
 MAX_TEMP_C = 50.0
-MIN_HUMIDITY_PCT = 0.0
-MAX_HUMIDITY_PCT = 100.0
 MIN_PRESSURE_HPA = 800.0
 MAX_PRESSURE_HPA = 1100.0
+
+# Eingangs-Validierungsgrenzen der Feuchte (INKLUSIV, <=): RH=0,0 % wird als gueltiges
+# Reading-Feld akzeptiert und gespeichert; der daraus nicht bestimmbare Taupunkt wird
+# separat fail-safe auf None gesetzt (s. _compute_dew_point). Bewusst NICHT identisch mit
+# assessment/utils.MIN_HUMIDITY_PCT: dort ist 0,0 % die EXKLUSIVE (<) Magnus-Gueltigkeits-
+# grenze (Taupunkt undefiniert -> ValueError). Gleicher Wert, andere Bedeutung -> hier
+# eigener Name, damit eine spaetere Wertaenderung nicht faelschlich beide Module
+# mitzumeinen scheint.
+MIN_VALID_HUMIDITY_PCT = 0.0
+MAX_VALID_HUMIDITY_PCT = 100.0
 
 # Untergrenze fuer einen plausiblen berechneten Taupunkt. Liegt der Magnus-Taupunkt
 # darunter, stammt er praktisch nur aus unplausiblen Eingaben (z. B. RH knapp ueber 0)
@@ -148,7 +156,7 @@ class Poller:
         if not (MIN_TEMP_C <= air_temp_c <= MAX_TEMP_C):
             logger.error("air_temp_c ausserhalb des gueltigen Bereichs: %s", air_temp_c)
             return None
-        if not (MIN_HUMIDITY_PCT <= humidity_pct <= MAX_HUMIDITY_PCT):
+        if not (MIN_VALID_HUMIDITY_PCT <= humidity_pct <= MAX_VALID_HUMIDITY_PCT):
             logger.error("humidity_pct ausserhalb des gueltigen Bereichs: %s", humidity_pct)
             return None
 

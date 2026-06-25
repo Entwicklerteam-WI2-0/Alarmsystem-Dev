@@ -336,6 +336,13 @@ def test_poll_humidity_at_boundaries_saves(
     assert reading is not None
     assert reading.humidity_pct == value
     assert len(fake_repo.readings) == 1
+    # Seiteneffekt der Feuchte-Grenze auf den Taupunkt explizit pruefen:
+    # Bei RH=0 % ist der Taupunkt nicht bestimmbar -> dew_point_c=None (Fail-safe, NF-01);
+    # bei RH=100 % ist er regulaer berechenbar -> ein konkreter Wert.
+    if value == 0.0:
+        assert reading.dew_point_c is None
+    else:
+        assert reading.dew_point_c is not None
 
 
 def test_poll_measured_at_not_a_string_does_not_save(
