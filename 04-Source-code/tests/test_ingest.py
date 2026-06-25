@@ -53,9 +53,10 @@ def valid_snapshot() -> dict:
     }
 
 
-def _ok_response(snapshot: dict) -> Mock:
+def _ok_response(json_payload: object | None = None) -> Mock:
     response = Mock()
-    response.json.return_value = snapshot
+    if json_payload is not None:
+        response.json.return_value = json_payload
     response.raise_for_status.return_value = None
     return response
 
@@ -70,11 +71,45 @@ def _error_response(status_code: int) -> Mock:
     return response
 
 
+def _mock_get_for(
+    current_payload: dict | None = None,
+    current_error: Exception | None = None,
+    health_status: int = 200,
+    health_error: Exception | None = None,
+) -> Mock:
+    """Gibt einen Mock zurueck, der /health und /current beantwortet.
+
+    * /health liefert 200 OK, es sei denn health_status != 200 oder health_error ist gesetzt.
+    * /current liefert current_payload oder wirft current_error.
+    * Wenn /health fehlschlaegt, darf /current nicht aufgerufen werden (Fail-safe).
+    """
+
+    def side_effect(url: str, **kwargs) -> Mock:
+        if url.endswith("/health"):
+            if health_error is not None:
+                raise health_error
+            if health_status == 200:
+                return _ok_response()
+            return _error_response(health_status)
+        if url.endswith("/current"):
+            if health_error is not None or health_status != 200:
+                raise RuntimeError(
+                    "/current darf bei fehlgeschlagenem /health nicht aufgerufen werden"
+                )
+            if current_error is not None:
+                raise current_error
+            if current_payload is None:
+                raise RuntimeError("/current wurde nicht erwartet")
+            return _ok_response(current_payload)
+        raise ValueError(f"Unbekannte URL: {url}")
+
+    return Mock(side_effect=side_effect)
+
+
 def test_poll_valid_snapshot_saves_reading(
     poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
 ) -> None:
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(valid_snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)) as mock_get:
         reading = poller.poll()
 
     assert reading is not None
@@ -82,6 +117,7 @@ def test_poll_valid_snapshot_saves_reading(
     assert reading.measured_at == datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
     assert len(fake_repo.readings) == 1
     assert fake_repo.readings[0].sensor_id == "anr-rwy-01"
+    assert mock_get.call_count == 2
 
 
 def test_poll_missing_required_field_does_not_save(
@@ -90,8 +126,7 @@ def test_poll_missing_required_field_does_not_save(
     snapshot = {**valid_snapshot, "surface_temp_c": None}
     del snapshot["surface_temp_c"]
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -104,8 +139,7 @@ def test_poll_out_of_range_temperature_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "surface_temp_c": 100.0}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -118,8 +152,7 @@ def test_poll_out_of_range_humidity_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "humidity_pct": 101}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -128,8 +161,10 @@ def test_poll_out_of_range_humidity_does_not_save(
 
 
 def test_poll_http_error_does_not_save(poller: Poller, fake_repo: FakeRepository, caplog) -> None:
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.side_effect = httpx.HTTPError("Verbindungsfehler")
+    with patch(
+        "src.ingest.poller.httpx.get",
+        _mock_get_for(current_error=httpx.HTTPError("Verbindungsfehler")),
+    ):
         reading = poller.poll()
 
     assert reading is None
@@ -138,8 +173,17 @@ def test_poll_http_error_does_not_save(poller: Poller, fake_repo: FakeRepository
 
 
 def test_poll_5xx_error_does_not_save(poller: Poller, fake_repo: FakeRepository, caplog) -> None:
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _error_response(503)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(current_error=None)) as mock_get:
+        # current_payload=None wuerde einen RuntimeError ausloesen; daher mit
+        # explizitem _error_response fuer /current bauen.
+        def side_effect(url: str, **kwargs) -> Mock:
+            if url.endswith("/health"):
+                return _ok_response()
+            if url.endswith("/current"):
+                return _error_response(503)
+            raise ValueError(f"Unbekannte URL: {url}")
+
+        mock_get.side_effect = side_effect
         reading = poller.poll()
 
     assert reading is None
@@ -152,8 +196,7 @@ def test_poll_invalid_status_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "status": "broken"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -166,8 +209,7 @@ def test_poll_fault_status_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "status": "fault"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -178,8 +220,7 @@ def test_poll_fault_status_does_not_save(
 def test_poll_non_object_payload_does_not_save(
     poller: Poller, fake_repo: FakeRepository, caplog
 ) -> None:
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response([1, 2, 3])
+    with patch("src.ingest.poller.httpx.get", _mock_get_for([1, 2, 3])):
         reading = poller.poll()
 
     assert reading is None
@@ -192,8 +233,7 @@ def test_poll_invalid_measured_at_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "measured_at": "kein-datum"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -206,8 +246,7 @@ def test_poll_non_utc_measured_at_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:00:00+02:00"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -220,8 +259,7 @@ def test_poll_empty_sensor_id_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "sensor_id": "   "}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -236,8 +274,7 @@ def test_poll_pressure_out_of_range_is_set_to_none(
     # Out-of-range pressure_hpa wird auf None gesetzt, Reading wird gespeichert.
     snapshot = {**valid_snapshot, "pressure_hpa": 2000}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -251,8 +288,7 @@ def test_poll_non_numeric_optional_pressure_is_set_to_none(
 ) -> None:
     snapshot = {**valid_snapshot, "pressure_hpa": "abc"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -267,8 +303,7 @@ def test_poll_missing_optional_pressure_is_none(
     snapshot = dict(valid_snapshot)
     del snapshot["pressure_hpa"]
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -283,8 +318,7 @@ def test_poll_optional_pressure_at_boundaries_saves(
         snapshot = {**valid_snapshot, "pressure_hpa": pressure}
         fake_repo.readings.clear()
 
-        with patch("src.ingest.poller.httpx.get") as mock_get:
-            mock_get.return_value = _ok_response(snapshot)
+        with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
             reading = poller.poll()
 
         assert reading is not None, f"pressure_hpa={pressure} sollte am Grenzwert akzeptiert werden"
@@ -297,8 +331,7 @@ def test_poll_out_of_range_air_temp_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "air_temp_c": 99.0}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -312,8 +345,7 @@ def test_poll_temperature_at_boundaries_saves(
 ) -> None:
     snapshot = {**valid_snapshot, "surface_temp_c": value, "air_temp_c": value}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -328,8 +360,7 @@ def test_poll_humidity_at_boundaries_saves(
 ) -> None:
     snapshot = {**valid_snapshot, "humidity_pct": value}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -342,8 +373,7 @@ def test_poll_measured_at_not_a_string_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "measured_at": 1234567890}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -356,8 +386,7 @@ def test_poll_measured_at_without_timezone_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:00:00"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -370,8 +399,7 @@ def test_poll_sensor_id_not_a_string_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "sensor_id": 123}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -384,8 +412,7 @@ def test_poll_non_numeric_required_field_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "surface_temp_c": "kalt"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -399,8 +426,7 @@ def test_poll_nan_required_field_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, field: math.nan}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -413,8 +439,7 @@ def test_poll_inf_required_field_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, field: math.inf}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -427,8 +452,7 @@ def test_poll_missing_optional_status_defaults_to_ok(
     snapshot = dict(valid_snapshot)
     del snapshot["status"]
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -441,8 +465,7 @@ def test_poll_status_not_a_string_does_not_save(
 ) -> None:
     snapshot = {**valid_snapshot, "status": 123}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -457,7 +480,16 @@ def test_poll_non_json_response_is_failsafe(
     response.raise_for_status.return_value = None
     response.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)
 
-    with patch("src.ingest.poller.httpx.get", return_value=response):
+    with patch("src.ingest.poller.httpx.get", _mock_get_for()) as mock_get:
+
+        def side_effect(url: str, **kwargs) -> Mock:
+            if url.endswith("/health"):
+                return _ok_response()
+            if url.endswith("/current"):
+                return response
+            raise ValueError(f"Unbekannte URL: {url}")
+
+        mock_get.side_effect = side_effect
         reading = poller.poll()
 
     assert reading is None
@@ -480,8 +512,7 @@ def test_poll_repository_error_is_failsafe(caplog) -> None:
         "humidity_pct": 96,
     }
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -505,6 +536,54 @@ def test_poll_unexpected_repository_error_is_not_swallowed(caplog) -> None:
     }
 
     with pytest.raises(RuntimeError, match="unerwarteter Bug"):
-        with patch("src.ingest.poller.httpx.get") as mock_get:
-            mock_get.return_value = _ok_response(snapshot)
+        with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
             poller.poll()
+
+
+# ---------------------------------------------------------------------------
+# DTB-59: G1 Health-Check vor /current
+# ---------------------------------------------------------------------------
+
+
+def test_poll_health_503_does_not_poll_current(
+    poller: Poller, fake_repo: FakeRepository, caplog
+) -> None:
+    with patch(
+        "src.ingest.poller.httpx.get",
+        _mock_get_for(health_status=503),
+    ) as mock_get:
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert mock_get.call_count == 1
+    assert "G1-Health-Check fehlgeschlagen" in caplog.text
+
+
+def test_poll_health_http_error_does_not_poll_current(
+    poller: Poller, fake_repo: FakeRepository, caplog
+) -> None:
+    with patch(
+        "src.ingest.poller.httpx.get",
+        _mock_get_for(health_error=httpx.HTTPError("Verbindungsfehler")),
+    ) as mock_get:
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert mock_get.call_count == 1
+    assert "G1-Health-Check fehlgeschlagen" in caplog.text
+
+
+def test_poll_health_ok_then_current_saves(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    with patch(
+        "src.ingest.poller.httpx.get",
+        _mock_get_for(valid_snapshot),
+    ) as mock_get:
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 1
+    assert mock_get.call_count == 2

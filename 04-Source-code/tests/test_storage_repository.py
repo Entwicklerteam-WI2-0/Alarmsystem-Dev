@@ -271,7 +271,7 @@ def test_save_without_connection_raises_repository_error(
     @contextmanager
     def failing_connection(config=None):
         raise pymysql.Error("Verbindung fehlgeschlagen")
-        yield  # noqa: unreachable -- @contextmanager protocol requires yield
+        yield
 
     monkeypatch.setattr("src.storage.repository.get_connection", failing_connection)
     repo = ReadingRepository()
