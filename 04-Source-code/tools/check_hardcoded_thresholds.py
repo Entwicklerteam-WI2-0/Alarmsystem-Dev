@@ -83,9 +83,9 @@ ERLAUBT_MARKER = "noqa: hardcoded-threshold"
 
 # Vergleichs-Hilfsfunktionen ohne Operator-Zeichen (Modul, Funktionsname) — ein
 # `operator.gt(t_s, 1.0)` ist genauso ein Schwellen-Vergleich wie `t_s > 1.0`.
-_VERGLEICHS_FUNKTIONEN = {("operator", name) for name in ("gt", "ge", "lt", "le", "eq", "ne")} | {
-    ("math", "isclose")
-}
+_VERGLEICHS_FUNKTIONEN = frozenset(
+    {("operator", name) for name in ("gt", "ge", "lt", "le", "eq", "ne")} | {("math", "isclose")}
+)
 
 
 @dataclass(frozen=True)
@@ -396,9 +396,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         for s in (sys.stdout, sys.stderr)
         if hasattr(s, "reconfigure") and s.encoding is not None
     ]
-    for stream, _, _ in streams:
-        stream.reconfigure(encoding="utf-8", errors="replace")
     try:
+        # Innerhalb try: scheitert die Umstellung beim 2. Stream, restauriert finally
+        # trotzdem den bereits umgestellten 1. (sonst bliebe der dauerhaft auf UTF-8).
+        for stream, _, _ in streams:
+            stream.reconfigure(encoding="utf-8", errors="replace")
         return _main(argv)
     finally:
         for stream, enc, err in streams:

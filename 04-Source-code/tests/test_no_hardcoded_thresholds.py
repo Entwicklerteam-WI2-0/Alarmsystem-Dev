@@ -118,6 +118,12 @@ def test_isclose_abs_tol_kwarg_ist_kein_fehlalarm():
     assert _scan("import math\nif math.isclose(t_s, x, abs_tol=0.01):\n    pass\n") == []
 
 
+def test_isclose_threshold_arg_wird_erkannt_trotz_rel_tol():
+    # Komposition: 0.0 (Vergleichswert, positional) MUSS erkannt werden, rel_tol=0.01 NICHT
+    # flaggen. Sichert ab, dass eine Toleranz den danebenstehenden echten Threshold nicht maskiert.
+    assert _scan("import math\nif math.isclose(t_s, 0.0, rel_tol=0.01):\n    pass\n")
+
+
 def test_bool_literal_im_vergleich_ist_kein_fehlalarm():
     # bool ist Unterklasse von int — `flag > True` darf NICHT als Schwellen-Literal zählen.
     assert _scan("if flag > True:\n    pass\n") == []
