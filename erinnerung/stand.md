@@ -217,7 +217,6 @@
   (PR/Merge = Lucas-Freigabe). (2) **DTB-38 (#68)** muss `dew_point_c=None` als „Feuchte vorhanden=wahr"
   behandeln (nie GRUEN) — Folge-Abhaengigkeit (heute neue Commits auf #68). (3) Layering ingest→assessment
   (M2, offen, Architekten-Call).
-
 ## Update [25.06., ~12:34] — DTB-28 fertig + PR #70 lokal konfliktfrei (architekt)
 - **Backlog-Review** gegen Anfrage-G1.md/G3.md + Team-Sync: CRITICAL-Fix — DTB-58 Stale-Timeout
   war 180 s statt Contract-Wert **120 s** gefixt. **DTB-61** (SSE `GET /v1/alarms/stream`, Petzold) +
