@@ -246,7 +246,5 @@
 - **DTB-22 Guard fertig & auf `main`** (AST, Scan assessment+forecast, fail-closed, noqa, PR-Template/pre-commit; #73).
   **Folge-PR #91 gemergt:** Lucas' `RecursionError`-Härtung verifiziert → `MemoryError` + `ValueError`/Surrogate
   gefunden & fail-closed geschlossen. 199 Tests grün.
-- **Entscheidungslog:** 11 DTB-22-Einträge (`bd7e2a1`) auf `docs/dtb-22-entscheidungslog`, **lokal/UNGEPUSHT** —
-  Branch gehalten; Save-Session bündelt mit (gemeinsamer Doku-PR).
+- **Entscheidungslog:** 11 DTB-22-Einträge + Save-Session auf `docs/dtb-22-entscheidungslog` **gepusht**.
 - **Team-OS:** `/update` gelaufen (`claude-sync.md` +89 Z., 53 uni-Skills, v1.6.0) → **Claude Code neu starten**.
-- **Nächster Schritt:** Doku-Branch (Entscheidungslog + Save-Session) gemeinsam pushen → Doku-PR.
