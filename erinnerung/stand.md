@@ -230,3 +230,14 @@
   1. Push `fix/pr70-conflicts` → `origin/docs/session-2026-06-25-backend-dev` (PR #70 GitHub-Konflikte).
   2. Push `feat/dtb-28-persistenz` + PR oeffnen.
   3. DTB-28 Jira auf „In Review"; DTB-43 (`GET /v1/assessment/current`) unassigned.
+
+## Update [25.06., ~13:52] — PR #74 Konflikte gelöst + CI grün + Skill-Update (tester)
+- **PR #74 (fix/drift-sync-restliste):** Merge-Konflikte mit `origin/main` in 9 Doku-Dateien gelöst
+  (`git checkout --theirs` + Merge-Commit `817484e`). Drift-Sync-Inhalte waren größtenteils bereits in
+  `main` eingeflossen; einziger echter Beitrag = Lint-Fix (`noqa` → `F841`).
+- **CI/Tests:** GitHub-Checks `test (3.12)` ✅, `test (3.14)` ✅, `claude-review` ✅. Lokal: `ruff` sauber,
+  `pytest` 129 passed / 9 skipped / 93,81 % Coverage.
+- **Team-OS:** `architektur-tiefenaudit` aus `devteam-vibecodes` via `setup-kimi.ps1` installiert.
+  Im Repo wurde nur dieser eine neue Architekten-Skill gefunden.
+- **Nächster Schritt:** PR #74 Review/Merge durch Lucas; ggf. zweiten neuen Architekten-Skill klären,
+  falls ein weiterer gemeint war.
