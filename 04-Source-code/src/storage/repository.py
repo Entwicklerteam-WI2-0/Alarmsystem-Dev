@@ -185,15 +185,7 @@ class ReadingRepository(Repository):
                 return self._fetch(self._connection, sql, params)
             with get_connection() as conn:
                 return self._fetch(conn, sql, params)
-        except (
-            DatabaseConnectionError,
-            DatabaseConfigError,
-            pymysql.Error,
-            ValueError,
-        ) as exc:
-            # ValueError kann aus _row_to_reading kommen (z. B. ungueltiger
-            # Enum-Wert nach DB-Korruption/Migration). Der Vertrag des
-            # Repository-Interface verlangt RepositoryError -> fail-safe.
+        except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
             raise RepositoryError(f"Reading konnte nicht gelesen werden: {exc}") from exc
 
     @staticmethod
@@ -218,11 +210,21 @@ class ReadingRepository(Repository):
 
     @staticmethod
     def _fetch(conn: pymysql.Connection, sql: str, params: tuple) -> Sequence[Reading]:
-        """Fuehrt SELECT aus und mappt Zeilen auf Reading-Objekte."""
+        """Fuehrt SELECT aus und mappt Zeilen auf Reading-Objekte.
+
+        ValueError aus _row_to_reading (z. B. ungueltiger Enum-Wert nach
+        DB-Korruption/Migration) wird in RepositoryError umgewandelt, damit
+        der Vertrag des Repository-Interface eingehalten wird.
+        """
         with conn.cursor() as cursor:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
-        return tuple(ReadingRepository._row_to_reading(row) for row in rows)
+        try:
+            return tuple(ReadingRepository._row_to_reading(row) for row in rows)
+        except ValueError as exc:
+            raise RepositoryError(
+                f"Reading konnte nicht gelesen werden: {exc}"
+            ) from exc
 
     @staticmethod
     def _row_to_reading(row: dict) -> Reading:

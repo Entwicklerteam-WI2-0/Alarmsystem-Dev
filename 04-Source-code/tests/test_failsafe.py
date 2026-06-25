@@ -152,7 +152,7 @@ def test_check_plausibility_cross_sensor_raises(
 ) -> None:
     previous = _build_previous(fresh_reading, minutes_ago=1.0, surface_temp_c=-0.5)
     previous = previous.model_copy(update={"sensor_id": "anr-rwy-02"})
-    with pytest.raises(ValueError, match="denselben Sensor"):
+    with pytest.raises(AssertionError, match="denselben Sensor"):
         check_plausibility(fresh_reading, previous, quality_thresholds)
 
 
