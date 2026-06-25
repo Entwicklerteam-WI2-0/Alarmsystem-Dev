@@ -146,13 +146,13 @@ def test_inf_taupunkt_ist_unknown(thresholds):
     assert assess_ice_risk(0.0, float("inf"), thresholds) == RiskLevel.UNKNOWN
 
 
-def test_ungueltige_prognose_wird_ignoriert(thresholds):
-    """NaN/inf in der optionalen Prognose darf nicht GRÜN erzwingen."""
+def test_ungueltige_prognose_ist_gelb(thresholds):
+    """NaN/inf in der Prognose -> defektes Forecasting -> konservativ GELB."""
     assert (
         assess_ice_risk(2.0, 0.0, thresholds, forecast_surface_temp_c=float("nan"))
-        == RiskLevel.GREEN
+        == RiskLevel.YELLOW
     )
     assert (
         assess_ice_risk(2.0, 0.0, thresholds, forecast_surface_temp_c=float("inf"))
-        == RiskLevel.GREEN
+        == RiskLevel.YELLOW
     )

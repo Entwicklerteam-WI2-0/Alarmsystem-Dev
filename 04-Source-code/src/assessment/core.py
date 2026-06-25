@@ -50,8 +50,13 @@ def assess_ice_risk(
         return RiskLevel.UNKNOWN
     if dew_point_c is not None and not math.isfinite(dew_point_c):
         return RiskLevel.UNKNOWN
+
+    # Eine defekte Prognose (NaN/inf) wird nicht ignoriert, sondern führt zu
+    # GELB: das Forecasting-Subsystem ist kaputt, daher konservative Reaktion.
+    # Ein None-Wert bedeutet hingegen „keine Prognose verfügbar" und bleibt
+    # ohne Auswirkung auf die Bewertung.
     if forecast_surface_temp_c is not None and not math.isfinite(forecast_surface_temp_c):
-        forecast_surface_temp_c = None
+        return RiskLevel.YELLOW
 
     # Feuchte-Vorhandensein: ΔT = T_s - T_d. Fehlt T_d -> konservativ wahr.
     if dew_point_c is None:
