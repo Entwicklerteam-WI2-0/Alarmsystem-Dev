@@ -270,14 +270,15 @@ def test_nicht_existierendes_verzeichnis_wird_uebersprungen():
     assert pruefe_verzeichnisse(["gibt/es/nicht"]) == []
 
 
-def test_non_utf8_datei_crasht_nicht(tmp_path):
-    # Eine Latin-1-Datei darf das Gate nicht mit UnicodeDecodeError abbrechen;
-    # der Verstoß muss trotzdem erkannt werden (errors="replace").
+def test_non_utf8_datei_ist_fail_closed(tmp_path):
+    # Eine nicht als UTF-8 dekodierbare Datei (Latin-1) crasht nicht, sondern wird
+    # fail-closed gemeldet (strikt dekodiert) — nicht mit Ersatzzeichen durchgewunken.
     d = tmp_path / "assessment"
     d.mkdir()
     (d / "core.py").write_bytes("if t_s > 1.0:  # \xfcber\n    pass\n".encode("latin-1"))
     verstoesse = pruefe_verzeichnisse([d])
     assert len(verstoesse) == 1
+    assert verstoesse[0].fail_closed is True
 
 
 # --- CLI-Gate: Exit-Codes (das eigentliche Gate-Verhalten) ---
@@ -347,10 +348,10 @@ def test_main_teilweise_fehlend_warnt_und_laeuft_weiter(tmp_path, capsys):
         "if t_s > schwellen.t_s_gefrierpunkt_c:\n    pass\n", encoding="utf-8"
     )
     code = main([str(d), str(tmp_path / "gibt-es-nicht")])
-    ausgabe = capsys.readouterr().out
+    captured = capsys.readouterr()
     assert code == 0
-    assert "WARNUNG" in ausgabe
-    assert "OK" in ausgabe
+    assert "WARNUNG" in captured.err  # WARNUNGen gehen auf stderr
+    assert "OK" in captured.out
 
 
 def test_main_leeres_verzeichnis_ist_fail_closed(tmp_path, capsys):
@@ -382,10 +383,10 @@ def test_main_nicht_py_datei_neben_gueltigem_ziel_wird_gemeldet(tmp_path, capsys
     notiz = tmp_path / "notiz.txt"
     notiz.write_text("egal\n", encoding="utf-8")
     code = main([str(d), str(notiz)])
-    ausgabe = capsys.readouterr().out
+    captured = capsys.readouterr()
     assert code == 0
-    assert "WARNUNG" in ausgabe
-    assert "notiz.txt" in ausgabe
+    assert "WARNUNG" in captured.err  # WARNUNGen gehen auf stderr
+    assert "notiz.txt" in captured.err
 
 
 def test_main_unlesbare_datei_ist_fail_closed(tmp_path, monkeypatch, capsys):

@@ -161,7 +161,10 @@ def _noqa_zeilen(quelltext: str, dateiname: str) -> set[int]:
     except (tokenize.TokenError, IndentationError):
         # Marker-Erkennung entfällt (unvollständiger Tokenstrom) — sichtbar machen, sonst
         # greift ein korrektes # noqa unbemerkt nicht und es gibt einen Fehlalarm ohne Grund.
-        print(f"WARNUNG: {dateiname}: noqa-Marker nicht lesbar (Tokenisierung unvollständig).")
+        print(
+            f"WARNUNG: {dateiname}: noqa-Marker nicht lesbar (Tokenisierung unvollständig).",
+            file=sys.stderr,
+        )
     return zeilen
 
 
@@ -263,19 +266,18 @@ def pruefe_dateien(dateien: Iterable[Path]) -> list[Verstoss]:
     """Scannt eine Liste von `.py`-Dateien auf Schwellen-Literale."""
     verstoesse: list[Verstoss] = []
     for py_datei in dateien:
-        # utf-8-sig entfernt eine evtl. BOM (Windows-Editoren); errors="replace" sorgt
-        # dafür, dass eine einzelne defekte Datei das Gate nicht mit Traceback abbricht.
+        # utf-8-sig entfernt eine evtl. BOM (Windows-Editoren). Strikt dekodieren: eine
+        # nicht lesbare ODER nicht als UTF-8 dekodierbare Datei wird fail-closed gemeldet
+        # (statt sie mit Ersatzzeichen durchzuwinken), konsistent mit dem SyntaxError-Pfad.
         try:
-            text = py_datei.read_text(encoding="utf-8-sig", errors="replace")
-        except OSError as exc:
-            # Datei nicht lesbar (z. B. PermissionError) -> fail-closed statt Traceback:
-            # eine nicht prüfbare Schwellen-Datei darf das Gate nicht grün lassen.
+            text = py_datei.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeDecodeError) as exc:
             verstoesse.append(
                 Verstoss(
                     datei=str(py_datei),
                     zeile=1,
-                    inhalt=f"<Datei nicht lesbar: {exc.__class__.__name__}>",
-                    grund="Datei nicht lesbar — Gate fail-closed",
+                    inhalt=f"<Datei nicht lesbar/dekodierbar: {exc.__class__.__name__}>",
+                    grund="Datei nicht lesbar/dekodierbar — Gate fail-closed",
                     fail_closed=True,
                 )
             )
@@ -287,10 +289,11 @@ def pruefe_dateien(dateien: Iterable[Path]) -> list[Verstoss]:
 def pruefe_verzeichnisse(verzeichnisse: Iterable[str | Path]) -> list[Verstoss]:
     """Scannt alle `.py`-Dateien unter den angegebenen Zielen (Verzeichnisse oder Dateien).
 
-    Hinweis: Gibt nur die Verstöße zurück; fehlende oder nicht-`.py`-Ziele werden hier
-    still übersprungen (keine WARNUNG). Die Sichtbarmachung (WARNUNG/fail-closed bei 0
-    geprüften Dateien) leistet `main()` — wer programmatisch die Ziel-Klassifikation
-    braucht, nutzt `_klassifiziere_ziele()`.
+    ⚠️ Gibt NUR die Verstöße zurück und verhält sich NICHT fail-closed: fehlende oder
+    nicht-`.py`-Ziele werden hier still übersprungen (`pruefe_verzeichnisse(["gibt/es/nicht"])`
+    → `[]`, kein Fehler/Log) — anders als `main()`, das in dieser Lage mit Exit 1 fail-closed
+    reagiert. Wer programmatisch eine fail-closed-Pfadprüfung braucht, nutzt
+    `_klassifiziere_ziele()` (liefert auch die fehlenden/ignorierten Ziele) bzw. `main()`.
     """
     return pruefe_dateien(_py_dateien(verzeichnisse))
 
@@ -317,10 +320,11 @@ def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI-Einstieg: Exit 0 = sauber, 1 = Verstoß gefunden."""
-    # Ausgabe robust gegen die Windows-Konsole (cp1252): UTF-8 erzwingen, sonst crasht
-    # ein Zeichen wie „→" oder ein Umlaut mit UnicodeEncodeError (Linux/CI ist UTF-8).
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    # Ausgabe robust gegen die Windows-Konsole (cp1252): UTF-8 erzwingen (stdout UND stderr),
+    # sonst crasht ein Zeichen wie „→"/Umlaut mit UnicodeEncodeError (Linux/CI ist UTF-8).
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
     args = list(argv) if argv is not None else sys.argv[1:]
     verzeichnisse = args if args else _default_ziele()
@@ -337,11 +341,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 1
 
-    # Fehlende/ignorierte Ziele sichtbar machen (nicht still verschlucken) — Scan läuft weiter.
+    # Fehlende/ignorierte Ziele sichtbar machen (nicht still verschlucken) — Scan läuft
+    # weiter. WARNUNGen auf stderr, damit sie in Pipes/CI-Logs sauber trennbar sind.
     if fehlend:
-        print(f"WARNUNG: Scan-Ziel(e) nicht gefunden, übersprungen: {', '.join(fehlend)}")
+        print(
+            f"WARNUNG: Scan-Ziel(e) nicht gefunden, übersprungen: {', '.join(fehlend)}",
+            file=sys.stderr,
+        )
     if ignoriert:
-        print(f"WARNUNG: keine .py-Datei, übersprungen: {', '.join(ignoriert)}")
+        print(f"WARNUNG: keine .py-Datei, übersprungen: {', '.join(ignoriert)}", file=sys.stderr)
 
     verstoesse = pruefe_dateien(gescannte)
 
