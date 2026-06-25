@@ -11,7 +11,7 @@ Dieses Repository enthält:
 
 - **Briefing-Material** (Aufgabenstellung, Hintergrundgeschichte, Vorfälle) → `01-quellen/`
 - **Erarbeitete Deliverables** (Requirements, Design, Projektplan) → `02-Arbeitsdokumente/`
-- **Backend-Code** (FastAPI · MySQL/MariaDB · SQLAlchemy) → `04-Source-code/`
+- **Backend-Code** (FastAPI · MySQL/MariaDB · rohes PyMySQL, kein ORM → E-35) → `04-Source-code/`
 - **Fortschrittslog** (Code-Stand + Commits/PRs) → `05-Fortschrittslog/`
 - **Entscheidungslogbuch** → `02-Arbeitsdokumente/Entscheidungslog-Lucas-Systemarchitektur.md` · **KI-Onboarding** → Root (`Agents-gpt-gemini.md`)
 
@@ -52,15 +52,15 @@ Alarmsystem-Dev/
 │   │   ├── ingest/                      # Pull-Poller (GET /current bei G1), Eingangsvalidierung
 │   │   ├── model/                       # Datenklassen/Schemas (Pydantic)
 │   │   ├── assessment/                  # Vereisungslogik (Schwellenwerte) — Kernmodul, DB-frei
-│   │   ├── storage/                     # DB-Zugriff (Repository-Pattern, SQLAlchemy → MySQL/MariaDB)
+│   │   ├── storage/                     # DB-Zugriff (Repository-Pattern, rohes PyMySQL → MySQL/MariaDB; kein ORM, E-35)
 │   │   ├── api/                         # API-Endpoints für G3 (Frontend)
 │   │   ├── config/                      # Schwellen/Parametrierung
 │   │   ├── forecast/                    # 30-min-Prognose (T3)
 │   │   └── main.py                      # Einstiegspunkt (FastAPI), GET /health
 │   ├── tests/                           # Unit/Integrationstests
-│   ├── migrations/                      # Alembic-Schema-Migrationen
+│   ├── migrations/                      # handgeschriebenes schema.sql (kein Alembic, E-35)
 │   ├── config/                          # Default-Schwellenwerte (parametrierbar)
-│   ├── docker-compose.yml               # MariaDB 11 (dev = prod)
+│   ├── docker-compose.yml               # DEPRECATED (E-35: kein Docker; native MariaDB) — wird entfernt
 │   ├── .env.example                     # DB-Zugangsdaten (Platzhalter; keine Secrets)
 │   ├── pyproject.toml · requirements*.txt
 │   └── README.md                        # Setup + Struktur des Backends
@@ -89,7 +89,7 @@ Alarmsystem-Dev/
 
 ---
 
-> **Hinweis zur Struktur:** Der Backend-Code liegt unter **`04-Source-code/`** — das **P0-Grundgerüst steht** (FastAPI-Skelett, `GET /health`, MariaDB-Setup via `docker-compose.yml`). Struktur-/Setup-Detail siehe `04-Source-code/README.md` und `Backend-Konzept §7`. `.github/workflows/` (CI/CD) ist noch geplant.
+> **Hinweis zur Struktur:** Der Backend-Code liegt unter **`04-Source-code/`** — das **P0-Grundgerüst steht** (FastAPI-Skelett, `GET /health`, MariaDB-Setup **nativ** (Pi via Tunnel / lokal; kein Docker → E-35)). Struktur-/Setup-Detail siehe `04-Source-code/README.md` und `Backend-Konzept §7`. `.github/workflows/` (CI/CD) ist noch geplant.
 
 
 
@@ -151,11 +151,13 @@ Alarmsystem-Dev/
    └─────────────────────────────────────────┘
          ↓
    ┌─────────────────────────────────────────┐
-   │  API-Serving: GET /assessment/current   │
-   │             GET /alarms                 │
-   │             GET /readings?from&to       │
+   │  API-Serving (alle Endpoints /v1/):     │
+   │   GET /v1/assessment/current            │
+   │   GET /v1/alarms/stream (SSE → Push)    │
+   │   GET /v1/alarms (Zustand/Resync)       │
+   │   GET /v1/readings?from&to              │
    └─────────────────────────────────────────┘
-         ↓
+         ↓ (G3 holt per GET; Alarme push via SSE)
     (an G3 — Frontend)
 ```
 
@@ -211,7 +213,7 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 **Inhalt:**
 - Module (Ingest, Validierung, Persistenz, Bewertung, Alarm, Prognose, API, Config, Audit)
 - Datenmodell (Tabellen: `reading`, `assessment`, `alarm`, `acknowledgement`, `threshold_set`, `audit_log`)
-- Tech-Stack (FastAPI + Pydantic, **MySQL/MariaDB** [GL-Vorgabe], SQLAlchemy, HTTP-Pull-Poller `GET /current`)
+- Tech-Stack (FastAPI + Pydantic, **MySQL/MariaDB** [GL-Vorgabe], rohes PyMySQL [kein ORM, E-35], HTTP-Pull-Poller `GET /current`)
 - Ausbaustufen T0–T3
 - Schnittstellen zu G1 (Sensorik) & G3 (Frontend)
 
@@ -242,8 +244,8 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 | **Sprache** | Python 3.11+ | — |
 | **Framework** | FastAPI | Flask, Node/Express |
 | **Validierung** | Pydantic v2 | — |
-| **Datenbank** | **MySQL 8 / MariaDB** — durch GL vorgegeben (dev = prod via Docker-Compose) | ~~SQLite, PostgreSQL~~ (verworfen, s. Backend-Konzept §6a) |
-| **DB-Zugriff** | SQLAlchemy + Repository-Pattern · Alembic-Migrationen | raw SQL |
+| **Datenbank** | **MySQL 8 / MariaDB** — durch GL vorgegeben (dev = prod, native MariaDB; kein Docker → E-35) | ~~SQLite, PostgreSQL~~ (verworfen, s. Backend-Konzept §6a) |
+| **DB-Zugriff** | rohes PyMySQL + Repository-Pattern · handgeschriebenes `schema.sql` (kein ORM/Alembic → E-35) | ~~SQLAlchemy~~ |
 | **Übertragung** | HTTP REST **Pull** — G2-Poller ruft G1s `GET /current` ab (≤ 60 s) | MQTT (später) |
 | **Testing** | pytest + coverage | unittest |
 | **Logging** | Python `logging` + structlog | — |
@@ -276,7 +278,7 @@ cd Alarmsystem-Dev
 cd 04-Source-code
 py -m venv .venv && .venv\Scripts\activate   # Windows
 pip install -r requirements-dev.txt
-docker compose up -d db                      # MariaDB 11 starten (GL-Vorgabe; dev = prod)
+# MariaDB: native — Pi via SSH-Tunnel ODER lokale Installation (kein Docker → E-35); Zugang via .env
 ```
 > Setup-/Agenten-Tooling lebt in `Devteam-vibecodes` (siehe **⚙️ Setup & Tooling** oben).
 

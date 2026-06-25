@@ -33,7 +33,7 @@ Backend-Repo der Gruppe 2 (FastAPI · MySQL/MariaDB · rohes PyMySQL, kein ORM).
 
 ## Datenfluss
 `G1 (Sensorik)` ──poll `GET /current`──▶ `Ingest/Validierung` ──▶ DB `reading` ──▶ `Bewertung` (4-Stufen)
-──▶ `assessment` (+ ggf. `alarm`) ──▶ DB ──▶ `API` ──poll──▶ `G3 (Frontend)`.
+──▶ `assessment` (+ ggf. `alarm`) ──▶ DB ──▶ `API` ──GET (Alarme: SSE-Push)──▶ `G3 (Frontend)`.
 **Fail-safe (NF-01):** bei Stale/Ausfall nie GRÜN → `unknown` + Warnung.
 
 ## Schnittstelle G1 → G2 (Contract, eingehend)
@@ -58,9 +58,10 @@ GET /health → 200 (ok) / 503 (fault)
 
 ## Schnittstelle G2 → G3 (Serving, ausgehend)
 
-G3 pollt G2 per `GET` (REST). Geplante Endpoints (Spec: DTB-19 / OpenAPI v1):
-- `GET /assessment/current` — aktuelle Risikostufe (`green|yellow|orange|red|unknown`) + Faktoren + Zeitstempel
-- `GET /alarms` · `POST /alarms/{id}/ack` (Quittierung — reine UI-/Audit-Aktion, **kein** Bahn-Aktor, RB-01)
-- `GET /readings` — Historie
+G2 ist **Server**; G3 konsumiert per `GET` (REST). Alle Endpoints unter `/v1/` (AE-03). Spec: DTB-19 / OpenAPI v1.
+- `GET /v1/assessment/current` — aktuelle Risikostufe (`green|yellow|orange|red|unknown`) + Faktoren + Zeitstempel
+- **Alarme = Push (E-37):** `GET /v1/alarms/stream` (SSE — G2 pusht Alarme live) + `GET /v1/alarms` (Zustands-Abfrage/Resync, **kein** Poll-Scan)
+- `POST /v1/alarms/{id}/ack` (Quittierung — reine UI-/Audit-Aktion, **kein** Bahn-Aktor, RB-01)
+- `GET /v1/readings` — Historie
 
 **Kein** Freigabe-/Sperr-Endpoint (RB-01). Stale/Ausfall → `unknown`, nie GRÜN (NF-01).

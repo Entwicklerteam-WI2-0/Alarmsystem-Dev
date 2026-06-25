@@ -9,6 +9,15 @@ from abc import ABC, abstractmethod
 from src.model.schemas import Reading
 
 
+class RepositoryError(Exception):
+    """Domänen-Exception für Fehler in der Persistenzschicht.
+
+    Der Poller fängt diese ab und geht fail-safe (kein Speichern, kein GRÜN).
+    Konkrete Implementierungen (z. B. PyMySQL in DTB-28) leiten ihre Fehler
+    auf diese Exception herunter.
+    """
+
+
 class Repository(ABC):
     """Abstrakte Persistenz-Schicht fuer Readings.
 

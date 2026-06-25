@@ -1,8 +1,12 @@
 # Aktueller Stand
 
-> Stand: 2026-06-23 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+> Stand: 2026-06-24 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
 
 ## Woran wir gerade arbeiten
+- **DTB-54 (schema.sql einspielen, Andi & Leon):** Apply-Schritt + `migrations/grants.sql` (append-only
+  via GRANT statt Trigger, NF-09) dokumentiert; santa-loop-reviewed; Commit `d2aa4bc` lokal auf
+  `feat/dtb-54-schema-apply` (ungepusht). **Offen:** Init-Schritt (CREATE DB/USER) im README + DoD-Apply-Beweis
+  bei Pi-MariaDB-Init. → Status „Wird überprüft".
 - **G2 Backend (Alarmsystem ANR):** Woche 2. **Projektplan + Jira-Backlog (Projekt DTB)** steht:
   9 Epics / 43 Tasks (DTB-1..DTB-52) + 43 "Blocks"-Abhängigkeitslinks. Begleitdoc:
   `02-Arbeitsdokumente/Projektplan-Jira-Backlog-G2.md`.
@@ -74,6 +78,20 @@
   (nicht vom Architekt) — Ablage/Commit klären. (3) Hysterese-Begriff „untere Schwelle" in §2 präzisieren;
   `assess_ice_risk`-Signatur (RH redundant, da nur `T_d`-Input).
 
+## Update [23.06., ~12:10] — DTB-15 Config-Loader fertig + PR offen (architekt/Petzold)
+- **DTB-15 (Config-Infrastructure) umgesetzt** (`feat/config-thresholds-loader`, Commit b1a60ae):
+  `04-Source-code/config/thresholds.json` (vereisung-Kaskade + Prognoseschwelle, DUMMY-Werte §2, DB-frei) +
+  `src/config/loader.py` (`load_thresholds()` → typisiertes `frozen` `Thresholds`, validiert Struktur+Werte,
+  fail-loud `ConfigError`) + `tests/test_config_loading.py` (**12 Tests, 100 % Line+Branch-Coverage**, ruff sauber).
+  **Enabler für DTB-38.**
+- **Scope bewusst begrenzt:** nur echte Schwellen; `taupunkt_magnus`/`hysterese`/`datenstatus`/Prognosehorizont
+  **nicht** aufgenommen (gehören zu DTB-32/-27/-18/-33, in Jira **unzugewiesen**; Magnus = physikal. Konstanten).
+- **PR gegen `main` offen** (Branch gepusht; Review Arezo/Amelie, Merge Lucas). Selbstreview WP5
+  (quality-gate/python-review/test-coverage) durch. 3 Einträge im persönlichen `Petzold-Entscheidungslog`.
+- **Neu offen:** (1) **DTB-11-Unstimmigkeit** in `04-Source-code/requirements.txt`: `sqlalchemy`/`alembic`
+  vs. E-35-Vorgabe „PyMySQL, kein SQLAlchemy" → Klärung mit Lucas vor PR-#18-Merge (Jira-Kommentar an DTB-11
+  gesetzt). (2) vorbestehender ruff-Fehler `src/ingest/__init__.py:1` (E501, Scaffolding-Code).
+
 ## Update [23.06., ~12:15] — Stack-Pivot E-35 (PyMySQL, kein Docker) + DTB-12 Datenmodell (architekt)
 - **E-35 (revidiert E-29-Umsetzung; DB-Mandat MySQL/MariaDB bleibt):** **kein SQLAlchemy** → rohes PyMySQL
   hinter Repository-Pattern (parametrisierte Queries Pflicht); **kein Alembic** → handgeschriebenes
@@ -89,3 +107,70 @@
 - **Offen/weiter:** **Backend-Konzept §6/§7** echte E-35-Prosa (noch SQLAlchemy/Docker) + `docker-compose.yml`
   entfernen + `Projektplan-Jira-Backlog-G2.md` (SQLite) nachziehen. CI-DB-Bereitstellung (DTB-11) mit Johannes.
   Jira-Link 10011 (Altbestand) manuell löschen. G1-Seam-Sync (P1.4) → dann DTB-19 OpenAPI + DTB-28 Persistenz.
+
+## Update [23.06., ~14:15] — API-Contract verankert + Backlog-Übersicht (architekt)
+- **G1→G2 API-Vertrag final dokumentiert:** `Backend-Konzept.md` §9 enthält jetzt den verbindlichen
+  JSON-Contract (`GET /current`, `GET /health`, Pflichtfelder, Verhandlungsposition). Ebenfalls in
+  `04-Source-code/README.md`, `CLAUDE.md` und `AGENTS.md` als **Mandatory Read** verlinkt.
+- **DTB-15 (Config-Loader)** auf `main` reviewed: Code + Tests passen zu `Schwellenwerte.md` §2; spätere
+  Verknüpfung mit `ThresholdSet`-DB-Entity für DTB-38 vormerken.
+- **P0.3 (DTB-51)** Code auf `main` verifiziert (`src/main.py` + `tests/test_health.py` grün); Jira-Status
+  noch „In Arbeit" → Update ausstehend.
+- **Persönliche Backlog-Übersicht** erstellt (`Desktop/DTB-Backlog-Uebersicht.md`): Epic-Hierarchie,
+  Lucas-Prioritäten, Blocker/Abhängigkeiten.
+- **main aktuell:** 57a2c5d "Add API contract FROZEN v1 (draft) (#44)".
+- **Neu offen:** Jira-Status DTB-1/DTB-51 aktualisieren; DTB-53/54/55/56 (DB-Setup) angehen; DTB-35
+  Contract an G1/G3 kommunizieren; Jira-Link 10011 löschen.
+
+## Update [23.06., ~14:30] — Alarm-Push (E-37) + Doku-Drift-Fix (SQLAlchemy/Docker→E-35, `/v1/`) (architekt)
+- **E-37 — Alarme = Push via SSE** (`GET /v1/alarms/stream`); `GET /v1/alarms` nur Zustands-Resync, **kein
+  Poll-Scan**. Alarme sind Events → Polling semantisch falsch/latenzbehaftet; SSE = Push ohne dass G3 etwas
+  hostet; `GET /alarms` als Sicherheits-Backstop (Disconnect-Resync). SSE-Impl = T2. Doku nachgezogen
+  (Backend-Konzept §9.2, READMEs, `API_FROZEN_v1.md`, `Team-Sync-Entscheidungen.md`).
+- **Doku-Drift bereinigt (E-35/E-36/AE-03):** Backend-Konzept §4/§6/§6a/§7/§9 + Root-README + AGENTS auf
+  **rohes PyMySQL / native MariaDB / kein Docker / kein Alembic** + **`/v1/`**-Endpoints korrigiert (waren noch
+  SQLAlchemy/Docker bzw. ohne Versionspräfix). `claude-sync.md` (geteilte Agent-Config) auf E-35-Stand.
+- **Architektur-Klarstellung:** G2 = **Server** zu G3 (G3 konsumiert per GET; Alarme via SSE-Push),
+  G2 = **Client** zu G1 (pollt `GET /current`). Grundstruktur war in den Docs **bereits korrekt** — Drift
+  betraf nur Stack-Prosa + fehlendes `/v1/`.
+- **⚠️ Parallel-Arbeit erkannt:** `API_FROZEN_v1.md` ist bereits via **#44 (57a2c5d)** auf `main` (DTB-35-Draft).
+  Lokaler Branch `feat/dtb-35-contract-freeze-v1` enthält daher eine **Dublette** + zusätzlich die Drift-Fixes/E-37
+  — **vor Push gegen aktuelles `main` (57a2c5d) rebasen/abgleichen**, sonst Konflikt/Doppelung. **Nichts gepusht.**
+- **Offen/weiter:** Branch rebasen + Dublette auflösen; Drift-Fixes + E-37 als PR; `docker-compose.yml` physisch
+  entfernen (E-35); DTB-19 `openapi.yaml` (Luca) muss `/v1/alarms/stream` + `/v1/alarms` führen; Tag `api-v1.0`
+  erst nach G1/G3-Sign-off.
+
+## Update [23.06., ~15:51] — DTB-19 OpenAPI v1 Spec fertig (backend-dev/Luca)
+- **DTB-19 (P1.2) umgesetzt** (`feat/dtb-19-openapi-v1`, Commits fbadf02 + 778bf40, **lokal/ungepusht**):
+  `04-Source-code/docs/api/v1/openapi.yaml` (G2-API, 6 Ops inkl. `/v1/alarms/stream` SSE + `/v1/alarms`
+  Resync) + `g1-consumed.openapi.yaml` (konsumierter G1-Vertrag, 2 Ops). Formale Abschrift von
+  `API_FROZEN_v1.md`; Fail-safe NF-01 + RB-01 explizit. `openapi-spec-validator` grün; **santa-loop**-Review
+  (3 MEDIUM-Fixes eingearbeitet).
+- **Operationszahl** „≥ 15" (alte DoD) durch Architekten-Vorlage (DRI) **überholt** → Lean-Set ~6+2 maßgeblich
+  (im Datei-Header dokumentiert).
+- **Neu offen:** (1) Branch pushen + PR (DTB-19). (2) **DTB-26 G3-Sign-off** (`seam-sync-confirmed`)
+  einsammeln — **G1-Seite: Lucas**. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves
+  (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
+
+## Update [23.06., ~16:08] — DTB-19 PR #48 Review-Findings eingearbeitet (backend-dev/Luca)
+- **PR #48 review-fest gemacht** (Commit 18c3648, **gepusht/in sync**): `/v1/alarms/stream` → `503`;
+  `POST /v1/alarms/{id}/ack` → `409` bei Double-Ack (NF-09, nicht idempotent); `AckRequest.operator`
+  → `minLength: 1`; g1-`status` → Sync-Hinweis auf `SensorStatus`. Validator erneut grün; doppelter 503
+  (Web-Fix 865de56 + Fix) konsolidiert. DTB-19 damit fertig & review-fest.
+- **Neu offen:** (1) **PR #48 mergen** (Reviewer/Lucas). (2) **DTB-26 G3-Sign-off** (`seam-sync-confirmed`)
+  — G1-Seite: Lucas. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves offen
+  (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
+
+## Update [23.06., ~22:00] — DTB-11 Test-CI abgeschlossen + Poller-Fail-safe-Fix (Petzold)
+- **DTB-11 (Test-CI) fertig & gemergt (#50):** `.github/workflows/test.yml` gegen das `04-Source-code/`-Layout
+  (`pytest --cov` ≥ 80 % + `ruff`); veralteter PR #18/`feat/ci-base` abgelöst & geschlossen.
+  **Branch-Schutzregel „Require status checks" mit Check `test` aktiv.** Python-Matrix 3.12/3.14 +
+  Aggregator-Check `test` nachgezogen (DTB-11b, #52).
+- **Poller-Fail-safe-Fix (DTB-12, #53/#54):** beim CI-Selbstreview entdeckter NF-01-Bug (defektes optionales
+  `pressure_hpa` → Crash statt `None`) per TDD gefixt; `poller.py` 100 % Coverage. Im vertieften Review
+  verfeinert: pressure **nicht-blockierend** (loggt + `None`, Reading bleibt), `status=fault`→Ablehnung,
+  `measured_at` **UTC-only**, spezifische `RepositoryError`.
+- **main grün:** 62 Tests, 100 % Coverage, ruff sauber (`d86e8d6`). Lokale Branches aufgeräumt, Remote sauber.
+- **Entscheidungen:** 8 neue Einträge im persönlichen `Petzold-Entscheidungslog` (noch lokal/uncommittet).
+- **Neu offen:** (1) Entscheidungslog-Edit committen/pushen (Doku-PR). (2) DTB-11/DTB-12 Jira-Status manuell.
+  (3) Kritischer Pfad: DB-Setup (DTB-53–56) + Persistenz (DTB-28) → dann Bewertungsmodul DTB-38.

@@ -59,7 +59,7 @@ Vor `push`/PR/`force-push`/destruktiven Git-Aktionen: **vorher Genehmigung einho
   > **Beim Bau von Features, Tests und Konfigurationen darf KEINE harte Verdrahtung dieser Dummies
   > erfolgen — alle Schwellen müssen parametrierbar bleiben (→ `config/`), damit der Austausch
   > durch die G1-Finalwerte ohne Code-Änderung möglich ist.**
-- `Backend-Konzept.md` — **Architektur der Backend-Gruppe** (Module, Datenmodell, Tech-Stack-Optionen, Code-Struktur)
+- `Backend-Konzept.md` — **Architektur der Backend-Gruppe** (Module, Datenmodell, Tech-Stack-Optionen, Code-Struktur). **§9 enthält den verbindlichen G1→G2 API-Vertrag** — siehe „API-/Datenmodell-Vertrag" unten.
 - `Tasks+Projektplan.md` — Phasen **P0–P6**, Meilensteine M1–M3, Kanban-Tasks (Owner/DoD/Größe)
 - `Team-Organisation+Regeln.md` — Rollen/DRI, Zusammenarbeits-Map, Teamregeln
 - `assets/` — `WhatsApp Image …jpeg` (Architekturskizze) · Rollen-/Gruppeneinteilungs-Bilder
@@ -68,6 +68,20 @@ Vor `push`/PR/`force-push`/destruktiven Git-Aktionen: **vorher Genehmigung einho
 
 > Die `.md`-Deliverables teilen sich **gemeinsame IDs** (FA/NF/RB/AE, K1–K9). Bei einer Klassifikations-/
 > ID-Änderung **alle betroffenen Dokumente konsistent halten** (Drift-Gefahr).
+
+### API-/Datenmodell-Vertrag (Mandatory Read)
+
+Der verbindliche **G1→G2 API-Vertrag** ist in **`Backend-Konzept.md` §9** dokumentiert. Jeder Agent
+**MUSST** diesen Abschnitt lesen, bevor er Code an der Naht zwischen Sensorik (G1) und Backend (G2)
+schreibt oder verändert:
+
+- G1 stellt eine eigene Sensor-API bereit; G2 pollt sie.
+- `GET /current` liefert einen Snapshot mit gemeinsamem `measured_at` (Pflichtfeld).
+- `GET /health` liefert `200` (ok) oder `503` (fault).
+- Pflicht-Trias: `surface_temp_c`, `air_temp_c`, `humidity_pct`.
+- `measured_at` und `/health` sind gegenüber G1 nicht verhandelbar.
+
+**Direktlink:** `02-Arbeitsdokumente/Backend-Konzept.md` → Abschnitt 9 „Schnittstellen nach außen".
 
 ### Heutiger Stand (16.06.2026)
 

@@ -65,7 +65,7 @@ Prognose · API · Logging/Audit · Konfiguration (Schwellen).
 > **Mapping G1 → `reading`:** Die Pflichtfelder aus G1s `GET /current` (`measured_at`, `sensor_id`, `surface_temp_c`, `air_temp_c`, `humidity_pct`) landen 1:1 in `reading`. `pressure_hpa` und `status` kommen ebenfalls aus G1, sind aber verhandelbar. `dew_point_c` berechnet G2 intern; `ice_indicator`, `source` und `received_at` sind G2-interne Ergänzungen.
 >
 > **DB-Typen (MySQL/MariaDB):** `id`→`BIGINT AUTO_INCREMENT`, Zeitstempel→`DATETIME(3)` (UTC),
-> `params`→`JSON`, Enums→`VARCHAR`/`ENUM`. Schema versioniert via Alembic (s. §6/§6a).
+> `params`→`JSON`, Enums→`VARCHAR`/`ENUM`. Schema als handgeschriebenes `schema.sql` (kein Alembic → E-35; s. §6/§6a).
 
 ## 5. Bewertungslogik (Kern-IP von G2)
 
@@ -84,14 +84,14 @@ Betriebspunkt (Fehlalarm ↔ Auslassung, K1) **parametrierbar**, Default sicherh
 | Baustein | Optionen | Wahl/Empfehlung T0 |
 |---|---|---|
 | Sprache/Framework | Python **FastAPI** · Flask · Node/Express | FastAPI (schnelle REST + Validierung via Pydantic) |
-| **Datenbank** | ~~SQLite · PostgreSQL · TimescaleDB~~ | **MySQL 8 / MariaDB — durch GL vorgegeben** (dev = prod via Docker-Compose) |
-| DB-Zugriff | SQLAlchemy Core/ORM · raw SQL | **SQLAlchemy + Repository-Pattern** (kapselt die DB hinter `storage/`) |
-| Migrationen | Alembic · SQL-Skripte | Alembic (versionierte Schema-Änderungen) |
+| **Datenbank** | ~~SQLite · PostgreSQL · TimescaleDB~~ | **MySQL 8 / MariaDB — durch GL vorgegeben** (dev = prod, **native MariaDB**, kein Docker → E-35) |
+| DB-Zugriff | ~~SQLAlchemy ORM~~ · raw SQL | **rohes PyMySQL + Repository-Pattern** (parametrisierte Queries Pflicht; **kein ORM** → E-35) |
+| Migrationen | ~~Alembic~~ · SQL-Skripte | **handgeschriebenes `schema.sql`** (kein Alembic → E-35) |
 | Datenabruf | **HTTP-Pull** (G2 pollt G1s `GET /current`) · MQTT (Skalierung) | HTTP-Pull |
 | Bewertung | reine Funktion (testbar) + Config | als isolierbares Modul (Coverage ≥ 80 %) |
 
-> **Dev-Setup:** Eine MariaDB/MySQL für alle via `docker compose up db` — gleiche DB lokal wie im Betrieb,
-> kein SQL-Dialekt-Drift. **MariaDB** ist der quelloffene, Drop-in-kompatible MySQL-Ersatz und auf dem
+> **Dev-Setup (E-35):** Native MariaDB/MySQL für alle — geteilte Pi-Instanz via SSH-Tunnel ODER lokale
+> Installation (**kein Docker**) — gleiche DB lokal wie im Betrieb, kein SQL-Dialekt-Drift. **MariaDB** ist der quelloffene, Drop-in-kompatible MySQL-Ersatz und auf dem
 > Raspberry Pi (s. `Raspberry-Pi-Hosting-Anleitung.md`) die ressourcenschonendere Wahl. Die
 > **Bewertungslogik bleibt DB-frei** (reine Funktion) — sie ist von der DB-Wahl nicht betroffen.
 > Übrige Bausteine: Wahl nach **Team-Kompetenz** begründen — nicht vorwegnehmen.
@@ -125,20 +125,20 @@ Betriebspunkt (Fehlalarm ↔ Auslassung, K1) **parametrierbar**, Default sicherh
 
 **(3) Auswirkungen auf Architektur/Implementierung**
 
-- Persistenz (`storage/`) strikt über **Repository-Pattern + SQLAlchemy** → DB-Detail gekapselt; Ingest,
-  Bewertung und API bleiben DB-agnostisch.
-- **Docker-Compose** stellt MariaDB reproduzierbar bereit (dev = prod); **Alembic** für Schema-Migrationen.
+- Persistenz (`storage/`) strikt über **Repository-Pattern + rohes PyMySQL** (parametrisierte Queries
+  Pflicht; **kein ORM** → E-35) → DB-Detail gekapselt; Ingest, Bewertung und API bleiben DB-agnostisch.
+- **Native MariaDB** (Pi via Tunnel / lokal; **kein Docker** → E-35); Schema als **handgeschriebenes `schema.sql`** (kein Alembic).
 - **Datentyp-Mapping** (§4): `id`→`BIGINT AUTO_INCREMENT`, `ts`/`received_at`→`DATETIME(3)` (UTC),
   `params(json)`→`JSON`, Enums (`risk_level`, `state`)→`VARCHAR`+CHECK bzw. `ENUM`.
-- **Connection-Pooling** über die SQLAlchemy-Engine statt Datei-Handle; Zugangsdaten über **Env-Var/
+- **Connection-Handling** über PyMySQL-Verbindungen (Repository-gekapselt) statt Datei-Handle; Zugangsdaten über **Env-Var/
   Secret**, nie im Code (Security/NF-07).
 - Betrieb auf **Raspberry Pi**: MariaDB als Dienst, Datenverzeichnis auf stabilem Medium
   (SD-Karten-Verschleiß bei Dauerschreiblast bedenken).
 
 **(4) Risiken / Einschränkungen**
 
-- **Setup-Hürde Anfänger-Team** (Docker/MariaDB) kann M2 verzögern → Docker-Compose + Kurzanleitung als
-  Mitigation.
+- **Setup-Hürde Anfänger-Team** (native MariaDB) kann M2 verzögern → geteilte Pi-MariaDB + Kurzanleitung als
+  Mitigation (kein Docker nötig → E-35).
 - **Zusätzliche Ausfallfläche:** der DB-Prozess kann ausfallen → **Fail-safe NF-01 muss greifen** (bei
   DB-Fehler nie GRÜN, sondern GELB/„unbekannt" + Warnung).
 - **Langsamere Tests** ggü. SQLite-in-memory → Bewertungslogik bleibt DB-frei testbar; Persistenz-Tests
@@ -156,19 +156,19 @@ src/
   ingest/        # Poller (holt `GET /current` von G1) + Health-Check, Eingangsvalidierung
   model/         # Datenklassen / Schemas
   assessment/    # Vereisungslogik (Schwellenwerte) — Kernmodul, hohe Testabdeckung
-  storage/       # DB-Zugriff (Repository-Pattern, SQLAlchemy → MySQL/MariaDB)
+  storage/       # DB-Zugriff (Repository-Pattern, rohes PyMySQL → MySQL/MariaDB; kein ORM, E-35)
   api/           # Serving-Endpoints für G3
   config/        # Schwellen/Parameter (parametrierbar)
   forecast/      # 30-min-Trend (T3)
-migrations/      # Alembic-Schema-Migrationen (MySQL)
+migrations/      # handgeschriebenes schema.sql (DDL; kein Alembic, E-35)
 tests/           # Unit-/Integrationstests, v. a. assessment
 config/          # Default-Schwellenwerte (aus Schwellenwerte.md)
-docker-compose.yml  # MariaDB/MySQL-Container für Dev (dev = prod)
+# native MariaDB (Pi via SSH-Tunnel / lokal; kein Docker, E-35)
 ```
 
 ## 8. Ausbaustufen (Backend-scoped)
 
-- **T0 (Kern):** Poll (`GET /current` von G1) → speichern → Schwellwert-Bewertung → `GET /assessment/current` → `GET /health`.
+- **T0 (Kern):** Poll (`GET /current` von G1) → speichern → Schwellwert-Bewertung → `GET /v1/assessment/current` → `GET /v1/health`.
 - **T1:** Plausibilität/Stale/Defekt-Erkennung, Alarm-Generierung, alle Messgrößen.
 - **T2:** Quittierung (FA-10), Audit-Trail, Schwellen-Config-Endpoint, Historie.
 - **T3:** 30-min-Prognose, Multi-Sensor (NF-11), Fernwartung + Auth (NF-07).
@@ -206,9 +206,22 @@ G1 stellt eine **einzelne Sensor-API** bereit. G2 pollt sie im selbst gewählten
 
 > **Verhandlungsposition gegenüber G1:** `measured_at` und `/health` sind **nicht verhandelbar**. Feldnamen, Einheiten und optionale Felder können synchronisiert werden (Seam-Sync), solange die Pflicht-Trias erhalten bleibt.
 
-### 9.2 zu G3 (Frontend) — G2 liefert
+### 9.2 zu G3 (Frontend) — G2 ist Server, G3 konsumiert per `GET`
 
-`GET`-Antwortformate für aktuelle Bewertung, Messwerte und Alarme. Details in der API-Spezifikation (geplant); internes Datenmodell s. §4.
+G2 baut die API, G3 ruft sie ab. Alle Endpoints unter Pfad-Präfix **`/v1/`** (Versionierung, AE-03 → E-36).
+
+- **`GET /v1/assessment/current`** — aktuelle Bewertung: `risk_level` (`green|yellow|orange|red|unknown`),
+  `driving_factor`, `explanation`, `surface_temp_c`, `dew_point_c`, `delta_t`, `humidity_pct`,
+  `measured_at`, `assessed_at`, `is_stale`, `sensor_status`. (`unknown`+`is_stale` = Fail-safe, NF-01.)
+- **`GET /v1/health`** — Verfügbarkeit von G2.
+- **Alarme = Push-Events, kein Poll-Scan (E-37):** **`GET /v1/alarms/stream`** (Server-Sent Events) —
+  G3 hält **eine** Verbindung, G2 **pusht** Alarme live. **`GET /v1/alarms`** bleibt als
+  **Zustands-Abfrage** (aktive Alarme beim Laden + Resync nach Verbindungsabriss — Sicherheits-Backstop).
+- **`POST /v1/alarms/{id}/ack`** — Quittierung (reine UI-/Audit-Aktion, **kein** Bahn-Aktor, RB-01).
+- **`GET /v1/readings`** — Historie.
+
+Verbindliche Form in der OpenAPI-Spec (DTB-19); eingefroren in `04-Source-code/docs/API_FROZEN_v1.md` (DTB-35).
+Internes Datenmodell s. §4.
 
 ## 10. Mapping FA/NF → Backend-Modul (Kurzfassung)
 
