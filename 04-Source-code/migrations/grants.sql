@@ -17,14 +17,24 @@
 -- =====================================================================
 
 -- 1) Saubere Basis: jegliche DB-weiten Rechte entziehen, dann gezielt neu vergeben.
---    Hinweis: auf einem frisch angelegten User warnt MariaDB hier evtl.
---    "there is no such grant" -- unkritisch (es gab schlicht nichts zu entziehen).
+--    Hinweis: auf einem frisch angelegten User gibt MariaDB hier ERROR 1141 aus
+--    ("there is no such grant") -- unkritisch, der mysql-Client setzt danach fort.
 REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.* FROM 'alarm'@'localhost';
+
+-- 1b) Table-Level-Grants werden von ON `alarmsystem`.* NICHT widerrufen.
+--     Daher pro Tabelle explizit zuruecksetzen, damit künftige Rechte-Änderungen
+--     nicht stillschweigend auf alten Grants aufsetzen.
+REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`alarm`         FROM 'alarm'@'localhost';
+REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`threshold_set` FROM 'alarm'@'localhost';
+REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`reading`       FROM 'alarm'@'localhost';
+REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`assessment`    FROM 'alarm'@'localhost';
+REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`audit_log`     FROM 'alarm'@'localhost';
+REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`acknowledgement` FROM 'alarm'@'localhost';
 
 -- 2) Veraenderliche Tabellen (Zustand/Config): volle DML.
 --    alarm        -- UPDATE fuer state-Uebergaenge (active -> acknowledged -> cleared).
 --    threshold_set -- Config-Saetze duerfen aktualisiert/ersetzt werden.
-GRANT INSERT, SELECT, UPDATE, DELETE ON `alarmsystem`.`alarm`         TO 'alarm'@'localhost';
+GRANT INSERT, SELECT, UPDATE ON `alarmsystem`.`alarm`         TO 'alarm'@'localhost';
 GRANT INSERT, SELECT, UPDATE, DELETE ON `alarmsystem`.`threshold_set` TO 'alarm'@'localhost';
 
 -- 3) append-only / unveraenderlich (NF-09): NUR INSERT + SELECT -> kein UPDATE/DELETE.
