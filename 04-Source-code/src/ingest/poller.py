@@ -151,6 +151,13 @@ class Poller:
         # Stale-Erkennung (FA-04, NF-01): zu alte Snapshots fail-safe verwerfen, damit kein
         # veralteter Wert als aktuell gespeichert wird (downstream nie still GRUEN). received_at
         # wird einmal bestimmt und sowohl fuer die Pruefung als auch fuers Reading genutzt.
+        #
+        # OFFENE NAHT-ENTSCHEIDUNG (Architekt, DTB-12/DTB-38): Hier wird das stale Reading
+        # VERWORFEN (ticket-konform DTB-58). Alternative waere, es als stale zu MARKIEREN und
+        # durchzureichen, sodass die Bewertung explizit risk_level=unknown setzt -- das braucht
+        # ein Datenmodell-Feld (DTB-12) + Bewertungslogik (DTB-38) und ist daher Lucas' Seam-
+        # Entscheidung. Die Fail-safe-Kette schliesst bereits an der Lese-Grenze (DTB-43:
+        # measured_at-Alter -> unknown), measured_at bleibt der Stale-Indikator.
         received_at = _now()
         age_s = (received_at - measured_at).total_seconds()
         if age_s < -MAX_CLOCK_SKEW_S:
