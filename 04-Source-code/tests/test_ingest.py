@@ -55,10 +55,14 @@ def valid_snapshot() -> dict:
 
 
 @pytest.fixture(autouse=True)
-def frozen_now():
+def frozen_now(request):
     # Deterministische Uhr fuer die Stale-Erkennung: 60 s nach dem measured_at der
     # valid_snapshot-Fixture -> Standard-Snapshots gelten als frisch (< 120 s).
     # Stale-Tests setzen measured_at bewusst weiter in die Vergangenheit.
+    # Tests mit @pytest.mark.real_clock laufen gegen die echte Uhr (tz-Awareness-Pruefung).
+    if request.node.get_closest_marker("real_clock"):
+        yield
+        return
     fixed = datetime(2026, 6, 23, 10, 1, 0, tzinfo=UTC)
     with patch("src.ingest.poller._now", return_value=fixed):
         yield
@@ -109,6 +113,74 @@ def test_poll_stale_snapshot_does_not_save(
     assert reading is None
     assert len(fake_repo.readings) == 0
     assert "veraltet" in caplog.text
+
+
+def test_poll_snapshot_at_freshness_boundary_saves(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Grenze: measured_at genau 120 s vor der eingefrorenen Uhr (10:01:00) -> age == 120 s.
+    # Wegen strikter "> 120 s"-Semantik gilt das noch als frisch -> gespeichert.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T09:59:00Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_snapshot_just_over_boundary_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Grenze + 1 s: 121 s alt -> stale -> verworfen. Sichert die "> 120"-Kante gegen Regression.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T09:58:59Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+
+
+def test_poll_future_timestamp_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # measured_at liegt 60 s in der Zukunft (defekte/falsch gestellte G1-Uhr) -> unplausibel
+    # -> fail-safe verwerfen (NF-01). Einseitiger ">120"-Check wuerde das sonst durchlassen.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:02:00Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "Zukunft" in caplog.text
+
+
+def test_poll_minor_clock_skew_still_saves(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Kleiner Vorlauf (3 s, innerhalb der Skew-Toleranz) ist normale Uhren-Drift -> gespeichert.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:01:03Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 1
+
+
+@pytest.mark.real_clock
+def test_now_is_timezone_aware() -> None:
+    # _now() muss tz-aware (UTC) liefern; sonst schlaegt die Subtraktion mit measured_at
+    # (tz-aware) als TypeError fehl. Laeuft bewusst gegen die echte Uhr (kein frozen_now).
+    from src.ingest.poller import _now
+
+    assert _now().tzinfo is not None
 
 
 def test_poll_missing_required_field_does_not_save(

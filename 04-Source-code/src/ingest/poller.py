@@ -51,6 +51,12 @@ MIN_PLAUSIBLE_DEW_POINT_C = MIN_TEMP_C
 # Lese-Grenze (DTB-43).
 STALE_MAX_AGE_S = 120
 
+# Maximal toleriertes Vorlaufen der G1-Uhr (Clock-Skew) in Sekunden. measured_at darf minimal
+# in der Zukunft liegen (NTP-Drift); weiter voraus ist physikalisch unplausibel (defekte/falsch
+# gestellte Uhr) und wird fail-safe verworfen (NF-01; Schwellenwerte.md §3 unplausibler Wert).
+# Wert ist ein KI-Vorschlag -> gegen Realbetrieb plausibilisieren/spaeter parametrieren.
+MAX_CLOCK_SKEW_S = 5.0
+
 # Pflichtfelder laut G1-Contract (Backend-Konzept §9.1).
 REQUIRED_FIELDS = ("measured_at", "sensor_id", "surface_temp_c", "air_temp_c", "humidity_pct")
 
@@ -147,6 +153,11 @@ class Poller:
         # wird einmal bestimmt und sowohl fuer die Pruefung als auch fuers Reading genutzt.
         received_at = _now()
         age_s = (received_at - measured_at).total_seconds()
+        if age_s < -MAX_CLOCK_SKEW_S:
+            logger.error(
+                "G1-Snapshot-Zeit liegt in der Zukunft (age=%.0f s) - verworfen", age_s
+            )
+            return None
         if age_s > STALE_MAX_AGE_S:
             logger.error(
                 "G1-Snapshot veraltet (%.0f s > %s s), Reading wird verworfen",
