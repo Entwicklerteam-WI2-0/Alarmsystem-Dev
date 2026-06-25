@@ -33,13 +33,6 @@ MAX_PRESSURE_HPA = 1100.0
 # Pflichtfelder laut G1-Contract (Backend-Konzept §9.1).
 REQUIRED_FIELDS = ("measured_at", "sensor_id", "surface_temp_c", "air_temp_c", "humidity_pct")
 
-# Untergrenze fuer einen plausiblen berechneten Taupunkt. Liegt der Magnus-Taupunkt
-# darunter, stammt er praktisch nur aus unplausiblen Eingaben (z. B. RH knapp ueber 0)
-# und wird als unbestimmbar behandelt. Bewusst = MIN_TEMP_C (kein eigener Magic-Wert):
-# nichts ist kaelter als der kaelteste plausibel messbare Wert.
-MIN_PLAUSIBLE_DEW_POINT_C = MIN_TEMP_C
-
-
 def _now() -> datetime:
     # In eine Helper-Funktion gekapselt, damit Tests die Uhr deterministisch patchen koennen
     # (die Stale-Erkennung haengt von der aktuellen Zeit ab).
@@ -196,7 +189,11 @@ class Poller:
         # Taupunkt fail-safe berechnen (Magnus, DTB-32). None = unbestimmbar/unplausibel
         # -> downstream konservativ (nie still GRUEN, NF-01). air_temp_c/humidity_pct sind
         # hier bereits als endlich und im Plausibilitaetsbereich validiert.
-        dew_point_c = _compute_dew_point(air_temp_c, humidity_pct)
+        dew_point_c = _compute_dew_point(
+            air_temp_c,
+            humidity_pct,
+            self.data_quality_thresholds.min_plausible_dew_point_c,
+        )
 
         # Validierte Werte in das DTB-12 Reading-Schema ueberfuehren.
         return Reading(
@@ -213,12 +210,14 @@ class Poller:
         )
 
 
-def _compute_dew_point(air_temp_c: float, humidity_pct: float) -> float | None:
+def _compute_dew_point(
+    air_temp_c: float, humidity_pct: float, min_plausible_dew_point_c: float
+) -> float | None:
     """Berechnet den Taupunkt (Magnus, DTB-32) fail-safe als float oder None.
 
     None statt eines Ersatzwertes, wenn der Taupunkt nicht bestimmbar ist
     (RH=0 -> calculate_dew_point wirft ValueError) oder das Ergebnis unplausibel
-    ist (< MIN_PLAUSIBLE_DEW_POINT_C, z. B. bei RH knapp ueber 0). None bedeutet
+    ist (< min_plausible_dew_point_c, z. B. bei RH knapp ueber 0). None bedeutet
     downstream "unbestimmbar": die Bewertung (DTB-38) stuft konservativ ein und
     gibt nie still GRUEN aus (NF-01).
 
@@ -233,11 +232,11 @@ def _compute_dew_point(air_temp_c: float, humidity_pct: float) -> float | None:
         logger.warning("Taupunkt nicht berechenbar (dew_point_c=None): %s", exc)
         return None
 
-    if dew_point_c < MIN_PLAUSIBLE_DEW_POINT_C:
+    if dew_point_c < min_plausible_dew_point_c:
         logger.warning(
             "Taupunkt unplausibel (%s < %s), dew_point_c=None",
             dew_point_c,
-            MIN_PLAUSIBLE_DEW_POINT_C,
+            min_plausible_dew_point_c,
         )
         return None
 

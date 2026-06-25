@@ -13,6 +13,9 @@ from src.config.loader import DatenqualitaetSchwellen
 from src.model.enums import RiskLevel
 from src.model.schemas import Assessment, Reading
 
+# Maximale Laenge von Reason-Strings fuer Audit/Log-Ausgaben (NF-09).
+MAX_REASON_LENGTH = 256
+
 
 def is_stale(reading: Reading | None, now: datetime, timeout_s: float) -> bool:
     """Prueft, ob ein Reading als veraltet gilt.
@@ -102,10 +105,14 @@ def _sanitize_reason(reason: str) -> str:
     """Bereinigt einen Reason-String fuer Audit/Log-Ausgaben.
 
     Verhindert, dass lange oder mehrzeilige Strings die Explanation
-    aufblasen oder Formatierungsprobleme verursachen.
+    aufblasen oder Formatierungsprobleme verursachen. Entfernt
+    Zeilenumbrueche, Tabs und andere ASCII-Steuerzeichen.
     """
-    cleaned = reason.replace("\n", " ").replace("\r", " ").strip()
-    max_len = 256
-    if len(cleaned) > max_len:
-        cleaned = cleaned[: max_len - 3] + "..."
+    # Zeilenumbrueche und Tabs durch Leerzeichen ersetzen; restliche
+    # ASCII-Steuerzeichen (0x00-0x1f) und DEL (0x7f) entfernen.
+    cleaned = reason.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    cleaned = cleaned.translate(str.maketrans(dict.fromkeys(range(0x20))))
+    cleaned = cleaned.replace("\x7f", "").strip()
+    if len(cleaned) > MAX_REASON_LENGTH:
+        cleaned = cleaned[: MAX_REASON_LENGTH - 3] + "..."
     return cleaned

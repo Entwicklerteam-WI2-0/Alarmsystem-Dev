@@ -30,6 +30,7 @@ def test_default_config_laedt_kaskaden_schwellen_aus_schwellenwerte_md():
     assert thresholds.datenqualitaet.flatline_timeout_min == 15.0
     assert thresholds.datenqualitaet.flatline_epsilon_c == 0.01
     assert thresholds.datenqualitaet.max_clock_skew_s == 5.0
+    assert thresholds.datenqualitaet.min_plausible_dew_point_c == -50.0
 
 
 def test_eigener_pfad_ist_parametrierbar(tmp_path):
@@ -135,13 +136,20 @@ def test_boolescher_schwellwert_scheitert_laut(tmp_path):
     [
         ("stale_timeout_s", 0),
         ("stale_timeout_s", -1),
+        ("stale_timeout_s", 86_401),
         ("max_temp_jump_c_per_min", 0),
         ("max_temp_jump_c_per_min", -1),
+        ("max_temp_jump_c_per_min", 100.1),
         ("flatline_timeout_min", 0),
         ("flatline_timeout_min", -1),
+        ("flatline_timeout_min", 1_441),
         ("flatline_epsilon_c", -0.01),
+        ("flatline_epsilon_c", 10.1),
         ("max_clock_skew_s", 0),
         ("max_clock_skew_s", -1),
+        ("max_clock_skew_s", 3_601),
+        ("min_plausible_dew_point_c", -100.1),
+        ("min_plausible_dew_point_c", 50.1),
     ],
 )
 def test_datenqualitaet_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str, wert: float):
@@ -171,5 +179,6 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "flatline_timeout_min": 15.0,
             "flatline_epsilon_c": 0.01,
             "max_clock_skew_s": 5.0,
+            "min_plausible_dew_point_c": -50.0,
         },
     }

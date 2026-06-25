@@ -40,6 +40,7 @@ class DatenqualitaetSchwellen:
     flatline_timeout_min: float
     flatline_epsilon_c: float
     max_clock_skew_s: float
+    min_plausible_dew_point_c: float
 
 
 @dataclass(frozen=True)
@@ -115,14 +116,44 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
 
 
 def _validate_datenqualitaet(schwellen: DatenqualitaetSchwellen) -> None:
-    """Prueft, dass Datenqualitaet-Schwellen keine ungueltigen Grenzwerte enthalten."""
-    if schwellen.stale_timeout_s <= 0:
-        raise ConfigError("datenqualitaet.stale_timeout_s muss groesser als 0 sein")
-    if schwellen.max_temp_jump_c_per_min <= 0:
-        raise ConfigError("datenqualitaet.max_temp_jump_c_per_min muss groesser als 0 sein")
-    if schwellen.flatline_timeout_min <= 0:
-        raise ConfigError("datenqualitaet.flatline_timeout_min muss groesser als 0 sein")
-    if schwellen.flatline_epsilon_c < 0:
-        raise ConfigError("datenqualitaet.flatline_epsilon_c darf nicht negativ sein")
-    if schwellen.max_clock_skew_s <= 0:
-        raise ConfigError("datenqualitaet.max_clock_skew_s muss groesser als 0 sein")
+    """Prueft, dass Datenqualitaet-Schwellen keine ungueltigen Grenzwerte enthalten.
+
+    Die Obergrenzen sind bewusst grosszuegig gewaehlt (NF-05: finale Werte kommen
+    von G1), verhindern aber offensichtliche Fehlkonfigurationen, die Stale-
+    oder Sprung-Erkennung praktisch abschalten wuerden (NF-01).
+    """
+    _require_positive(
+        schwellen.stale_timeout_s, "datenqualitaet.stale_timeout_s", upper=86_400
+    )
+    _require_positive(
+        schwellen.max_temp_jump_c_per_min,
+        "datenqualitaet.max_temp_jump_c_per_min",
+        upper=100.0,
+    )
+    _require_positive(
+        schwellen.flatline_timeout_min, "datenqualitaet.flatline_timeout_min", upper=1_440
+    )
+    _require_non_negative(
+        schwellen.flatline_epsilon_c, "datenqualitaet.flatline_epsilon_c", upper=10.0
+    )
+    _require_positive(
+        schwellen.max_clock_skew_s, "datenqualitaet.max_clock_skew_s", upper=3_600
+    )
+    if not -100.0 <= schwellen.min_plausible_dew_point_c <= 50.0:
+        raise ConfigError(
+            "datenqualitaet.min_plausible_dew_point_c muss zwischen -100.0 und 50.0 liegen"
+        )
+
+
+def _require_positive(value: float, name: str, upper: float) -> None:
+    if value <= 0:
+        raise ConfigError(f"{name} muss groesser als 0 sein")
+    if value > upper:
+        raise ConfigError(f"{name} darf nicht groesser als {upper} sein")
+
+
+def _require_non_negative(value: float, name: str, upper: float) -> None:
+    if value < 0:
+        raise ConfigError(f"{name} darf nicht negativ sein")
+    if value > upper:
+        raise ConfigError(f"{name} darf nicht groesser als {upper} sein")

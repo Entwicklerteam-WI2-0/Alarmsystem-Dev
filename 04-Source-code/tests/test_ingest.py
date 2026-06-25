@@ -15,7 +15,7 @@ import httpx
 import pytest
 
 from src.config.loader import DatenqualitaetSchwellen
-from src.ingest.poller import MIN_PLAUSIBLE_DEW_POINT_C, Poller
+from src.ingest.poller import Poller
 from src.model.enums import SensorStatus
 from src.model.schemas import Reading
 from src.storage.repository import Repository, RepositoryError
@@ -53,6 +53,7 @@ def quality_thresholds() -> DatenqualitaetSchwellen:
         flatline_timeout_min=15.0,
         flatline_epsilon_c=0.01,
         max_clock_skew_s=5.0,
+        min_plausible_dew_point_c=-50.0,
     )
 
 
@@ -731,18 +732,22 @@ def test_poll_dew_point_none_when_humidity_near_zero(
 
 
 def test_poll_keeps_dew_point_at_plausibility_floor(
-    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+    poller: Poller,
+    fake_repo: FakeRepository,
+    valid_snapshot: dict,
+    quality_thresholds: DatenqualitaetSchwellen,
 ) -> None:
-    # Grenzfall (strict <): ein Taupunkt GENAU auf MIN_PLAUSIBLE_DEW_POINT_C ist noch
+    # Grenzfall (strict <): ein Taupunkt GENAU auf der konfigurierten Untergrenze ist noch
     # plausibel und wird behalten (nur Werte echt darunter -> None, s. near_zero-Test).
-    with patch("src.ingest.poller.calculate_dew_point", return_value=MIN_PLAUSIBLE_DEW_POINT_C):
+    floor = quality_thresholds.min_plausible_dew_point_c
+    with patch("src.ingest.poller.calculate_dew_point", return_value=floor):
         with patch("src.ingest.poller.httpx.get") as mock_get:
             mock_get.return_value = _ok_response(valid_snapshot)
             reading = poller.poll()
 
     assert reading is not None
-    assert reading.dew_point_c == MIN_PLAUSIBLE_DEW_POINT_C
-    assert fake_repo.readings[0].dew_point_c == MIN_PLAUSIBLE_DEW_POINT_C
+    assert reading.dew_point_c == floor
+    assert fake_repo.readings[0].dew_point_c == floor
 
 
 # -----------------------------------------------------------------------------
