@@ -120,9 +120,7 @@ class ReadingRepository(Repository):
             with get_connection() as conn:
                 return self._insert(conn, params)
         except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
-            raise RepositoryError(
-                f"Reading konnte nicht gespeichert werden: {exc}"
-            ) from exc
+            raise RepositoryError(f"Reading konnte nicht gespeichert werden: {exc}") from exc
 
     def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
         """Liefert die neuesten Readings eines Sensors, absteigend nach measured_at.
@@ -148,9 +146,7 @@ class ReadingRepository(Repository):
             with get_connection() as conn:
                 return self._fetch(conn, sql, params)
         except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
-            raise RepositoryError(
-                f"Reading konnte nicht gelesen werden: {exc}"
-            ) from exc
+            raise RepositoryError(f"Reading konnte nicht gelesen werden: {exc}") from exc
 
     @staticmethod
     def _insert(conn: pymysql.Connection, params: tuple) -> int:

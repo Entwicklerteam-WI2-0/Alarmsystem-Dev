@@ -217,7 +217,6 @@
   (PR/Merge = Lucas-Freigabe). (2) **DTB-38 (#68)** muss `dew_point_c=None` als „Feuchte vorhanden=wahr"
   behandeln (nie GRUEN) — Folge-Abhaengigkeit (heute neue Commits auf #68). (3) Layering ingest→assessment
   (M2, offen, Architekten-Call).
-
 ## Update [25.06., ~12:34] — DTB-28 fertig + PR #70 lokal konfliktfrei (architekt)
 - **Backlog-Review** gegen Anfrage-G1.md/G3.md + Team-Sync: CRITICAL-Fix — DTB-58 Stale-Timeout
   war 180 s statt Contract-Wert **120 s** gefixt. **DTB-61** (SSE `GET /v1/alarms/stream`, Petzold) +
@@ -231,3 +230,30 @@
   1. Push `fix/pr70-conflicts` → `origin/docs/session-2026-06-25-backend-dev` (PR #70 GitHub-Konflikte).
   2. Push `feat/dtb-28-persistenz` + PR oeffnen.
   3. DTB-28 Jira auf „In Review"; DTB-43 (`GET /v1/assessment/current`) unassigned.
+
+## Update [25.06., ~13:52] — PR #74 Konflikte gelöst + CI grün + Skill-Update (tester)
+- **PR #74 (fix/drift-sync-restliste):** Merge-Konflikte mit `origin/main` in 9 Doku-Dateien gelöst
+  (`git checkout --theirs` + Merge-Commit `817484e`). Drift-Sync-Inhalte waren größtenteils bereits in
+  `main` eingeflossen; einziger echter Beitrag = Lint-Fix (`noqa` → `F841`).
+- **CI/Tests:** GitHub-Checks `test (3.12)` ✅, `test (3.14)` ✅, `claude-review` ✅. Lokal: `ruff` sauber,
+  `pytest` 129 passed / 9 skipped / 93,81 % Coverage.
+- **Team-OS:** `architektur-tiefenaudit` aus `devteam-vibecodes` via `setup-kimi.ps1` installiert.
+  Im Repo wurde nur dieser eine neue Architekten-Skill gefunden.
+- **Nächster Schritt:** PR #74 Review/Merge durch Lucas; ggf. zweiten neuen Architekten-Skill klären,
+  falls ein weiterer gemeint war.
+
+## Update [25.06., ~22:44] — DTB-32 gemergt + Fehlmerge #89 revertet + DTB-29 sauber als #94 (architekt)
+- **DTB-32 (#79) reviewt + gemergt:** Below-Pole-Fail-safe-Luecke gehaertet (`air_temp_c <= -MAGNUS_B` → `ValueError` statt stilles Ergebnis); Regressionstests, `utils.py` 100 %. Ueberholt damit den DTB-32-Anteil von #66.
+- **⚠️ Fehlmerge #89 (DTB-29 Audit-Log) → revertet:** #89 wurde ohne Einzelfreigabe nach `main` gemergt trotz offener MEDIUM-Luecke (NF-01: `pymysql.Error`/`DatabaseConfigError` nicht gefangen). **Per Revert-PR #92 (von Lucas gemergt) wieder aus `main` entfernt.**
+- **DTB-29 sauber neu = PR #94:** MEDIUM + 2 LOW gefixt (`except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error)`, `lastrowid`-None-Guard, +Tests, audit_repository.py 100 % Cov), Same-Repo-Branch gepusht (**kein Merge**). Fork-Dublette **#83 geschlossen** (zeigte auf User2882-Fork ohne Fix).
+- **#93 (DTB-58/60)** als Ersatz fuer das ueberholte #66 angelegt — **Achtung:** Branch vermischt DTB-13/#84-Commits; **DTB-58 (Poller-Stale) vs DTB-13 (assessment/failsafe) = offene Architekturentscheidung** (Stale-Ebene).
+- **Governance verschaerft:** kein `main`-Merge ohne ausdrueckliche Architekten-Einzelfreigabe; Agenten pushen nur auf PR-Branches (siehe Lucas-Entscheidungslog 2026-06-25).
+- **Neu offen:** (1) **#94 (DTB-29) + #93 (DTB-58/60) von Lucas mergen.** (2) DTB-58 vs DTB-13 Stale-Ebene klaeren. (3) Jira DTB-32/DTB-29 → Done nachtragen. (4) Parallele zweite Instanz erzeugte Doppel-Branches (Doppel-Revert geloescht, Rest belassen). (5) Branch `docs/entscheidungslog-session-2026-06-25` noch zu pushen.
+
+## Update [25.06., ~23:15] — DTB-22 Guard abgeschlossen (#91) + Entscheidungslog (Petzold)
+- **DTB-22 Guard fertig & auf `main`** (AST, Scan assessment+forecast, fail-closed, noqa, PR-Template/pre-commit; #73).
+  **Folge-PR #91 gemergt:** Lucas' `RecursionError`-Härtung verifiziert → `MemoryError` + `ValueError`/Surrogate
+  gefunden & fail-closed geschlossen. 199 Tests grün.
+- **Entscheidungslog:** 11 DTB-22-Einträge + Save-Session auf `docs/dtb-22-entscheidungslog` **gepusht**.
+- **Team-OS:** `/update` gelaufen (`claude-sync.md` +89 Z., 53 uni-Skills, v1.6.0).
+- **Status: ✅ DTB-22 vollständig abgeschlossen** (Code auf `main`, Doku gepusht).
