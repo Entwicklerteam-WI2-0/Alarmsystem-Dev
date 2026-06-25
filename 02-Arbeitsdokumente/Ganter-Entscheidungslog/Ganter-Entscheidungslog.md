@@ -122,3 +122,71 @@
   gepusht; PR/Merge offen (Lucas-Freigabe, nach DTB-32). **Offene Folge-Auflage (an DTB-38/DTB-12):** Die
   Bewertung muss `dew_point_c=None` explizit als „Feuchte vorhanden = wahr" behandeln (`Schwellenwerte.md`
   §2 → nie GRÜN); als eigenes Ticket zu verlinken.
+
+## 2026-06-25 — Stale-Erkennung im Poller: verwerfen + testbare Uhr + Clock-Skew-Guard (DTB-58)
+- **Kontext/Task:** DTB-58 (Stale-Erkennung G1-Snapshots) · FA-04 (veraltete Daten nicht als aktuell zeigen) ·
+  NF-01 (Fail-safe: Stale/Ausfall nie GRÜN) · `Schwellenwerte.md §3` (Stale-Timeout 120 s, parametrierbar).
+  Aufgabe: Der Poller erkennt Snapshots, deren `measured_at` älter als 120 s ist. Ein `santa-loop`-Review
+  (zwei adversariale Prüfer) deckte danach zwei zusätzliche Punkte auf.
+- **Entscheidung:** (1) Stale Snapshots (Alter > 120 s) werden **fail-safe verworfen** (geloggt, `None`) —
+  **nicht** als „stale" markiert und gespeichert. (2) Die aktuelle Zeit kapsele ich in einen Helper `_now()`,
+  damit Tests die Uhr deterministisch einfrieren können. (3) Ein **Clock-Skew-/Zukunfts-Guard** ergänzt die
+  einseitige Altersprüfung: liegt `measured_at` mehr als `MAX_CLOCK_SKEW_S` (5 s) in der Zukunft, wird der
+  Snapshot ebenfalls verworfen. (4) Die Schwelle bleibt benannte Konstante `STALE_MAX_AGE_S`; die
+  Config-Anbindung (NF-05) verschiebe ich bewusst auf DTB-43.
+- **Begründung:**
+  - *Verwerfen statt markieren:* Die Prüfer forderten, das Reading als „unknown" zu markieren statt zu verwerfen.
+    Ich habe geprüft, was das real bedeutet: `Reading` (DTB-12) hat **kein** `is_stale`-Feld (`extra="forbid"`),
+    `SensorStatus` kennt kein `STALE`, und `assess_ice_risk` (DTB-38) kennt keine Staleness. Echtes Markieren
+    würde also das **eingefrorene Datenmodell (DTB-12, Architekten-Naht)** und den **fremden kritischen Pfad
+    (DTB-38)** ändern — weit über DTB-58 hinaus. Das ist eine Naht-Entscheidung des Architekten, die ich nicht
+    eigenmächtig treffe. Zugleich steckt die Staleness ohnehin schon in `measured_at`, und **DTB-43 ist genau
+    dafür speziert** (Alter an der Lese-Grenze → `risk_level=unknown`) — die Fail-safe-Kette schließt dort,
+    egal ob ich verwerfe oder markiere. Also: ticket-konform verwerfen (sicher, in-scope) und die Frage
+    sichtbar für den Architekten markieren (im Code an der Discard-Stelle + im PR).
+  - *`_now()`-Seam:* Die bestehende Test-Fixture nutzt einen festen `measured_at` (2026-06-23). Gegen die echte
+    Uhr wäre dieser Wert dauerhaft „stale" → alle bestehenden Tests bräche. Eine dynamische Fixture würde die
+    Exakt-Wert-Asserts (`measured_at == datetime(2026,6,23,…)`) brechen. Der `_now()`-Seam erlaubt eine
+    autouse-Fixture, die die Uhr nahe dem Fixture-Zeitstempel **einfriert** → bestehende Asserts bleiben gültig
+    **und** die Zeit ist deterministisch.
+  - *Clock-Skew-Guard:* Die naive Prüfung `age > 120` ist einseitig — ein `measured_at` in der Zukunft (defekte/
+    vorlaufende G1-Uhr) ergibt **negatives** age → nie stale → würde als „frisch" gespeichert (ein Fail-safe-Loch,
+    NF-01). Darum lehne ich weit voraus liegende Zeiten ab. Eine **kleine** Toleranz (`MAX_CLOCK_SKEW_S`) bleibt,
+    weil ein Sub-Sekunden-Vorlauf (NTP-Drift) normal ist und ein Komplett-Ablehnen sonst zum Dauer-`unknown`
+    (faktisch DoS) führte. Der 5-s-Wert ist ein **KI-Vorschlag** und gegen den Realbetrieb zu plausibilisieren.
+- **Alternativen:**
+  - **Stale als `unknown` markieren (is_stale-Feld + DTB-38):** verworfen für diesen PR — Änderung an der
+    eingefrorenen Naht (DTB-12) + fremdem kritischen Pfad (DTB-38); gehört dem Architekten; DTB-43 schließt die
+    Kette ohnehin. Als offene Frage weitergegeben statt eigenmächtig entschieden.
+  - **Dynamische frische Fixture (`measured_at = now`):** verworfen — bricht die Exakt-Wert-Asserts; der
+    `_now()`-Seam ist sauberer und sichert den tz-Vertrag separat ab (`test_now_is_timezone_aware`).
+  - **Zukunfts-Timestamps ganz ohne Toleranz ablehnen:** verworfen — bei vorlaufender G1-Uhr würde gar nichts
+    mehr gespeichert (Dauer-`unknown`/DoS).
+  - **Schwelle hartcodieren ohne Flag:** verworfen — verfehlte stillschweigend die NF-05-Parametrierbarkeit
+    (DTB-43); benannte Konstante + ausdrücklicher Verweis ist ehrlicher.
+- **Ergebnis/Status:** umgesetzt + per `santa-loop`, `code-/python-/security-review`, `verification-loop`
+  geprüft; gefundenes Clock-Skew-CRITICAL gefixt. 160 passed / 9 skipped, `poller.py` Coverage **100 %**, ruff
+  sauber. Commits `802b8b0`/`97c26e5`/`24f89bc` in **PR #66** (mit DTB-60 gebündelt, Lucas-Freigabe offen).
+  **Offen:** Naht-Entscheidung (verwerfen vs. markieren) für Architekt; Config-Anbindung der Schwellen via DTB-43.
+
+## 2026-06-25 — Magnus-Pol-Guard: Toleranzvergleich statt Float-Gleichheit (DTB-32)
+- **Kontext/Task:** Review-Befund zu `calculate_dew_point` (DTB-32). Der Pol-Guard `if MAGNUS_B + air_temp_c == 0`
+  fängt nur den **Exaktwert** −243,12; durch Einlesen/Umrechnung/Rundung entstandene Nachbarwerte
+  (z. B. −243,120000000001) rutschen still durch und teilen durch nahezu null → physikalisch unsinniges
+  Riesen-Ergebnis statt eines fangbaren Fehlers.
+- **Entscheidung:** Den Guard auf einen **Toleranzvergleich** umstellen:
+  `abs(MAGNUS_B + air_temp_c) < POLE_TOLERANCE_C` mit benannter Konstante `POLE_TOLERANCE_C = 1e-9`.
+- **Begründung:** Float-Gleichheit auf 0 ist ein bekanntes Antipattern; eine **absolute** Toleranz fängt auch die
+  gerundeten Pol-Nachbarwerte ab und macht den Guard fail-safe (NF-01: lieber ein fangbarer `ValueError` als ein
+  scheinbar gültiges, falsches Ergebnis). **Absolute** Toleranz (statt relativer via `math.isclose`), weil der Pol
+  ein fester, bekannter Wert (−b) ist und der relevante Abstand in denselben Einheiten (°C) gemessen wird — ein
+  relativer Bezugswert wäre hier unklar/überdimensioniert. `1e-9` ist klein genug, dass nur praktisch-am-Pol-Werte
+  getroffen werden, und ein **KI-Vorschlag**, der gegen die Quelle plausibel zu halten ist.
+- **Alternativen:**
+  - **`math.isclose(..., abs_tol=…)`:** verworfen — gleicher Effekt, aber mehr Mechanik und eine unnötige
+    Bezugswert-/`rel_tol`-Frage.
+  - **`== 0` belassen:** verworfen — genau der Bug (greift nur am Exaktwert).
+- **Ergebnis/Status:** umgesetzt per TDD (parametrisierter Nahe-Pol-Test RED→GREEN); 22 Assessment-Tests grün,
+  Coverage `assessment` 100 %, ruff sauber. **Direkt auf PR #79** (`feat/dtb-32-taupunkt-magnus`, `96bfb26`)
+  ergänzt, nachdem die ältere Dublette #75 (geschlossen) den Fix nicht trug — #79 ist damit die vollständige,
+  aktuelle DTB-32-Version.
