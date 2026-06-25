@@ -161,9 +161,7 @@ class Poller:
         received_at = _now()
         age_s = (received_at - measured_at).total_seconds()
         if age_s < -MAX_CLOCK_SKEW_S:
-            logger.error(
-                "G1-Snapshot-Zeit liegt in der Zukunft (age=%.0f s) - verworfen", age_s
-            )
+            logger.error("G1-Snapshot-Zeit liegt in der Zukunft (age=%.0f s) - verworfen", age_s)
             return None
         if age_s > STALE_MAX_AGE_S:
             logger.error(

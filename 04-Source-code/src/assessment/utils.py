@@ -51,7 +51,7 @@ def calculate_dew_point(air_temp_c: float, humidity_pct: float) -> float:
     if not math.isfinite(air_temp_c):
         raise ValueError(f"air_temp_c muss endlich sein, erhalten: {air_temp_c}")
 
-    if MAGNUS_B + air_temp_c == 0:
+    if math.isclose(MAGNUS_B + air_temp_c, 0.0, abs_tol=1e-9):
         raise ValueError(f"air_temp_c liegt am Magnus-Pol (-{MAGNUS_B} °C): {air_temp_c}")
 
     gamma = math.log(humidity_pct / PERCENT_DIVISOR) + (MAGNUS_A * air_temp_c) / (
