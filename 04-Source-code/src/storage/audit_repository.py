@@ -68,7 +68,12 @@ class InMemoryAuditRepository(AuditRepository):
         return new_id
 
     def all(self) -> list[AuditLogEntry]:
-        """Liest alle Eintraege in Einfuege-Reihenfolge (nur lesen)."""
+        """Liest alle Eintraege in Einfuege-Reihenfolge (nur lesen).
+
+        Bewusst NUR auf dem In-Memory-Double (Test-/Lokal-Komfort), nicht im
+        append-only-Interface AuditRepository: Lesepfade kommen erst mit einem
+        echten Read-Use-Case (YAGNI), kein Teil des Append-only-Vertrags.
+        """
         return list(self._entries)
 
 

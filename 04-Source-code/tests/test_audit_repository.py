@@ -19,7 +19,7 @@ from src.storage.audit_repository import (
     InMemoryAuditRepository,
     MySqlAuditRepository,
 )
-from src.storage.database import DatabaseConnectionError
+from src.storage.database import DatabaseConfigError, DatabaseConnectionError
 from src.storage.repository import RepositoryError
 
 UTC_NOW = datetime(2026, 6, 25, 10, 0, 0, tzinfo=UTC)
@@ -106,20 +106,24 @@ def test_mysql_append_serializes_detail_as_json():
     tx, cursor = _mock_transaction()
     with patch("src.storage.audit_repository.transaction", return_value=tx):
         # Act
-        MySqlAuditRepository().append(_entry(detail={"risk": "orange"}))
+        new_id = MySqlAuditRepository().append(_entry(detail={"risk": "orange"}))
+    # Assert: Rueckgabewert kommt aus der DB (lastrowid=1 im Mock-Default).
+    assert new_id == 1
     # Assert: das JSON-Feld wird als JSON-String uebergeben.
     _, params = cursor.execute.call_args[0]
     assert json.dumps({"risk": "orange"}) in params
 
 
-def test_mysql_append_wraps_db_error_failsafe():
-    # Arrange: die Transaktion schlaegt fehl (DB nicht erreichbar).
+@pytest.mark.parametrize("startup_error", [DatabaseConnectionError, DatabaseConfigError])
+def test_mysql_append_wraps_startup_error_failsafe(startup_error):
+    # Arrange: transaction() schlaegt schon beim Aufbau fehl -- entweder Verbindung
+    # (DatabaseConnectionError) ODER Konfiguration (DatabaseConfigError).
     with patch(
         "src.storage.audit_repository.transaction",
-        side_effect=DatabaseConnectionError("DB weg"),
+        side_effect=startup_error("Startup-Fehler"),
     ):
-        # Assert: DB-Fehler wird als RepositoryError nach oben gereicht
-        # (Aufrufer kann fail-safe reagieren), nicht als roher Treiberfehler.
+        # Assert: beide werden als RepositoryError nach oben gereicht
+        # (Aufrufer kann fail-safe reagieren), nicht als roher Fehler.
         with pytest.raises(RepositoryError):
             MySqlAuditRepository().append(_entry())
 
