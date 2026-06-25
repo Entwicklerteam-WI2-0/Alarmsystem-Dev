@@ -55,8 +55,8 @@ Einspielen **als `root`**, Reihenfolge `schema.sql` → `grants.sql` (cwd = `04-
     mysql -u root -p -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='alarmsystem';" 
     # erwartet: 6  (reading, assessment, alarm, acknowledgement, threshold_set, audit_log)
 
-    # 2) Typen/Charset/Indizes stichprobenhaft:
-    mysql -u root -p alarmsystem -e "SHOW CREATE TABLE reading\G"
+    # 2) Typen/Charset/Indizes stichprobenhaft (-E = vertikale Ausgabe; \G wirkt bei -e NICHT):
+    mysql -u root -p alarmsystem -E -e "SHOW CREATE TABLE reading;"
     mysql -u root -p alarmsystem -e "SHOW INDEX FROM reading;"
 
     # 3) Idempotenz: schema.sql ein zweites Mal einspielen -> muss fehlerfrei durchlaufen.
@@ -64,7 +64,15 @@ Einspielen **als `root`**, Reihenfolge `schema.sql` → `grants.sql` (cwd = `04-
     # 4) append-only (NF-09) erzwungen? Rechte des App-Users prüfen + Negativ-Test:
     mysql -u root  -p -e "SHOW GRANTS FOR 'alarm'@'localhost';"
     mysql -u alarm -p alarmsystem -e "UPDATE audit_log SET actor='x' WHERE id=1;"
-    # erwartet: ERROR 1142 (UPDATE denied) — der Audit-Trail ist unveränderbar.
+    mysql -u alarm -p alarmsystem -e "UPDATE reading SET air_temp_c=0 WHERE id=1;"
+    # erwartet je: ERROR 1142 (UPDATE denied) — audit_log/acknowledgement UND
+    # reading/assessment sind unveränderbar.
+
+> **DTB-54 DoD — noch offen (vor dem Merge bei Pi-MariaDB-Init nachzuholen):**
+> - [ ] (1) alle 6 Tabellen vorhanden (`COUNT(*) = 6`)
+> - [ ] (2) Typen/Charset/Indizes stichprobenhaft geprüft
+> - [ ] (3) Idempotenz: `schema.sql` 2× fehlerfrei eingespielt
+> - [ ] (4) append-only erzwungen (Negativ-Test `ERROR 1142` für audit_log **und** reading)
 
 ## Tests
     pytest                 # alle Tests
