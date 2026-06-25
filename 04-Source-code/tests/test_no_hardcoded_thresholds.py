@@ -263,6 +263,30 @@ def test_recursion_error_beim_parsen_ist_fail_closed(monkeypatch):
     assert "RecursionError" in verstoesse[0].grund
 
 
+def test_memory_error_beim_parsen_ist_fail_closed(monkeypatch):
+    # Geschwister-Fall zu RecursionError: eine tiefe UnaryOp-Kette lässt ast.parse mit
+    # MemoryError ("Parser stack overflowed") abbrechen. Auch das muss fail-closed gefangen
+    # werden, nicht den Guard mit Traceback crashen lassen (gleiche Invariante).
+    def _crash(_quelltext):
+        raise MemoryError("Parser stack overflowed - Python source too complex to parse")
+
+    monkeypatch.setattr("tools.check_hardcoded_thresholds.ast.parse", _crash)
+    verstoesse = finde_verstoesse("x = 1\n", "x.py")
+    assert len(verstoesse) == 1
+    assert verstoesse[0].fail_closed is True
+    assert "parsebar" in verstoesse[0].grund
+    assert "MemoryError" in verstoesse[0].grund
+
+
+def test_tiefe_unaryop_kette_crasht_guard_nicht():
+    # End-to-End ohne monkeypatch: eine real tief verschachtelte UnaryOp-Kette (die ast.parse
+    # mit MemoryError überlastet) darf NICHT als Traceback durchschlagen -> fail-closed.
+    quelltext = "x = " + "-" * 60000 + "1.0\n"
+    verstoesse = finde_verstoesse(quelltext, "deep.py")
+    assert len(verstoesse) == 1
+    assert verstoesse[0].fail_closed is True
+
+
 def test_fail_closed_feld_unterscheidet_fundart():
     # Der Behebungs-Hinweis hängt am expliziten Feld, NICHT am Grund-Text — sonst bräche
     # die Zweig-Auswahl bei einer Umformulierung des Grund-Textes lautlos.
