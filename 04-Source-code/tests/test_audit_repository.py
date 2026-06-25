@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pymysql
 import pytest
+from pydantic import ValidationError
 
 from src.model.enums import AuditEventType
 from src.model.schemas import AuditLogEntry
@@ -160,3 +161,29 @@ def test_mysql_append_with_none_detail_passes_none():
     # Assert: das letzte Param (detail) ist None.
     _, params = cursor.execute.call_args[0]
     assert params[-1] is None
+
+
+# --- Pydantic-Validierung (DB-Schema-Grenzen) ---
+
+
+def test_entity_type_max_length_is_enforced():
+    # entity_type ist in der DB VARCHAR(32); Pydantic muss laengere Werte ablehnen,
+    # bevor sie beim INSERT als pymysql.Error landen.
+    with pytest.raises(ValidationError):
+        _entry(entity_type="x" * 33)
+
+
+def test_actor_max_length_is_enforced():
+    # actor ist in der DB VARCHAR(128); Pydantic muss laengere Werte ablehnen.
+    with pytest.raises(ValidationError):
+        _entry(actor="x" * 129)
+
+
+@pytest.mark.parametrize("length", [1, 32])
+def test_entity_type_at_max_length_is_valid(length: int):
+    assert _entry(entity_type="x" * length).entity_type == "x" * length
+
+
+@pytest.mark.parametrize("length", [1, 128])
+def test_actor_at_max_length_is_valid(length: int):
+    assert _entry(actor="x" * length).actor == "x" * length

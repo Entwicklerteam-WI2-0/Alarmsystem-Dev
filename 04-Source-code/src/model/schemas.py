@@ -10,7 +10,7 @@ normalisiert (MySQL DATETIME ist zeitzonenlos -> es wird ausschliesslich UTC ges
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .enums import (
     AlarmSeverity,
@@ -110,7 +110,7 @@ class AuditLogEntry(_Base):
     id: int | None = None
     ts: datetime
     event_type: AuditEventType
-    entity_type: str
+    entity_type: str = Field(max_length=32)
     entity_id: int | None = None
-    actor: str = "system"
+    actor: str = Field(default="system", max_length=128)
     detail: dict[str, Any] | None = None
