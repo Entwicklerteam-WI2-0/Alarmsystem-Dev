@@ -1,5 +1,5 @@
 # Persönliches Entscheidungslog — Leon Hartling (G2, Database-Engineer)
-> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-23
+> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-25
 > **Autor:** Leon Hartling · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
@@ -53,3 +53,27 @@
 - **Ergebnis/Status:** umgesetzt — `04-Source-code/migrations/schema.sql` liegt vor (threshold_set, reading,
   assessment u. a.), idempotent und gegen MariaDB einspielbar. Datenmodell bleibt bis zur Schwellenwert-/
   G1-Daten-Klärung **offen für Anpassung**.
+
+## 2026-06-25 — MySQL-Treiber: PyMySQL (synchron, direkt) statt async-Treiber oder ORM-Connection-String
+- **Kontext/Task:** DTB-53 (MySQL-Treiber festlegen & verankern) · E-35 · `Backend-Konzept §6a(2)`.
+  FastAPI ist async-fähig; der Treiber sollte trotzdem festgezurrt werden. Im Log war bisher nur „kein
+  ORM/Alembic" begründet — offen war die explizite Abwägung **sync vs. async** (DTB-53-DoD nennt sie ausdrücklich).
+- **Entscheidung:** **PyMySQL** als Treiber — **synchron**, reines Python, **direkt** verwendet (nicht über
+  einen SQLAlchemy-Connection-String). DB-Calls laufen synchron im Repository-Pattern.
+- **Begründung:** FastAPI führt **synchrone** Pfad-Operationen (`def` statt `async def`) automatisch in einem
+  **Threadpool** aus — blockierende DB-Calls blockieren also **nicht** den Event-Loop. Die Last ist winzig:
+  **ein** Poller (Intervall ≤ 60 s) + geringe G3-Lesefrequenz. Ein async-Treiber brächte hier **keinen realen
+  Durchsatzvorteil**, aber zusätzliche Komplexität (Event-Loop-/Pool-Fallstricke, `async`-Durchstich durch
+  alle Schichten) und Lernkurve für ein ~2.-Semester-Team. PyMySQL hat zudem die **einfachste Installation**
+  (reines Python, keine C-Extension) und bleibt konsistent zur „kein ORM"-Linie (E-35).
+- **Alternativen:**
+  - **aiomysql / asyncmy (async-Treiber)** — verworfen: Nutzen erst bei hoher Nebenläufigkeit/Durchsatz, die
+    hier nicht existiert; erzwingt `async` durch alle Schichten + Event-Loop-Sorgfalt ohne Gegenwert. *(E-35)*
+  - **mysqlclient (C-Extension, synchron)** — verworfen: schneller, aber Build-/Installationshürde
+    (C-Compiler/Header) auf heterogenen Anfänger-Setups; Performance ist hier nicht der Engpass. *(E-35)*
+  - **PyMySQL über SQLAlchemy-Connection-String** — verworfen: zieht SQLAlchemy als Abhängigkeit zurück,
+    widerspricht „kein ORM/Core" (E-35); der direkte PyMySQL-Connect ist transparenter. *(E-35)*
+- **Ergebnis/Status:** umgesetzt & verankert — `pymysql>=1.1` in `requirements.txt` + `pyproject.toml`
+  (SQLAlchemy/Alembic repo-weit entfernt), Connection-Schema in `.env.example`
+  (Host/Port/DB/User + Timeout/Charset/Autocommit), Connection-Helper `src/storage/database.py`
+  (DTB-55, #63 gemerged). Damit ist die DTB-53-DoD inkl. sync-vs-async-Begründung vollständig.
