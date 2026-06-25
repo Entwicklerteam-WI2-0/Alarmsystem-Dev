@@ -7,6 +7,21 @@
 
 ---
 
+## 2026-06-25 — DTB-29: Audit-Log Repository append-only + Review-Findings PR #94
+- **Kontext/Task:** P2.2 · DTB-29 / NF-09 (Audit-Log append-only) · E-35 (rohes PyMySQL, kein ORM) · betrifft `src/storage/audit_repository.py`, `src/model/schemas.py`, `migrations/schema.sql`. Auslöser: PR-Review #94 ergab MEDIUM (nicht abgefangener `json.dumps`-TypeError) + LOW (leere Strings für `entity_type`/`actor` erlaubt) + fehlender Entscheidungslog-Eintrag.
+- **Entscheidung:**
+  1. Das Audit-Log-Repository bleibt **append-only** (nur `append`, kein `update`/`delete`) — sowohl im Python-Interface (`AuditRepository`) als auch auf DB-Ebene (später eingeschränkte Grants, DTB-54).
+  2. MySQL-Implementierung (`MySqlAuditRepository`) nutzt **rohes PyMySQL + parametrisierte Queries** (E-35), kein ORM; Verbindungs-/Konfigurations- und Query-Fehler werden fail-safe zu `RepositoryError` heruntergebrochen (NF-01).
+  3. `InMemoryAuditRepository` dient als Test-/Lokal-Double und spiegelt das append-only-Verhalten.
+  4. **JSON-Serialisierung `detail` abgesichert:** Nicht-serialisierbare Werte (z. B. `datetime`, `set`) werden in `json.dumps` abgefangen und als `RepositoryError` fail-safe behandelt, statt den Audit-Pfad zu crashen.
+  5. **Pydantic-Validierung verschärft:** `entity_type` und `actor` erhalten `min_length=1`, damit leere Strings fachlich abgelehnt werden (DB akzeptiert sie zwar technisch, sind aber kein sinnvoller Actor/Entity-Type).
+- **Begründung:** NF-09 verlangt ein unveränderliches Ereignis-Tagebuch; append-only per Design ist die kleinste, nachvollziehbarste Garantie. Parametrisierte Queries schließen SQL-Injection aus (NF-07). Der `json.dumps`-Schutz ist nötig, weil `detail` ein offenes `dict[str, Any]` ist — Aufrufer könnten versehentlich nicht-serialisierbare Objekte übergeben; ein Crash im Audit-Pfad würde NF-09 und NF-01 verletzen. `min_length=1` verhindert, dass leere Platzhalter in fachlich zentralen Feldern landen.
+- **Alternativen (erwogen/verworfen):**
+  - *Audit-Log als ORM-Modell mit SQLAlchemy:* verworfen — E-35 entschied rohes PyMySQL; für 6 Tabellen und ein einfaches INSERT ist ein ORM Overkill.
+  - *Update/Delete-Methoden im Interface anbieten (für „Korrektur"):* verworfen — würde das Append-only-Prinzip von NF-09 unterlaufen; Korrekturen gehören als neue Gegen-Einträge ins Audit-Log, nicht als Mutation alter Zeilen.
+  - *Nur DB-Seite absichern, JSON-Fehler nicht abfangen:* verworfen — der Review-Befund zeigt, dass ein unbehandelter `TypeError` den Aufrufer crashen lässt; NF-01 verlangt fail-safe Verhalten.
+- **Ergebnis/Status:** umgesetzt in `feat/dtb-29-audit-log` (PR #94); Review-Findings eingearbeitet: `json.dumps`-Absicherung, `min_length=1`, Grenzwert-Test `length=0`, Entscheidungslog-Eintrag. Tests grün, ruff sauber, Coverage 100 % für `audit_repository.py`. Querverweis zentrales Log: **E-39**.
+
 ## 2026-06-22 — G1-Datennaht auf Pull umgestellt (Snapshot-Abruf statt Push)
 - **Kontext/Task:** P1.3 Seam-Sync mit G1 · E-02/E-04/E-06 (API+Datenmodell = einzige Naht, G2-Verantwortung, contract-first) · FA Schnittstellen · NF-01 (Fail-safe). Zentrales Log: **E-31** (löst E-30 ab).
 - **Entscheidung:** Die Sensor→Backend-Naht läuft als **Pull**. G1 stellt `GET /current` bereit — alle aktuellen Messwerte als **einen** Snapshot mit **einem** gemeinsamen Mess-Zeitstempel (`measured_at`) — plus `GET /health`. G2 baut einen Poller/HTTP-Client, der in einem **selbst bestimmten** Intervall (≤ 60 s) abruft, validiert und persistiert. Kein von G2 gehosteter `POST /readings`-Endpoint mehr.

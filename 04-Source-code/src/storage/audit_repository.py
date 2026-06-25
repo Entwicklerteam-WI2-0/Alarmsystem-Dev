@@ -94,7 +94,15 @@ class MySqlAuditRepository(AuditRepository):
 
     def append(self, entry: AuditLogEntry) -> int:
         # JSON-Feld als String serialisieren (MySQL-Spalte detail ist JSON).
-        detail_json = json.dumps(entry.detail) if entry.detail is not None else None
+        # Nicht-serialisierbare Werte (z. B. datetime, set) werden abgefangen,
+        # damit der Audit-Pfad nicht crasht (NF-01 fail-safe).
+        if entry.detail is None:
+            detail_json = None
+        else:
+            try:
+                detail_json = json.dumps(entry.detail)
+            except TypeError as exc:
+                raise RepositoryError(f"Audit-Detail ist nicht JSON-serialisierbar: {exc}") from exc
         params = (
             entry.ts,
             entry.event_type.value,

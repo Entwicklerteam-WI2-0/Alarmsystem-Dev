@@ -115,6 +115,18 @@ def test_mysql_append_serializes_detail_as_json():
     assert json.dumps({"risk": "orange"}) in params
 
 
+def test_mysql_append_non_serializable_detail_failsafe():
+    # Arrange: detail enthaelt einen nicht JSON-serialisierbaren Wert (datetime).
+    tx, cursor = _mock_transaction()
+    with patch("src.storage.audit_repository.transaction", return_value=tx):
+        # Assert: statt eines unbehandelten TypeError wird ein RepositoryError
+        # geworfen (NF-01 fail-safe); der Audit-Pfad darf nicht crashen.
+        with pytest.raises(RepositoryError):
+            MySqlAuditRepository().append(_entry(detail={"ts": datetime.now(UTC)}))
+    # Assert: bei Serialisierungsfehler wird gar nicht erst zur DB gesendet.
+    cursor.execute.assert_not_called()
+
+
 @pytest.mark.parametrize("startup_error", [DatabaseConnectionError, DatabaseConfigError])
 def test_mysql_append_wraps_startup_error_failsafe(startup_error):
     # Arrange: transaction() schlaegt schon beim Aufbau fehl -- entweder Verbindung
@@ -187,3 +199,17 @@ def test_entity_type_at_max_length_is_valid(length: int):
 @pytest.mark.parametrize("length", [1, 128])
 def test_actor_at_max_length_is_valid(length: int):
     assert _entry(actor="x" * length).actor == "x" * length
+
+
+def test_entity_type_empty_string_is_rejected():
+    # entity_type muss mindestens ein Zeichen enthalten; leere Strings sind
+    # fachlich kein sinnvoller Entity-Type.
+    with pytest.raises(ValidationError):
+        _entry(entity_type="")
+
+
+def test_actor_empty_string_is_rejected():
+    # actor muss mindestens ein Zeichen enthalten; leere Strings sind
+    # fachlich kein sinnvoller Actor.
+    with pytest.raises(ValidationError):
+        _entry(actor="")
