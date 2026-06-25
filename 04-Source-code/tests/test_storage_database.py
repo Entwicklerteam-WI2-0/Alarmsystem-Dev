@@ -35,6 +35,7 @@ def minimal_env(monkeypatch) -> None:
     monkeypatch.setenv("DB_PASSWORD", _CREDENTIAL_PLACEHOLDER)
     monkeypatch.delenv("DB_CONNECT_TIMEOUT", raising=False)
     monkeypatch.delenv("DB_AUTOCOMMIT", raising=False)
+    monkeypatch.delenv("DB_CHARSET", raising=False)
 
 
 def _valid_config(autocommit: bool = False) -> DatabaseConfig:
@@ -74,6 +75,18 @@ def test_database_config_rejects_empty_password() -> None:
             name="alarmsystem",
             user="alarm",
             password="",
+        )
+
+
+def test_database_config_rejects_empty_charset() -> None:
+    with pytest.raises(DatabaseConfigError, match="CHARSET"):
+        DatabaseConfig(
+            host="db.test",
+            port=3306,
+            name="alarmsystem",
+            user="alarm",
+            password=_CREDENTIAL_PLACEHOLDER,
+            charset="   ",
         )
 
 

@@ -62,7 +62,7 @@ class DatabaseConfig:
     charset: str = "utf8mb4"
 
     def __post_init__(self) -> None:
-        for field_name in ("host", "name", "user", "password"):
+        for field_name in ("host", "name", "user", "password", "charset"):
             value = getattr(self, field_name)
             if value.strip() == "":
                 raise DatabaseConfigError(
