@@ -12,6 +12,17 @@ def _scan(quelltext: str):
     return finde_verstoesse(quelltext, "assessment/core.py")
 
 
+def test_default_ziele_sind_skript_relativ():
+    # SCAN_DIRS wird relativ zum Skript (04-Source-code) aufgelöst -> cwd-unabhängig,
+    # damit pre-commit ohne Pfad-Argumente laufen kann (eine Quelle der Wahrheit).
+    from tools.check_hardcoded_thresholds import _default_ziele
+
+    ziele = [z.replace("\\", "/") for z in _default_ziele()]
+    assert len(ziele) == 2
+    assert all(z.endswith(("src/assessment", "src/forecast")) for z in ziele)
+    assert all("04-Source-code" in z for z in ziele)
+
+
 # --- Positivfälle: müssen erkannt werden (DoD-Beispiele '> 1.0', '< 0.0', 'delta_T <= 1.0') ---
 
 

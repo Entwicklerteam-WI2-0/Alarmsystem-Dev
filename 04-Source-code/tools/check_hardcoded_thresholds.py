@@ -60,6 +60,17 @@ from pathlib import Path
 # "src/forecast", "src/ingest")) ohne weitere Code-Änderung — siehe DTB-22-Scope.
 SCAN_DIRS: tuple[str, ...] = ("src/assessment", "src/forecast")
 
+# Default-Ziele relativ zum Skript auflösen (cwd-unabhängig). So läuft der Guard ohne
+# Pfad-Argumente aus jedem Verzeichnis korrekt — SCAN_DIRS ist damit die EINZIGE Quelle
+# der Wahrheit (keine duplizierten Pfade in der pre-commit-Config, kein Drift-Risiko).
+_BASIS = Path(__file__).resolve().parent.parent  # tools/ -> 04-Source-code/
+
+
+def _default_ziele() -> list[str]:
+    """Default-Scan-Ziele (SCAN_DIRS), absolut zum Skript-Standort aufgelöst."""
+    return [str(_BASIS / d) for d in SCAN_DIRS]
+
+
 # Wer einen Wert bewusst erlaubt, hängt diesen Marker als Kommentar an die Zeile.
 ERLAUBT_MARKER = "noqa: hardcoded-threshold"
 
@@ -301,7 +312,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     args = list(argv) if argv is not None else sys.argv[1:]
-    verzeichnisse = args if args else list(SCAN_DIRS)
+    verzeichnisse = args if args else _default_ziele()
 
     gescannte, fehlend, ignoriert = _klassifiziere_ziele(verzeichnisse)
 
