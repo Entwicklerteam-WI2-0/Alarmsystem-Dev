@@ -34,9 +34,15 @@ class PrognoseSchwellen:
 
 
 @dataclass(frozen=True)
+class DatenqualitaetSchwellen:
+    stale_timeout_s: float
+
+
+@dataclass(frozen=True)
 class Thresholds:
     vereisung: VereisungsSchwellen
     prognose: PrognoseSchwellen
+    datenqualitaet: DatenqualitaetSchwellen
 
 
 # Pflicht-Abschnitte der Config und ihr jeweiliger Zieltyp.
@@ -46,6 +52,7 @@ class Thresholds:
 _SECTIONS: dict[str, type[Any]] = {
     "vereisung": VereisungsSchwellen,
     "prognose": PrognoseSchwellen,
+    "datenqualitaet": DatenqualitaetSchwellen,
 }
 
 

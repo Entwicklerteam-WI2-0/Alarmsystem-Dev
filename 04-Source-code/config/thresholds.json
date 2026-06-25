@@ -10,5 +10,8 @@
   },
   "prognose": {
     "t_s_grenz_c": 0.0
+  },
+  "datenqualitaet": {
+    "stale_timeout_s": 120
   }
 }

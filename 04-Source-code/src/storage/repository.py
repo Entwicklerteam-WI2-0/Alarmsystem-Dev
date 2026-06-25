@@ -37,3 +37,19 @@ class Repository(ABC):
             Die vom Speichermedium vergebene ID (z. B. AUTO_INCREMENT).
         """
         ...
+
+    @abstractmethod
+    def get_latest(self, sensor_id: str) -> Reading | None:
+        """Liefert das neueste Reading eines Sensors oder None.
+
+        Wird fuer die Stale-Erkennung (DTB-13) verwendet. Bei einem Fehler in der
+        Persistenzschicht wird RepositoryError geworfen -> separater Fail-safe-Fall
+        gegenueber "Sensor liefert keine aktuellen Daten" (NF-01/E-34).
+
+        Args:
+            sensor_id: Sensor-ID, fuer die das neueste Reading gesucht wird.
+
+        Returns:
+            Das neueste Reading oder None, wenn noch keines vorhanden ist.
+        """
+        ...

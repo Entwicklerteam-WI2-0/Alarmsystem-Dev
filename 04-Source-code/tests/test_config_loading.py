@@ -25,6 +25,7 @@ def test_default_config_laedt_kaskaden_schwellen_aus_schwellenwerte_md():
     assert thresholds.vereisung.delta_t_kondensation_k == 0.0
     assert thresholds.vereisung.delta_t_feucht_k == 1.0
     assert thresholds.prognose.t_s_grenz_c == 0.0
+    assert thresholds.datenqualitaet.stale_timeout_s == 120.0
 
 
 def test_eigener_pfad_ist_parametrierbar(tmp_path):
@@ -135,4 +136,5 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "delta_t_feucht_k": 1.0,
         },
         "prognose": {"t_s_grenz_c": 0.0},
+        "datenqualitaet": {"stale_timeout_s": 120},
     }
