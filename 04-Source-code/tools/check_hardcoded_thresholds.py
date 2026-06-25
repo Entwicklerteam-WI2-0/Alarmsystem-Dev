@@ -105,9 +105,14 @@ def _ist_vergleichs_call(knoten: ast.AST) -> bool:
         return False
     if (fn.value.id, fn.attr) not in _VERGLEICHS_FUNKTIONEN:
         return False
+    # kw.arg ist None bei **kwargs-Entpackung — diese überspringen (kein Vergleichswert).
     kandidaten = [
         *knoten.args,
-        *(kw.value for kw in knoten.keywords if kw.arg not in _TOLERANZ_KWARGS),
+        *(
+            kw.value
+            for kw in knoten.keywords
+            if kw.arg is not None and kw.arg not in _TOLERANZ_KWARGS
+        ),
     ]
     return any(_ist_zahl_literal(arg) for arg in kandidaten)
 
@@ -212,10 +217,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = list(argv) if argv is not None else sys.argv[1:]
     verzeichnisse = args if args else list(SCAN_DIRS)
 
-    # Sichtbar machen, wenn ein Scan-Ziel fehlt — sonst wird der Guard bei einem
-    # Refactoring (umbenanntes/verschobenes Modul) still zum No-Op und meldet OK,
-    # obwohl gar nichts geprüft wurde (fail-open vermeiden).
+    vorhanden = [d for d in verzeichnisse if Path(d).exists()]
     fehlend = [str(d) for d in verzeichnisse if not Path(d).exists()]
+
+    # Fail-closed: existiert KEIN Scan-Ziel (z. B. nach Rename/Verschieben der Module),
+    # kann der Guard nichts prüfen — dann das Gate rot färben statt still grün zu melden.
+    if not vorhanden:
+        print(
+            f"FEHLER: kein Scan-Verzeichnis gefunden ({', '.join(fehlend)}) — "
+            f"Schwellen-Check nicht möglich (Gate fail-closed)."
+        )
+        return 1
+
+    # Einzelne fehlende Ziele nur melden (mind. eines existiert) — Scan läuft weiter.
     if fehlend:
         print(f"WARNUNG: Scan-Verzeichnis(se) nicht gefunden, übersprungen: {', '.join(fehlend)}")
 

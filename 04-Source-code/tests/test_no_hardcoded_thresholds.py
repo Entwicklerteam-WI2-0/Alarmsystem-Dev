@@ -283,9 +283,40 @@ def test_main_verstoss_unterdrueckt_stub_hinweis(tmp_path, capsys):
     assert "HINWEIS" not in ausgabe
 
 
-def test_main_warnt_bei_fehlendem_verzeichnis(capsys):
-    # Fehlendes Scan-Ziel darf nicht still durchgehen (kein fail-open).
+def test_main_nur_stubs_zeigt_hinweis(tmp_path, capsys):
+    # Sauberer Lauf über nur __init__.py (noch keine Bewertungslogik) -> Exit 0 + HINWEIS.
+    d = tmp_path / "assessment"
+    d.mkdir()
+    (d / "__init__.py").write_text('"""Stub."""\n', encoding="utf-8")
+    code = main([str(d)])
+    ausgabe = capsys.readouterr().out
+    assert code == 0
+    assert "HINWEIS" in ausgabe
+
+
+def test_main_alle_verzeichnisse_fehlen_ist_fail_closed(capsys):
+    # Existiert KEIN Scan-Ziel, darf der Guard nicht still grün melden -> Exit 1.
     code = main(["gibt/es/nicht"])
+    ausgabe = capsys.readouterr().out
+    assert code == 1
+    assert "FEHLER" in ausgabe
+    assert "fail-closed" in ausgabe
+
+
+def test_main_teilweise_fehlend_warnt_und_laeuft_weiter(tmp_path, capsys):
+    # Mind. ein Ziel existiert (sauber) -> nur WARNUNG fürs fehlende, Exit 0.
+    d = tmp_path / "assessment"
+    d.mkdir()
+    (d / "core.py").write_text(
+        "if t_s > schwellen.t_s_gefrierpunkt_c:\n    pass\n", encoding="utf-8"
+    )
+    code = main([str(d), str(tmp_path / "gibt-es-nicht")])
     ausgabe = capsys.readouterr().out
     assert code == 0
     assert "WARNUNG" in ausgabe
+    assert "OK" in ausgabe
+
+
+def test_isclose_kwargs_entpackung_kein_fehlalarm():
+    # kw.arg is None bei **tol-Entpackung -> übersprungen, kein Kandidat, kein Fehlalarm.
+    assert _scan("import math\ntol = {}\nif math.isclose(t_s, x, **tol):\n    pass\n") == []
