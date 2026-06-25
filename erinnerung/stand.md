@@ -1,6 +1,6 @@
 # Aktueller Stand
 
-> Stand: 2026-06-24 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+> Stand: 2026-06-25 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
 
 ## Woran wir gerade arbeiten
 - **DTB-54 (schema.sql einspielen, Andi & Leon):** Apply-Schritt + `migrations/grants.sql` (append-only
@@ -174,3 +174,20 @@
 - **Entscheidungen:** 8 neue Einträge im persönlichen `Petzold-Entscheidungslog` (noch lokal/uncommittet).
 - **Neu offen:** (1) Entscheidungslog-Edit committen/pushen (Doku-PR). (2) DTB-11/DTB-12 Jira-Status manuell.
   (3) Kritischer Pfad: DB-Setup (DTB-53–56) + Persistenz (DTB-28) → dann Bewertungsmodul DTB-38.
+
+## Update [25.06., ~04:00] — DTB-32 Taupunkt-Funktion + DTB-60 Poller-Taupunkt (backend-dev/Luca)
+- **DTB-32 (P2.3) fertig:** reine Funktion `calculate_dew_point` (Magnus a=17,62/b=243,12 aus
+  `Schwellenwerte.md` §1) in `src/assessment/utils.py`; Guards (RH∈(0,100], `isfinite`, Magnus-Pol →
+  `ValueError`); 20 Tests inkl. Frost-/Negativ-Referenzwerte; Coverage `assessment` 100 %. Branch
+  `feat/dtb-32-taupunkt-magnus` **gepusht**.
+- **DTB-60 (gestapelt auf DTB-32) fertig:** Poller berechnet + plausibilisiert `dew_point_c`, füllt `Reading`.
+  Fail-safe: `ValueError` (RH=0) → `None`; **Ergebnis-Plausibilisierung** `T_d < MIN_TEMP_C` → `None` (schließt
+  RH≈0-Gap, sonst stilles GRÜN). 4 neue Poller-Tests, volle Suite **86 grün**, `poller.py` 100 %. Branch
+  `feat/dtb-60-poller-taupunkt` **gepusht**.
+- Beide via **TDD + santa-loop** (je 2 Prüfer + Moderator; je 1 echter Fail-safe-Blocker gefunden & gefixt).
+  Persönl. Entscheidungen (DTB-32 strikter Rechner; DTB-60 Ergebnis-Plausibilisierung) im
+  `Ganter-Entscheidungslog` auf `docs/ganter-entscheidungslog-dtb-32` **gepusht**.
+- **Neu offen:** (1) **Merge-Reihenfolge:** DTB-32 → `main` zuerst, dann DTB-60 (Base umstellen/rebasen),
+  Log-PR unabhängig; PR/Merge = Lucas-Freigabe (§7). (2) **Folge-Ticket:** DTB-38 muss `dew_point_c=None`
+  als „Feuchte vorhanden=wahr" behandeln (`Schwellenwerte.md` §2 → nie GRÜN); DTB-12 `dew_point_c: float|None`
+  absichern. (3) 3 offene PR-Branches (DTB-32, DTB-60, Entscheidungslog) — Luca hat hier keinen PR-Zugriff.
