@@ -89,6 +89,9 @@ class Verstoss:
     zeile: int
     inhalt: str
     grund: str
+    # True = Datei war nicht prüfbar (Syntax-/Encoding-/Lesefehler, fail-closed),
+    # nicht ein echtes hartcodiertes Schwellen-Literal. Steuert den Behebungs-Hinweis.
+    fail_closed: bool = False
 
 
 def _ist_zahl_literal(knoten: ast.AST) -> bool:
@@ -188,6 +191,7 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
                 zeile=exc.lineno or 1,
                 inhalt="<Datei nicht parsebar — Schwellen-Check fail-closed>",
                 grund="Datei nicht parsebar (SyntaxError) — Gate fail-closed",
+                fail_closed=True,
             )
         ]
 
@@ -272,6 +276,7 @@ def pruefe_dateien(dateien: Iterable[Path]) -> list[Verstoss]:
                     zeile=1,
                     inhalt=f"<Datei nicht lesbar: {exc.__class__.__name__}>",
                     grund="Datei nicht lesbar — Gate fail-closed",
+                    fail_closed=True,
                 )
             )
             continue
@@ -280,7 +285,13 @@ def pruefe_dateien(dateien: Iterable[Path]) -> list[Verstoss]:
 
 
 def pruefe_verzeichnisse(verzeichnisse: Iterable[str | Path]) -> list[Verstoss]:
-    """Scannt alle `.py`-Dateien unter den angegebenen Zielen (Verzeichnisse oder Dateien)."""
+    """Scannt alle `.py`-Dateien unter den angegebenen Zielen (Verzeichnisse oder Dateien).
+
+    Hinweis: Gibt nur die Verstöße zurück; fehlende oder nicht-`.py`-Ziele werden hier
+    still übersprungen (keine WARNUNG). Die Sichtbarmachung (WARNUNG/fail-closed bei 0
+    geprüften Dateien) leistet `main()` — wer programmatisch die Ziel-Klassifikation
+    braucht, nutzt `_klassifiziere_ziele()`.
+    """
     return pruefe_dateien(_py_dateien(verzeichnisse))
 
 
@@ -290,15 +301,15 @@ def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:
     for verstoss in verstoesse:
         print(f"  {verstoss.datei}:{verstoss.zeile}: {verstoss.inhalt.strip()}")
     print(f"\n{len(verstoesse)} Verstoß/Verstöße.")
-    # Rat getrennt nach Fund-Art — für eine nicht prüfbare Datei ist „config/ laden" falsch.
-    # Marker „fail-closed" im Grund = nicht prüfbare Datei (Syntax/Encoding/Lesefehler).
-    if any("fail-closed" not in v.grund for v in verstoesse):
+    # Rat getrennt nach Fund-Art (über das explizite Feld, nicht über den Grund-Text) —
+    # für eine nicht prüfbare Datei ist „config/ laden" der falsche Rat.
+    if any(not v.fail_closed for v in verstoesse):
         print(
             f"  → Schwellen über config/ laden (src/config/loader.py) oder begründete Ausnahme "
             f"mit '# {ERLAUBT_MARKER}' auf der gemeldeten Zeile markieren (bei mehrzeiligem "
             f"Vergleich: Zeile des linken Operanden, nicht die des Literals)."
         )
-    if any("fail-closed" in v.grund for v in verstoesse):
+    if any(v.fail_closed for v in verstoesse):
         print(
             "  → Nicht prüfbare Dateien beheben (Syntax/Encoding/Berechtigung) — Gate fail-closed."
         )

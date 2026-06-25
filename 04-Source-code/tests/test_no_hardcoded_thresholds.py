@@ -225,6 +225,15 @@ def test_syntaxfehler_ist_fail_closed():
     assert "parsebar" in verstoesse[0].grund
 
 
+def test_fail_closed_feld_unterscheidet_fundart():
+    # Der Behebungs-Hinweis hängt am expliziten Feld, NICHT am Grund-Text — sonst bräche
+    # die Zweig-Auswahl bei einer Umformulierung des Grund-Textes lautlos.
+    schwelle = finde_verstoesse("if t_s > 1.0:\n    pass\n", "x.py")
+    assert schwelle[0].fail_closed is False
+    syntax = finde_verstoesse("def kaputt(:\n", "x.py")
+    assert syntax[0].fail_closed is True
+
+
 # --- Verzeichnis-Walk + Verstoss-Felder ---
 
 
