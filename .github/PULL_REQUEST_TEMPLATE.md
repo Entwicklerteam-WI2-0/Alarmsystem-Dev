@@ -13,6 +13,13 @@
 > Vereisungs-/Prognose-Schwellen kommen aus `config/thresholds.json` (via `src/config/loader.py`),
 > nie als Literal im Code. Die finalen G1-Messwerte stehen noch aus und müssen ohne Code-Änderung
 > austauschbar bleiben. Der Guard `tools/check_hardcoded_thresholds.py` (CI: *lint-config*) prüft das.
+>
+> **Grenzen des Guards (selbst mitprüfen):**
+> - Er scannt nur `SCAN_DIRS` (`src/assessment`, `src/forecast`). Legst du Schwellen-Vergleiche in
+>   ein **neues** Modul (z. B. `src/ingest`, `src/api`), musst du `SCAN_DIRS` dort ergänzen — sonst
+>   bleibt das Gate still grün.
+> - Indirekte Vergleiche erkennt er nur als `operator.gt(...)`/`math.isclose(...)`; **Alias-/bare-Import**
+>   (`import operator as op` → `op.gt(...)`, `from operator import gt`) wird **nicht** erfasst.
 
 ## Checkliste (DoD)
 - [ ] Tests grün (`pytest`) und Coverage gehalten (Bewertungslogik ≥ 80 %)

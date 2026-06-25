@@ -5,6 +5,10 @@ Schwellenwerte als Literal in den Code wandern, statt aus `config/` geladen zu w
 Erkennung über den AST — die Snippets sind daher gültiges Python (wie echte Dateien).
 """
 
+import io
+import pathlib
+import sys
+
 from tools.check_hardcoded_thresholds import finde_verstoesse, main, pruefe_verzeichnisse
 
 
@@ -420,8 +424,6 @@ def test_main_nicht_py_datei_neben_gueltigem_ziel_wird_gemeldet(tmp_path, capsys
 def test_main_unlesbare_datei_ist_fail_closed(tmp_path, monkeypatch, capsys):
     # Eine nicht lesbare Datei (PermissionError) darf nicht mit Traceback crashen,
     # sondern fail-closed melden (analog SyntaxError).
-    import pathlib
-
     d = tmp_path / "assessment"
     d.mkdir()
     (d / "core.py").write_text("x = 1\n", encoding="utf-8")
@@ -466,9 +468,6 @@ def test_main_syntaxfehler_meldung_raet_zu_reparatur(tmp_path, capsys):
 def test_main_ausgabe_crasht_nicht_auf_cp1252(tmp_path):
     # Regression: die Ausgabe (inkl. „→"/Umlaute) darf auf einer cp1252-Konsole
     # (Windows-Default) nicht mit UnicodeEncodeError crashen.
-    import io
-    import sys
-
     d = tmp_path / "assessment"
     d.mkdir()
     (d / "core.py").write_text("if t_s > 1.0:\n    pass\n", encoding="utf-8")

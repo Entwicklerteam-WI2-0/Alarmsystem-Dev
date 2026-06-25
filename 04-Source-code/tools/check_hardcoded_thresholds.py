@@ -174,8 +174,11 @@ def _noqa_zeilen(quelltext: str, dateiname: str) -> set[int]:
     except (tokenize.TokenError, IndentationError):
         # Marker-Erkennung entfällt (unvollständiger Tokenstrom) — sichtbar machen, sonst
         # greift ein korrektes # noqa unbemerkt nicht und es gibt einen Fehlalarm ohne Grund.
+        # Folge explizit benennen, damit ein „kaputter" noqa-Marker nicht ratlos macht.
         print(
-            f"WARNUNG: {dateiname}: noqa-Marker nicht lesbar (Tokenisierung unvollständig).",
+            f"WARNUNG: {dateiname}: noqa-Marker konnten nicht gelesen werden "
+            f"(Tokenisierung unvollständig) — # noqa-Markierungen dieser Datei wirken NICHT, "
+            f"gemeldete Verstöße können daher Fehlalarme auf markierten Zeilen sein.",
             file=sys.stderr,
         )
     return zeilen
