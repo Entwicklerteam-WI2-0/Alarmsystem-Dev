@@ -251,7 +251,6 @@
 - **Ergebnis/Status:** Verifikation + Folge-Härtung in PR #91.
 
 ## 2026-06-25 — SHA-Pinning der CI-Actions bewusst ausgelagert statt im Guard-PR
-*(Gemeinsame Architekten-Entscheidung mit Lucas — eigener Beitrag herausgestellt.)*
 - **Kontext/Task:** DTB-22 · Ein Review-Befund mahnte mehrfach an, die GitHub-Actions auf feste Commit-SHAs zu pinnen statt auf Tags (`@v4`). Die Frage betrifft nicht nur den Guard-Workflow, sondern alle Workflows im Repo.
 - **Entscheidung:** Das SHA-Pinning nicht im Guard-PR erledigen, sondern als repo-weite Härtung der Architektenrolle vorbehalten — Lucas und ich haben das gemeinsam so entschieden.
 - **Begründung:** Mein Beitrag war, zu erkennen und zu benennen, dass dieser Befund über den Guard-PR hinausreicht: Nur einen einzelnen Workflow zu pinnen, während alle anderen auf Tags bleiben, wäre inkonsistent und würde ein flächiges Sicherheitsthema in Stückwerk zerlegen — das gehört in einen bewussten, einheitlichen Schritt, nicht beiläufig in einen unbeteiligten Feature-PR. Dazu ein ehrlicher praktischer Punkt: Die korrekten SHAs lassen sich nicht ohne Weiteres lokal verifizieren; auf einen ungeprüften SHA zu pinnen wäre selbst ein Risiko und damit das Gegenteil der beabsichtigten Härtung. Aus beidem folgte, dem Review-Druck hier *nicht* nachzugeben, sondern den richtigen Rahmen zu wählen. Weil das Thema das ganze Repo betrifft und in die geteilte Architektenverantwortung fällt, haben Lucas und ich es gemeinsam entschieden, statt dass ich es im Alleingang in meinem PR umsetze.
