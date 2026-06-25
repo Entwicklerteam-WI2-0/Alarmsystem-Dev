@@ -7,7 +7,7 @@ parametrisierten Queries (Injection-Schutz).
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import UTC, datetime
 
 import pymysql
 
@@ -212,12 +212,25 @@ class ReadingRepository(Repository):
 
     @staticmethod
     def _row_to_reading(row: dict) -> Reading:
-        """Mappt eine DB-Zeile auf ein Reading-Objekt."""
+        """Mappt eine DB-Zeile auf ein Reading-Objekt.
+
+        PyMySQL liefert DATETIME-Spalten als naive datetime-Objekte ohne
+        tzinfo. Da die DB ausschliesslich UTC speichert, wird tzinfo=UTC
+        gesetzt, damit Zeitstempelvergleiche (z. B. is_stale in DTB-38)
+        nicht zwischen offset-naive und offset-aware werfen.
+        """
+        measured_at = row["measured_at"]
+        if measured_at.tzinfo is None:
+            measured_at = measured_at.replace(tzinfo=UTC)
+        received_at = row["received_at"]
+        if received_at.tzinfo is None:
+            received_at = received_at.replace(tzinfo=UTC)
+
         return Reading(
             id=row["id"],
             sensor_id=row["sensor_id"],
-            measured_at=row["measured_at"],
-            received_at=row["received_at"],
+            measured_at=measured_at,
+            received_at=received_at,
             surface_temp_c=row["surface_temp_c"],
             air_temp_c=row["air_temp_c"],
             humidity_pct=row["humidity_pct"],

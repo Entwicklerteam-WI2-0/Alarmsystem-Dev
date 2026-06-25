@@ -312,3 +312,33 @@ def test_get_since_empty_for_unknown_sensor(repository: ReadingRepository) -> No
     since = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
     result = repository.get_since(sensor_id="nicht-existiert", since=since)
     assert result == ()
+
+
+def test_row_to_reading_makes_naive_datetimes_utc_aware() -> None:
+    """PyMySQL liefert naive datetime-Objekte; _row_to_reading muss tzinfo=UTC setzen.
+
+    Regressionstest fuer den DTB-38-Blocker: is_stale() subtrahiert reading.measured_at
+    von einem UTC-aware now(). Sind die DB-Zeitstempel naive, entsteht TypeError.
+    """
+    row = {
+        "id": 1,
+        "sensor_id": "anr-rwy-01",
+        "measured_at": datetime(2026, 6, 23, 10, 0, 0),
+        "received_at": datetime(2026, 6, 23, 10, 0, 30),
+        "surface_temp_c": -0.4,
+        "air_temp_c": 1.2,
+        "humidity_pct": 96.0,
+        "pressure_hpa": 1013.0,
+        "dew_point_c": 0.63,
+        "source": "real",
+        "status": "ok",
+    }
+
+    reading = ReadingRepository._row_to_reading(row)
+
+    assert reading.measured_at.tzinfo is UTC
+    assert reading.received_at.tzinfo is UTC
+    assert reading.measured_at == datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    # Sicherstellen, dass UTC-aware Zeitstempel subtrahiert werden koennen.
+    now = datetime(2026, 6, 23, 10, 1, 0, tzinfo=UTC)
+    assert (now - reading.measured_at).total_seconds() == 60.0
