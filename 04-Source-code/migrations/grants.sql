@@ -4,6 +4,11 @@
 -- audit_log, acknowledgement; NF-09) ueber DB-Rechte statt Trigger.
 -- Reihenfolge: ERST schema.sql, DANN dieses Skript.
 --
+-- WARTUNG (Drift-Schutz, DTB-54): Die Tabellenliste unten spiegelt schema.sql.
+-- Wird dort eine NEUE Tabelle ergaenzt, MUSS sie hier nachgezogen werden
+-- (REVOKE in Block 1b + passender GRANT in Block 2 oder 3) -- sonst hat der
+-- App-User darauf keinerlei Rechte und Schreibzugriffe schlagen still fehl.
+--
 -- AUSFUEHREN ALS DB-ADMIN (root) -- GRANT/REVOKE brauchen GRANT OPTION.
 -- KEIN CREATE USER, KEIN Passwort hier (NF-07): der App-User wird beim DB-Init
 -- angelegt; dieses Skript vergibt NUR Rechte und ist wiederholbar (idempotent).
@@ -33,11 +38,14 @@ REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`assessment`    FROM 'alarm
 REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`audit_log`     FROM 'alarm'@'localhost';
 REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`acknowledgement` FROM 'alarm'@'localhost';
 
--- 2) Veraenderliche Tabellen (Zustand/Config): volle DML.
---    alarm        -- UPDATE fuer state-Uebergaenge (active -> acknowledged -> cleared).
---    threshold_set -- Config-Saetze duerfen aktualisiert/ersetzt werden.
+-- 2) Veraenderliche Tabellen (Zustand/Config): INSERT/SELECT/UPDATE -- KEIN DELETE.
+--    alarm         -- UPDATE fuer state-Uebergaenge (active -> acknowledged -> cleared).
+--    threshold_set -- Config-Saetze werden per neuem valid_from-Satz ersetzt (Supersession),
+--                     nicht geloescht. DELETE bewusst NICHT vergeben (geringste Rechte):
+--                     es ist ungenutzt UND FK-unsicher, da assessment via
+--                     fk_assessment_threshold auf historische Schwellen-Saetze verweist.
 GRANT INSERT, SELECT, UPDATE ON `alarmsystem`.`alarm`         TO 'alarm'@'localhost';
-GRANT INSERT, SELECT, UPDATE, DELETE ON `alarmsystem`.`threshold_set` TO 'alarm'@'localhost';
+GRANT INSERT, SELECT, UPDATE ON `alarmsystem`.`threshold_set` TO 'alarm'@'localhost';
 
 -- 3) append-only / unveraenderlich (NF-09): NUR INSERT + SELECT -> kein UPDATE/DELETE.
 --    reading/assessment sind konzeptuell unveraenderlich (Roh-Messwerte von G1 bzw.
