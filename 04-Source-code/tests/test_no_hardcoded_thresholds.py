@@ -318,15 +318,16 @@ def test_main_verstoss_unterdrueckt_stub_hinweis(tmp_path, capsys):
     assert "HINWEIS" not in ausgabe
 
 
-def test_main_nur_stubs_zeigt_hinweis(tmp_path, capsys):
-    # Sauberer Lauf über nur __init__.py (noch keine Bewertungslogik) -> Exit 0 + HINWEIS.
+def test_main_stub_lauf_meldet_gepruefte_dateizahl(tmp_path, capsys):
+    # Sauberer Lauf über nur __init__.py -> Exit 0; die geprüfte Dateizahl ist sichtbar
+    # (keine Namens-Heuristik/„nur Stubs"-Meldung, die bei Code in __init__.py falsch läge).
     d = tmp_path / "assessment"
     d.mkdir()
     (d / "__init__.py").write_text('"""Stub."""\n', encoding="utf-8")
     code = main([str(d)])
     ausgabe = capsys.readouterr().out
     assert code == 0
-    assert "HINWEIS" in ausgabe
+    assert "1 Datei(en) geprüft" in ausgabe
 
 
 def test_main_alle_verzeichnisse_fehlen_ist_fail_closed(capsys):

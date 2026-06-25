@@ -6,6 +6,10 @@
 # Backend-Root liegt unter 04-Source-code/ (PR #29) -> run-Schritte laufen dort.
 # Reiner Stdlib-Check (kein pip install noetig). Default-Scan: src/assessment +
 # src/forecast (erweiterbar in tools/check_hardcoded_thresholds.py SCAN_DIRS).
+#
+# Aufgabentrennung: Dieser Workflow ist das GATE (Guard gegen src/). Die UNIT-TESTS des
+# Guards (tests/test_no_hardcoded_thresholds.py) laufen im test.yml-Workflow mit
+# (pytest ueber testpaths=["tests"]) -> ein Defekt im Guard-Code faerbt dort "test" rot.
 
 name: Lint Config
 

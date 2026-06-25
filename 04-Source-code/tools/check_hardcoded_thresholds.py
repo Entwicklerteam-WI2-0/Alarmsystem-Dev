@@ -345,23 +345,16 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     verstoesse = pruefe_dateien(gescannte)
 
-    # Verstöße zuerst behandeln und früh zurückkehren — sonst widerspräche der
-    # Stub-HINWEIS unten einem Verstoß, der in genau diesen Dateien gefunden wurde.
     if verstoesse:
         _melde_verstoesse(verstoesse)
         return 1
 
-    # Sauberer Lauf: sichtbar machen, wie viel tatsächlich geprüft wurde — ein Lauf
-    # über reine __init__.py-Stubs (noch keine Bewertungslogik) ist "OK", prüft aber nichts.
-    substanziell = [p for p in gescannte if p.name != "__init__.py"]
-    if not substanziell:
-        print(
-            "HINWEIS: Keine Schwellen-Module mit Code gefunden (nur Stubs) — Guard ist als "
-            "Enabler aktiv, prüft aktuell aber keinen Bewertungscode."
-        )
+    # Sauberer Lauf: die Zahl der tatsächlich geprüften Dateien sichtbar machen — eine
+    # niedrige Zahl signalisiert von selbst „noch wenig/kein Bewertungscode" (Enabler-Phase),
+    # ohne eine Namens-Heuristik („nur Stubs"), die bei Code in __init__.py falsch läge.
     print(
         f"OK — keine hartcodierten Schwellen "
-        f"({len(substanziell)} Modul-Datei(en) in: {', '.join(map(str, verzeichnisse))})"
+        f"({len(gescannte)} Datei(en) geprüft in: {', '.join(map(str, verzeichnisse))})"
     )
     return 0
 
