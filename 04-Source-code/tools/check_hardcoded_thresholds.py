@@ -41,6 +41,9 @@ Bekannte Grenzen (bewusst). Zwei Ursachen:
   - Nur UTF-8-Quellen; abweichende PEP-263-`coding:`-Deklarationen werden fail-closed gemeldet.
   - `# noqa: hardcoded-threshold` wirkt zeilenweise: es unterdrückt ALLE Vergleiche seiner
     Zeile — ein zweiter, hartcodierter Vergleich auf derselben Zeile würde mit-unterdrückt.
+  - Scheitert die Tokenisierung (tokenize-/Indentation-Fehler trotz parsebarem AST), greifen
+    `# noqa`-Marker der Datei nicht (WARNUNG auf stderr) → eher Fehlalarm als verpasster
+    Verstoß (sichere Richtung fürs Gate), aber ein gültiges noqa kann scheinbar ignoriert wirken.
 Diese Fälle bleiben dem Code-Review (zweite Instanz) überlassen. Legitime Nicht-Schwellen-
 Vergleiche (Längen/Indizes/Status, z. B. `len(x) > 0`) mit dem noqa-Marker entschärfen —
 relevant erst bei Erweiterung von SCAN_DIRS auf ingest/api.
@@ -320,7 +323,8 @@ def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:
     print("FEHLER: hartcodierte Schwellen oder nicht prüfbare Dateien (NF-05 — config/ nutzen):\n")
     for verstoss in verstoesse:
         print(f"  {verstoss.datei}:{verstoss.zeile}: {verstoss.inhalt.strip()}")
-    print(f"\n{len(verstoesse)} Verstoß/Verstöße.")
+    anzahl = len(verstoesse)
+    print(f"\n{anzahl} {'Verstoß' if anzahl == 1 else 'Verstöße'}.")
     # Rat getrennt nach Fund-Art (über das explizite Feld, nicht über den Grund-Text) —
     # für eine nicht prüfbare Datei ist „config/ laden" der falsche Rat.
     if any(not v.fail_closed for v in verstoesse):
@@ -385,8 +389,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     Konsole; sonst crasht „→"/Umlaut mit UnicodeEncodeError) und restauriert das Encoding
     danach — kein dauerhafter Seiteneffekt für programmatische Aufrufer.
     """
+    # Nur Streams mit echtem (string-)Encoding anfassen — so ist das Original via
+    # reconfigure(encoding=enc, ...) wieder herstellbar (encoding=None wäre nicht restaurierbar).
     streams = [
-        (s, s.encoding, s.errors) for s in (sys.stdout, sys.stderr) if hasattr(s, "reconfigure")
+        (s, s.encoding, s.errors)
+        for s in (sys.stdout, sys.stderr)
+        if hasattr(s, "reconfigure") and s.encoding is not None
     ]
     for stream, _, _ in streams:
         stream.reconfigure(encoding="utf-8", errors="replace")

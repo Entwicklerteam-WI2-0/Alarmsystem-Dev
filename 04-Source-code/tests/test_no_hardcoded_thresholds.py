@@ -329,9 +329,8 @@ def test_main_verstoss_gibt_exit_eins(tmp_path, capsys):
     assert "core.py" in ausgabe
 
 
-def test_main_verstoss_unterdrueckt_stub_hinweis(tmp_path, capsys):
-    # Regression: ein Verstoß (auch in __init__.py) darf nicht zugleich den
-    # "nur Stubs"-HINWEIS auslösen — das wäre eine widersprüchliche Meldung.
+def test_main_verstoss_in_init_wird_gemeldet(tmp_path, capsys):
+    # Ein Verstoß auch in einer __init__.py wird gemeldet (Datei namentlich) -> Exit 1.
     d = tmp_path / "assessment"
     d.mkdir()
     (d / "__init__.py").write_text("if t_s > 1.0:\n    pass\n", encoding="utf-8")
@@ -339,7 +338,7 @@ def test_main_verstoss_unterdrueckt_stub_hinweis(tmp_path, capsys):
     ausgabe = capsys.readouterr().out
     assert code == 1
     assert "FEHLER" in ausgabe
-    assert "HINWEIS" not in ausgabe
+    assert "__init__.py" in ausgabe
 
 
 def test_main_stub_lauf_meldet_gepruefte_dateizahl(tmp_path, capsys):
