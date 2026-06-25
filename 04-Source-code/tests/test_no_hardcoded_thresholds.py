@@ -303,6 +303,19 @@ def test_pruefe_verzeichnisse_ist_fail_closed_bei_0_dateien():
     assert verstoesse[0].fail_closed is True
 
 
+def test_pruefe_verzeichnisse_gemischt_scannt_valide_und_ueberspringt_ungueltige(tmp_path):
+    # Vertraglich: bei TEILWEISE gültigen Zielen (mind. eine .py gefunden) wird das gültige
+    # Ziel gescannt und das fehlende still übersprungen — kein fail_closed (eine Datei wurde
+    # geprüft). Die WARNUNG zu übersprungenen Zielen ist Aufgabe von main(), nicht dieser Fkt.
+    d = tmp_path / "assessment"
+    d.mkdir()
+    (d / "core.py").write_text("if t_s > 1.0:\n    pass\n", encoding="utf-8")
+    verstoesse = pruefe_verzeichnisse([d, tmp_path / "gibt-es-nicht"])
+    assert len(verstoesse) == 1
+    assert verstoesse[0].fail_closed is False  # echter Schwellen-Verstoss, kein fail-closed
+    assert "core.py" in verstoesse[0].datei
+
+
 def test_non_utf8_datei_ist_fail_closed(tmp_path):
     # Eine nicht als UTF-8 dekodierbare Datei (Latin-1) crasht nicht, sondern wird
     # fail-closed gemeldet (strikt dekodiert) — nicht mit Ersatzzeichen durchgewunken.

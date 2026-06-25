@@ -308,10 +308,15 @@ def pruefe_dateien(dateien: Iterable[Path]) -> list[Verstoss]:
 def pruefe_verzeichnisse(verzeichnisse: Iterable[str | Path]) -> list[Verstoss]:
     """Scannt alle `.py`-Dateien unter den Zielen (Verzeichnisse oder Dateien), fail-closed.
 
-    Konsistent zu `main()`: Wird KEINE prüfbare `.py`-Datei gefunden (fehlende/leere/
-    falsche Ziele), liefert die Funktion einen `fail_closed`-Verstoss statt eine stille
-    leere Liste — ein Aufrufer darf „leeres Ergebnis = sauber" nicht fehlinterpretieren.
-    Für die einzelnen fehlenden/ignorierten Ziele siehe `_klassifiziere_ziele()`.
+    Reine Funktion (keine Ausgabe): liefert die Verstöße der gefundenen `.py`-Dateien.
+    Konsistent zu `main()` beim sicherheitskritischen Fall: Wird KEINE prüfbare `.py`-Datei
+    gefunden (alle Ziele fehlend/leer/falsch), kommt ein `fail_closed`-Verstoss statt einer
+    stillen leeren Liste — „leeres Ergebnis = sauber" wäre eine Fehlinterpretation.
+
+    Bewusster Unterschied zu `main()`: Bei TEILWEISE gültigen Zielen (mind. eine `.py`
+    gefunden) werden fehlende/ignorierte Ziele still übersprungen — diese Funktion gibt
+    keine WARNUNG aus (das ist Aufgabe des CLI-Einstiegs `main()`, der die übersprungenen
+    Ziele auf stderr meldet). Wer diese Sichtbarkeit braucht, ruft `main()` auf.
     """
     ziele = list(verzeichnisse)
     dateien = _py_dateien(ziele)
