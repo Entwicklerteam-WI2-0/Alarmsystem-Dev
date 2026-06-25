@@ -19,11 +19,12 @@ def _scan(quelltext: str):
 def test_default_ziele_sind_skript_relativ():
     # SCAN_DIRS wird relativ zum Skript (04-Source-code) aufgelöst -> cwd-unabhängig,
     # damit pre-commit ohne Pfad-Argumente laufen kann (eine Quelle der Wahrheit).
-    from tools.check_hardcoded_thresholds import _default_ziele
+    from tools.check_hardcoded_thresholds import SCAN_DIRS, _default_ziele
 
     ziele = [z.replace("\\", "/") for z in _default_ziele()]
-    assert len(ziele) == 2
-    assert all(z.endswith(("src/assessment", "src/forecast")) for z in ziele)
+    # An SCAN_DIRS gekoppelt -> bricht nicht stumm, sobald ein Verzeichnis ergänzt wird.
+    assert len(ziele) == len(SCAN_DIRS)
+    assert all(z.endswith(tuple(SCAN_DIRS)) for z in ziele)
     assert all("04-Source-code" in z for z in ziele)
 
 

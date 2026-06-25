@@ -20,6 +20,9 @@
 >   bleibt das Gate still grün.
 > - Indirekte Vergleiche erkennt er nur als `operator.gt(...)`/`math.isclose(...)`; **Alias-/bare-Import**
 >   (`import operator as op` → `op.gt(...)`, `from operator import gt`) wird **nicht** erfasst.
+> - Begründete Ausnahme via `# noqa: hardcoded-threshold`: bei **mehrzeiligem** Vergleich gehört der
+>   Marker auf die Zeile des **linken Operanden** (`if (  # noqa…`), **nicht** auf die Literal-Zeile —
+>   sonst meldet der Guard trotz Marker einen Verstoß.
 
 ## Checkliste (DoD)
 - [ ] Tests grün (`pytest`) und Coverage gehalten (Bewertungslogik ≥ 80 %)
