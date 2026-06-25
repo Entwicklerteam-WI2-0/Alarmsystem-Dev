@@ -35,6 +35,7 @@ def minimal_env(monkeypatch) -> None:
     monkeypatch.setenv("DB_PASSWORD", _CREDENTIAL_PLACEHOLDER)
     monkeypatch.delenv("DB_CONNECT_TIMEOUT", raising=False)
     monkeypatch.delenv("DB_AUTOCOMMIT", raising=False)
+    monkeypatch.delenv("DB_CHARSET", raising=False)
 
 
 def _valid_config(autocommit: bool = False) -> DatabaseConfig:
@@ -77,6 +78,18 @@ def test_database_config_rejects_empty_password() -> None:
         )
 
 
+def test_database_config_rejects_empty_charset() -> None:
+    with pytest.raises(DatabaseConfigError, match="CHARSET"):
+        DatabaseConfig(
+            host="db.test",
+            port=3306,
+            name="alarmsystem",
+            user="alarm",
+            password=_CREDENTIAL_PLACEHOLDER,
+            charset="   ",
+        )
+
+
 def test_database_config_validates_port_in_constructor() -> None:
     with pytest.raises(DatabaseConfigError, match="DB_PORT"):
         DatabaseConfig(
@@ -110,6 +123,7 @@ def test_database_config_rejects_connect_timeout_above_limit(minimal_env, monkey
 def test_load_database_config_from_env_parses_all_fields(minimal_env, monkeypatch) -> None:
     monkeypatch.setenv("DB_CONNECT_TIMEOUT", "7")
     monkeypatch.setenv("DB_AUTOCOMMIT", "false")
+    monkeypatch.setenv("DB_CHARSET", "latin1")
 
     config = load_database_config_from_env()
 
@@ -121,7 +135,17 @@ def test_load_database_config_from_env_parses_all_fields(minimal_env, monkeypatc
         password=_CREDENTIAL_PLACEHOLDER,
         connect_timeout=7,
         autocommit=False,
+        charset="latin1",
     )
+
+
+def test_load_database_config_from_env_rejects_whitespace_charset(minimal_env, monkeypatch) -> None:
+    """Ein explizit gesetztes, aber leeres DB_CHARSET scheitert laut (kein stiller
+    Fallback) - konsistent mit dem direkten Konstruktor."""
+    monkeypatch.setenv("DB_CHARSET", "   ")
+
+    with pytest.raises(DatabaseConfigError, match="CHARSET"):
+        load_database_config_from_env()
 
 
 def test_load_database_config_uses_safe_defaults(minimal_env) -> None:
@@ -390,6 +414,33 @@ def test_transaction_forces_autocommit_off() -> None:
     mock_connect.assert_called_once()
     assert mock_connect.call_args.kwargs["autocommit"] is False
     mock_conn.commit.assert_called_once()
+
+
+def test_transaction_propagates_non_default_charset() -> None:
+    """transaction() muss einen abweichenden charset durchreichen (DTB-55).
+
+    Regressionstest: tx_cfg entsteht via dataclasses.replace. Faellt charset
+    beim Kopieren weg, landet still der Default utf8mb4 auf der Verbindung,
+    obwohl die uebergebene Config einen anderen Zeichensatz vorgibt.
+    """
+    mock_conn = MagicMock()
+
+    config = DatabaseConfig(
+        host="db.test",
+        port=3306,
+        name="alarmsystem",
+        user="alarm",
+        password=_CREDENTIAL_PLACEHOLDER,
+        connect_timeout=5,
+        autocommit=False,
+        charset="latin1",
+    )
+
+    with patch("src.storage.database.pymysql.connect", return_value=mock_conn) as mock_connect:
+        with transaction(config):
+            pass
+
+    assert mock_connect.call_args.kwargs["charset"] == "latin1"
 
 
 def test_transaction_wraps_commit_error() -> None:

@@ -257,3 +257,11 @@
   Im Repo wurde nur dieser eine neue Architekten-Skill gefunden.
 - **Nächster Schritt:** PR #74 Review/Merge durch Lucas; ggf. zweiten neuen Architekten-Skill klären,
   falls ein weiterer gemeint war.
+
+## Update [25.06., ~22:44] — DTB-32 gemergt + Fehlmerge #89 revertet + DTB-29 sauber als #94 (architekt)
+- **DTB-32 (#79) reviewt + gemergt:** Below-Pole-Fail-safe-Luecke gehaertet (`air_temp_c <= -MAGNUS_B` → `ValueError` statt stilles Ergebnis); Regressionstests, `utils.py` 100 %. Ueberholt damit den DTB-32-Anteil von #66.
+- **⚠️ Fehlmerge #89 (DTB-29 Audit-Log) → revertet:** #89 wurde ohne Einzelfreigabe nach `main` gemergt trotz offener MEDIUM-Luecke (NF-01: `pymysql.Error`/`DatabaseConfigError` nicht gefangen). **Per Revert-PR #92 (von Lucas gemergt) wieder aus `main` entfernt.**
+- **DTB-29 sauber neu = PR #94:** MEDIUM + 2 LOW gefixt (`except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error)`, `lastrowid`-None-Guard, +Tests, audit_repository.py 100 % Cov), Same-Repo-Branch gepusht (**kein Merge**). Fork-Dublette **#83 geschlossen** (zeigte auf User2882-Fork ohne Fix).
+- **#93 (DTB-58/60)** als Ersatz fuer das ueberholte #66 angelegt — **Achtung:** Branch vermischt DTB-13/#84-Commits; **DTB-58 (Poller-Stale) vs DTB-13 (assessment/failsafe) = offene Architekturentscheidung** (Stale-Ebene).
+- **Governance verschaerft:** kein `main`-Merge ohne ausdrueckliche Architekten-Einzelfreigabe; Agenten pushen nur auf PR-Branches (siehe Lucas-Entscheidungslog 2026-06-25).
+- **Neu offen:** (1) **#94 (DTB-29) + #93 (DTB-58/60) von Lucas mergen.** (2) DTB-58 vs DTB-13 Stale-Ebene klaeren. (3) Jira DTB-32/DTB-29 → Done nachtragen. (4) Parallele zweite Instanz erzeugte Doppel-Branches (Doppel-Revert geloescht, Rest belassen). (5) Branch `docs/entscheidungslog-session-2026-06-25` noch zu pushen.
