@@ -60,7 +60,7 @@ def check_plausibility(
 
     delta_t = current.measured_at - previous.measured_at
     delta_min = delta_t.total_seconds() / 60.0
-    if delta_min <= 0:
+    if delta_t <= timedelta(seconds=0):
         # Negativer oder gleicher Zeitstempel ist ein Datenfehler -> unplausibel.
         return "invalid timestamp order"
 
