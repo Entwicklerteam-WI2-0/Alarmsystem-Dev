@@ -426,6 +426,7 @@ components:
       properties:
         status:
           type: string
+          enum: [ok]
           example: ok
 
     # --- Aktuelle Bewertung (G2 -> G3), flach (E-36) ---
@@ -463,6 +464,7 @@ components:
         explanation:
           type: string
           nullable: true
+          maxLength: 512  # = VARCHAR(512) in migrations/schema.sql (assessment.explanation)
           description: Menschenlesbare Begruendung der Stufe.
         surface_temp_c:
           type: number
@@ -507,6 +509,7 @@ components:
           readOnly: true
         sensor_id:
           type: string
+          maxLength: 64  # = VARCHAR(64) in migrations/schema.sql (reading.sensor_id)
           example: anr-rwy-01
         measured_at:
           type: string
@@ -569,10 +572,12 @@ components:
         operator:
           type: string
           minLength: 1  # leer waere kein gueltiger Audit-Eintrag (NF-09)
+          maxLength: 128  # = VARCHAR(128) in migrations/schema.sql (acknowledgement.operator)
           description: Kennung der quittierenden Person (Audit).
         note:
           type: string
           nullable: true
+          maxLength: 512  # = VARCHAR(512) in migrations/schema.sql (acknowledgement.note)
           description: Optionale Notiz.
 
     Acknowledgement:
