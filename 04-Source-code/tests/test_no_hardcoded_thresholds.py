@@ -190,6 +190,11 @@ def test_marker_mit_suffix_unterdrueckt_nicht():
     assert _scan("if t_s > 1.0:  # noqa: hardcoded-threshold-OFF\n    pass\n")
 
 
+def test_marker_mit_praefix_unterdrueckt_nicht():
+    # Boundary auch links: '# x-noqa: hardcoded-threshold' ist NICHT der Marker -> Verstoß bleibt.
+    assert _scan("if t_s > 1.0:  # x-noqa: hardcoded-threshold\n    pass\n")
+
+
 # --- Dokumentierte verbleibende Grenze (Datenfluss, bewusst nicht erkannt) ---
 
 

@@ -118,13 +118,23 @@ def _ist_vergleichs_call(knoten: ast.AST) -> bool:
     return any(_ist_zahl_literal(arg) for arg in kandidaten)
 
 
+def _ist_wortgrenze(zeichen: str) -> bool:
+    """True, wenn das Zeichen eine Token-Grenze ist (leer oder kein Wort-/Bindestrich-Zeichen)."""
+    return zeichen == "" or not (zeichen.isalnum() or zeichen in "-_")
+
+
 def _hat_marker(kommentar: str) -> bool:
-    """True, wenn der Kommentar den Marker als abgegrenztes Token trägt (nicht z. B. `…-OFF`)."""
+    """True, wenn der Kommentar den Marker als abgegrenztes Token trägt.
+
+    Beide Seiten werden geprüft, damit weder ein Suffix (`…-OFF`) noch ein Präfix
+    (`x-noqa: …`) den Marker fälschlich erkennt und einen echten Verstoß unterdrückt.
+    """
     idx = kommentar.find(ERLAUBT_MARKER)
     if idx == -1:
         return False
-    naechstes = kommentar[idx + len(ERLAUBT_MARKER) : idx + len(ERLAUBT_MARKER) + 1]
-    return naechstes == "" or not (naechstes.isalnum() or naechstes in "-_")
+    vorher = kommentar[idx - 1] if idx > 0 else ""
+    nachher = kommentar[idx + len(ERLAUBT_MARKER) : idx + len(ERLAUBT_MARKER) + 1]
+    return _ist_wortgrenze(vorher) and _ist_wortgrenze(nachher)
 
 
 def _noqa_zeilen(quelltext: str, dateiname: str) -> set[int]:
@@ -274,8 +284,8 @@ def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:
     if any("fail-closed" not in v.grund for v in verstoesse):
         print(
             f"  → Schwellen über config/ laden (src/config/loader.py) oder begründete Ausnahme "
-            f"mit '# {ERLAUBT_MARKER}' auf der gemeldeten Zeile markieren "
-            f"(bei mehrzeiligem Vergleich: erste Zeile)."
+            f"mit '# {ERLAUBT_MARKER}' auf der gemeldeten Zeile markieren (bei mehrzeiligem "
+            f"Vergleich: Zeile des linken Operanden, nicht die des Literals)."
         )
     if any("fail-closed" in v.grund for v in verstoesse):
         print(
