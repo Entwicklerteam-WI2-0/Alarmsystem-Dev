@@ -241,3 +241,19 @@
   Im Repo wurde nur dieser eine neue Architekten-Skill gefunden.
 - **Nächster Schritt:** PR #74 Review/Merge durch Lucas; ggf. zweiten neuen Architekten-Skill klären,
   falls ein weiterer gemeint war.
+
+## Update [25.06., ~23:15] — DTB-22 Guard abgeschlossen (#91) + Entscheidungslog + Lint-Fehlalarm-Diagnose (Petzold)
+- **DTB-22 Guard fertig & auf `main`** (AST, Scan assessment+forecast, fail-closed, noqa, PR-Template/pre-commit; #73).
+  **Folge-PR #91 gemergt:** Lucas' `RecursionError`-Härtung verifiziert → `MemoryError` + `ValueError`/Surrogate
+  gefunden & fail-closed geschlossen. 199 Tests grün.
+- **Entscheidungslog:** 11 DTB-22-Einträge (`bd7e2a1`) auf `docs/dtb-22-entscheidungslog`, **lokal/UNGEPUSHT** —
+  Branch gehalten, bis Lint-Thema geklärt; Save-Session bündelt mit (gemeinsamer Doku-PR).
+- **Team-OS:** `/update` gelaufen (`claude-sync.md` +89 Z., 53 uni-Skills, v1.6.0) → **Claude Code neu starten**.
+- **⚠️ Lint-Fehlalarm (Lucas' Report) — neu offen:** `assessment/failsafe.py` `if delta_min <= 0:` (Validitätscheck)
+  wird als Schwelle geflaggt (Vergleiche gegen `0` sind keine Stellwerte). Tritt in **#84 (DTB-13)** auf.
+  **Fix offen:** Guard verbessern (Null-Vergleiche ausnehmen, empfohlen) ODER `# noqa` in `failsafe.py` — **mit Lucas abstimmen**.
+- **⚠️ Stale Guard-Branches:** **#84/#85/#94** zweigten **vor** Guard-Merge #73 ab → enthalten Guard/lint-config/
+  PR-Template **nicht** (Lint läuft dort nicht; Tip-Diff zeigt Guard-Dateien als „gelöscht" — normaler Merge löscht
+  aber nicht). **#93** aktuell/sauber. → diese Branches auf `main` aktualisieren.
+- **Nächster Schritt:** (1) Fehlalarm-Fix-Richtung entscheiden (Guard-PR oder noqa). (2) Stale Branches updaten.
+  (3) Doku-Branch (Entscheidungslog + Save-Session) gemeinsam pushen. (4) #25 (Lint-Gate-Reflexion) ggf. als 12. Logeintrag.
