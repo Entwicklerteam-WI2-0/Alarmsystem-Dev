@@ -1,8 +1,9 @@
 # API Contract — FROZEN v1 (DTB-35 / P1.4)
 
-> **Status:** ENTWURF — wird zu **EINGEFROREN**, sobald (1) G1- und G3-Lead schriftlich bestätigt haben
-> (`seam-sync-confirmed`, DTB-26) **und** (2) die `openapi.yaml` (DTB-19) vorliegt. Erst dann Git-Tag `api-v1.0`.
-> **Version:** v1 · **Stand:** 2026-06-23 · **Owner:** Lucas Vöhringer (Systemarchitekt, G2)
+> **Status:** ✅ **EINGEFROREN (v1.0)** — beide Nähte beidseitig bestätigt (`seam-sync-confirmed`, DTB-26);
+> `openapi.yaml` (DTB-19) liegt vor und ist gegen diese Datei geprüft. Wire-Form (Pfade/Felder/Typen) ist ab
+> hier **stabil**; grundlegende Änderungen laufen über `/v2/`, nie über ein Brechen von `/v1/`.
+> **Version:** v1.0 · **Eingefroren am:** 2026-06-24 · **Stand:** 2026-06-24 · **Owner:** Lucas Vöhringer (Systemarchitekt, G2)
 > **Quellen:** `02-Arbeitsdokumente/Team-Sync-Entscheidungen.md` (Begründung), Entscheidungslog **E-36**/**E-31**,
 > `src/model/schemas.py` (Reading/Assessment). Bei Konflikt gewinnt diese Datei + `openapi.yaml` (DTB-19).
 
@@ -94,7 +95,28 @@ G2 ist hier **Client**. G1 stellt bereit, G2 pollt.
 ## Freeze-Checkliste (DoD DTB-35)
 
 - [x] Contract-Summary dokumentiert (diese Datei): G1 `GET /current`, `GET /v1/assessment/current`, Intervall, Versionierung
-- [ ] `docs/api/v1/openapi.yaml` vorhanden (**DTB-19**, Luca Ganter)
-- [ ] Schriftliche Bestätigung G1-Lead + G3-Lead (`seam-sync-confirmed`, **DTB-26**)
-- [ ] Git-Tag **`api-v1.0`** + „P1.4"-Commit auf `main`
-- [ ] E-Mail an G1/G3 mit Link zu `openapi.yaml` (Vorlagen: `Anfrage-G1.txt`/`Anfrage-G3.txt` auf dem Desktop)
+- [x] `docs/api/v1/openapi.yaml` vorhanden (**DTB-19**, Luca Ganter) — valide OpenAPI 3.0.3, gegen diese Datei geprüft (kein Drift)
+- [x] Schriftliche Bestätigung G1-Lead + G3-Lead (`seam-sync-confirmed`, **DTB-26**) — siehe Bestätigungs-Block unten
+- [ ] Git-Tag **`api-v1.0`** + „P1.4"-Commit auf `main` — **letzter mechanischer Schritt, ausstehend (Freigabe Lucas)**
+- [x] Vertrag an G1/G3 versandt (`Anfrage-G1`/`Anfrage-G3`) — Sign-off beidseitig erhalten (2026-06-23)
+
+---
+
+## Bestätigungen (`seam-sync-confirmed`) — beidseitig eingefroren
+
+Beide Nähte sind von der jeweiligen Gegenseite bestätigt. Die Einträge wurden **im Namen der bestätigenden
+Leads durch den Systemarchitekten erfasst** (G1/G3 haben zugesagt); die ursprünglichen Sign-off-Vermerke
+stehen in `02-Arbeitsdokumente/Anfrage-G1.md` / `Anfrage-G3.md` (Sign-off-Datum 2026-06-23).
+
+| Naht | Gegenseite | Bestätigt durch | Datum | Kanal |
+|---|---|---|---|---|
+| **G1 → G2** (Sensordaten) | G1 (Sensorik & Daten) | Nils (G1-Lead) | 2026-06-23 | Zusage an G2-Architekt, hier dokumentiert |
+| **G2 → G3** (API) | G3 (Frontend & Integration) | G3-Lead | 2026-06-23 | Zusage an G2-Architekt, hier dokumentiert |
+
+Eingetragen/dokumentiert durch: **L. Vöhringer** (Systemarchitekt G2), 2026-06-24.
+
+> **Nachvollziehbarkeit:** Für einen harten Audit-Trail kann die jeweilige Original-Bestätigung
+> (Antwort-Mail bzw. GitHub-Issue mit Label `seam-sync-confirmed`) nachgereicht und hier verlinkt werden.
+> G3-Lead: **Nick**; G1-Lead: **Nils** (eingetragen 2026-06-25).
+
+**Damit gilt der G1↔G2↔G3-Contract als beidseitig eingefroren (P1.4).** Entblockt: DTB-19, DTB-28, DTB-38.
