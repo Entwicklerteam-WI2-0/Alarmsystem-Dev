@@ -63,6 +63,15 @@ def check_plausibility(
     if previous is None:
         return None
 
+    # Sicherstellen, dass keine Cross-Sensor-Vergleiche stattfinden.
+    # Der Aufrufer ist dafuer verantwortlich, aber ein frueher Check verhindert
+    # subtile Bugs in DTB-38.
+    if current.sensor_id != previous.sensor_id:
+        raise ValueError(
+            f"check_plausibility erwartet denselben Sensor, "
+            f"erhalten: {current.sensor_id!r} vs {previous.sensor_id!r}"
+        )
+
     delta_t = current.measured_at - previous.measured_at
     delta_min = delta_t.total_seconds() / 60.0
     if delta_t <= timedelta(seconds=0):
@@ -121,8 +130,9 @@ def _sanitize_reason(reason: str) -> str:
     # Zeilenumbrueche und Tabs durch Leerzeichen ersetzen.
     cleaned = reason.replace("\n", " ").replace("\r", " ").replace("\t", " ")
     # Alle Control Characters entfernen (ASCII 0x00-0x1f, 0x7f sowie Unicode Cc/Zl/Zp).
+    # U+007F (DEL) ist bereits ueber Unicode-Kategorie "Cc" abgedeckt.
     cleaned = "".join(
-        ch for ch in cleaned if unicodedata.category(ch) not in _CONTROL_CATEGORIES and ch != "\x7f"
+        ch for ch in cleaned if unicodedata.category(ch) not in _CONTROL_CATEGORIES
     )
     cleaned = cleaned.strip()
     if len(cleaned) > MAX_REASON_LENGTH:

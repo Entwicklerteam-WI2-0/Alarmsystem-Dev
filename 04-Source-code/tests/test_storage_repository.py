@@ -238,6 +238,60 @@ def test_get_since_returns_only_matching_readings(repository: ReadingRepository)
     assert result[1].measured_at == datetime(2026, 6, 23, 10, 5, 0, tzinfo=UTC)
 
 
+def test_get_since_respects_limit(repository: ReadingRepository) -> None:
+    sensor_id = "anr-rwy-04"
+    for minute in range(3):
+        ts = datetime(2026, 6, 23, 10, minute, 0, tzinfo=UTC)
+        repository.save(
+            Reading(
+                sensor_id=sensor_id,
+                measured_at=ts,
+                received_at=ts,
+                surface_temp_c=float(minute),
+                air_temp_c=1.0,
+                humidity_pct=80.0,
+                source=Source.REAL,
+                status=SensorStatus.OK,
+            )
+        )
+
+    since = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    result = repository.get_since(sensor_id=sensor_id, since=since, limit=2)
+
+    assert len(result) == 2
+    assert result[0].surface_temp_c == pytest.approx(0.0)
+    assert result[1].surface_temp_c == pytest.approx(1.0)
+
+
+def test_get_latest_wraps_row_to_reading_value_error_as_repository_error(
+    repository: ReadingRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ValueError aus _row_to_reading muss als RepositoryError fail-safe werden."""
+
+    def _failing_row_to_reading(_row: dict) -> Reading:
+        raise ValueError("ungueltiger Enum-Wert")
+
+    monkeypatch.setattr(
+        ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading)
+    )
+    repository.save(
+        Reading(
+            sensor_id="anr-rwy-05",
+            measured_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            received_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            surface_temp_c=0.0,
+            air_temp_c=1.0,
+            humidity_pct=80.0,
+            source=Source.REAL,
+            status=SensorStatus.OK,
+        )
+    )
+
+    with pytest.raises(RepositoryError, match="Reading konnte nicht gelesen werden"):
+        repository.get_latest(sensor_id="anr-rwy-05")
+
+
 def test_get_latest_isolated_per_sensor(repository: ReadingRepository) -> None:
     for sensor_id, temp in [("anr-a", 1.0), ("anr-b", 2.0)]:
         repository.save(

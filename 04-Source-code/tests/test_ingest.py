@@ -39,12 +39,14 @@ class FakeRepository(Repository):
         sorted_candidates = sorted(candidates, key=lambda r: r.measured_at, reverse=True)
         return tuple(sorted_candidates[:limit])
 
-    def get_since(self, sensor_id: str, since: datetime) -> Sequence[Reading]:
-        # Liefert alle Readings eines Sensors seit einem Zeitpunkt (aufsteigend).
+    def get_since(
+        self, sensor_id: str, since: datetime, limit: int = 1000
+    ) -> Sequence[Reading]:
+        # Liefert Readings eines Sensors seit einem Zeitpunkt (aufsteigend).
         candidates = [
             r for r in self.readings if r.sensor_id == sensor_id and r.measured_at >= since
         ]
-        return tuple(sorted(candidates, key=lambda r: r.measured_at))
+        return tuple(sorted(candidates, key=lambda r: r.measured_at)[:limit])
 
 
 @pytest.fixture
@@ -292,6 +294,20 @@ def test_poll_empty_sensor_id_does_not_save(
     assert reading is None
     assert len(fake_repo.readings) == 0
     assert "sensor_id darf nicht leer sein" in caplog.text
+
+
+def test_poll_sensor_id_with_whitespace_is_trimmed(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    snapshot = {**valid_snapshot, "sensor_id": " anr-rwy-01 "}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.sensor_id == "anr-rwy-01"
+    assert fake_repo.readings[0].sensor_id == "anr-rwy-01"
 
 
 def test_poll_pressure_out_of_range_is_set_to_none(
@@ -573,7 +589,9 @@ def test_poll_repository_error_is_failsafe(
         def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
             raise RepositoryError("DB nicht erreichbar")
 
-        def get_since(self, sensor_id: str, since: datetime) -> Sequence[Reading]:
+        def get_since(
+            self, sensor_id: str, since: datetime, limit: int = 1000
+        ) -> Sequence[Reading]:
             raise RepositoryError("DB nicht erreichbar")
 
     repo = RaisingRepository()
@@ -613,7 +631,9 @@ def test_poll_unexpected_repository_error_is_not_swallowed(
         def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
             return ()
 
-        def get_since(self, sensor_id: str, since: datetime) -> Sequence[Reading]:
+        def get_since(
+            self, sensor_id: str, since: datetime, limit: int = 1000
+        ) -> Sequence[Reading]:
             return ()
 
     poller = Poller(

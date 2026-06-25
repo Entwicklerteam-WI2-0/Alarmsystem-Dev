@@ -70,12 +70,15 @@ class Repository(ABC):
         ...
 
     @abstractmethod
-    def get_since(self, sensor_id: str, since: datetime) -> Sequence[Reading]:
-        """Liefert alle Readings eines Sensors seit einem Zeitpunkt (inklusiv, UTC).
+    def get_since(
+        self, sensor_id: str, since: datetime, limit: int = 1000
+    ) -> Sequence[Reading]:
+        """Liefert Readings eines Sensors seit einem Zeitpunkt (inklusiv, UTC).
 
         Args:
             sensor_id: Sensor-ID, fuer die die Readings gesucht werden.
             since: Untere Zeitschranke (inklusiv) fuer measured_at.
+            limit: Maximale Anzahl zurueckzugebender Readings (Default: 1000).
 
         Returns:
             Sequenz der Readings, aufsteigend nach measured_at.
@@ -125,6 +128,7 @@ class ReadingRepository(Repository):
         FROM reading
         WHERE sensor_id = %s AND measured_at >= %s
         ORDER BY measured_at ASC, id ASC
+        LIMIT %s
     """
 
     def __init__(self, connection: pymysql.Connection | None = None) -> None:
@@ -164,13 +168,15 @@ class ReadingRepository(Repository):
         """
         return self._execute_read(self._LATEST_SQL, (sensor_id, limit))
 
-    def get_since(self, sensor_id: str, since: datetime) -> Sequence[Reading]:
-        """Liefert alle Readings eines Sensors seit einem Zeitpunkt (inklusiv, UTC).
+    def get_since(
+        self, sensor_id: str, since: datetime, limit: int = 1000
+    ) -> Sequence[Reading]:
+        """Liefert Readings eines Sensors seit einem Zeitpunkt (inklusiv, UTC).
 
         Raises:
             RepositoryError: Bei Datenbankfehlern.
         """
-        return self._execute_read(self._SINCE_SQL, (sensor_id, since))
+        return self._execute_read(self._SINCE_SQL, (sensor_id, since, limit))
 
     def _execute_read(self, sql: str, params: tuple) -> Sequence[Reading]:
         """Fuehrt eine Lese-Query aus und mappt Zeilen auf Reading-Objekte."""
@@ -179,7 +185,15 @@ class ReadingRepository(Repository):
                 return self._fetch(self._connection, sql, params)
             with get_connection() as conn:
                 return self._fetch(conn, sql, params)
-        except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
+        except (
+            DatabaseConnectionError,
+            DatabaseConfigError,
+            pymysql.Error,
+            ValueError,
+        ) as exc:
+            # ValueError kann aus _row_to_reading kommen (z. B. ungueltiger
+            # Enum-Wert nach DB-Korruption/Migration). Der Vertrag des
+            # Repository-Interface verlangt RepositoryError -> fail-safe.
             raise RepositoryError(f"Reading konnte nicht gelesen werden: {exc}") from exc
 
     @staticmethod

@@ -285,9 +285,11 @@ def _as_string(value: object, field: str) -> str:
     # Pflicht-String-Felder muessen nicht-leer sein.
     if not isinstance(value, str):
         raise ValueError(f"{field} muss ein String sein, erhalten: {type(value)}")
-    if not value.strip():
+    stripped = value.strip()
+    if not stripped:
         raise ValueError(f"{field} darf nicht leer sein")
-    return value
+    # Whitespace am Rand verhindert spaetere sensor_id-Lookups (z. B. in DB).
+    return stripped
 
 
 def _as_float(value: object, field: str) -> float:
