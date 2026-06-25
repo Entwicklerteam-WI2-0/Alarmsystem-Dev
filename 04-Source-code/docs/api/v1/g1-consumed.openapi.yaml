@@ -16,14 +16,14 @@
 # Verhandlungsposition ggue. G1: measured_at und /health sind NICHT verhandelbar;
 # Feldnamen/Einheiten/optionale Felder per Seam-Sync (DTB-26) abstimmbar, solange
 # die Pflicht-Trias (surface_temp_c, air_temp_c, humidity_pct) erhalten bleibt.
-# Status: ENTWURF bis G1-Lead schriftlich bestaetigt (Label seam-sync-confirmed).
+# Status: FINAL — G1-Lead-Sign-off 2026-06-23 (Label seam-sync-confirmed); Teil von API-Contract v1.0.
 # =============================================================================
 
 openapi: 3.0.3
 
 info:
   title: G1 Sensorik-API — von G2 konsumiert (Client-Sicht)
-  version: 1.0.0-draft
+  version: 1.0.0
   description: |
     Vertrag der G1-Sensorik-API, **wie G2 sie erwartet und pollt**. G2 ist
     Client. Dokumentiert im Rahmen von DTB-19, damit Ingest/Poller (G2) sauber

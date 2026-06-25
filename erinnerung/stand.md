@@ -175,6 +175,22 @@
 - **Neu offen:** (1) Entscheidungslog-Edit committen/pushen (Doku-PR). (2) DTB-11/DTB-12 Jira-Status manuell.
   (3) Kritischer Pfad: DB-Setup (DTB-53–56) + Persistenz (DTB-28) → dann Bewertungsmodul DTB-38.
 
+## Update [25.06., ~00:15] — API-Contract v1.0 EINGEFROREN (P1.4) + G3-Endpoint-Auskunft (architekt)
+- **Contract v1.0 final eingefroren (DTB-35 → Erledigt):** beide Nähte beidseitig bestätigt (G1/Nils + G3-Lead,
+  Sign-off 2026-06-23). `API_FROZEN_v1.md` → Status **EINGEFROREN** + Bestätigungs-Block (im Namen der Leads durch
+  Architekt dokumentiert); `openapi.yaml` (Repo + Desktop-Versandkopie) `info.version` → **1.0.0**. Beide YAMLs
+  validiert (`openapi-spec-validator` + `openapi-typescript` grün, kein Drift ggü. `enums.py`/`schemas.py`).
+  **Lokal/ungepusht** (`API_FROZEN_v1.md`, `openapi.yaml` modified). Jira: DTB-35 → Erledigt + Kommentar;
+  DTB-19/DTB-26 waren bereits Erledigt.
+- **G3-Endpoint-Auskunft** erstellt + per 3-Agenten-Review gehärtet: vollständige G2→G3-Endpointliste; bereinigte
+  Versandkopie `Desktop/G2-API-v1-openapi.yaml`. Caveats an G3: `unknown` am `risk_level` (nicht `is_stale`)
+  erkennen; CORS serverseitig noch nötig; Fehlercodes 409/404/400/422/503; SSE Heartbeat/`Last-Event-ID`;
+  `/v1/alarms` ohne `?state` = nur offene Alarme.
+- **Neu offen:** (1) Git-Tag `api-v1.0` + P1.4-Commit auf `main` — letzter mechanischer Schritt, **Freigabe Lucas**.
+  (2) G3-Lead-Name nachtragen (`Anfrage-G3.md` + Bestätigungs-Block noch `[Name G3-Lead]`). (3) Versandkopie +
+  Kurznachricht an G3 raus. (4) **Kritischer Pfad M2:** Backend bedient `/v1` noch nicht (nur `/health`, ohne
+  Präfix) → `/v1`-Router + CORS-Middleware + Fail-safe-Durchsetzung in `assessment/` (noch leer) bauen (DTB-28/DTB-38).
+
 ## Update [25.06., ~04:00] — DTB-32 Taupunkt-Funktion + DTB-60 Poller-Taupunkt (backend-dev/Luca)
 - **DTB-32 (P2.3) fertig:** reine Funktion `calculate_dew_point` (Magnus a=17,62/b=243,12 aus
   `Schwellenwerte.md` §1) in `src/assessment/utils.py`; Guards (RH∈(0,100], `isfinite`, Magnus-Pol →
