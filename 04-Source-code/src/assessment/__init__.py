@@ -1,1 +1,5 @@
-"""Assessment: Vereisungslogik (4-Stufen) - Kernmodul, hohe Testabdeckung (Schwellenwerte.md §2)."""
+"""Bewertungsmodul für Vereisungsrisiken (DTB-38)."""
+
+from .core import assess_ice_risk
+
+__all__ = ["assess_ice_risk"]

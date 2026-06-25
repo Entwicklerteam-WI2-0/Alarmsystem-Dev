@@ -91,3 +91,72 @@
   - *Eine große zentrale Config mit allen Parametern:* architektonisch denkbar, prägt aber Werte/Struktur fremder, unzugewiesener Tasks vor und mischt Kategorien (Konstanten vs. Schwellen). Verworfen nach Abgleich mit `Schwellenwerte.md` + Rücksprache.
   - *Pro-Owner-Konfigdateien jetzt anlegen:* verfrüht — die Tasks sind weder gebaut noch zugewiesen. Den Owner-Tasks überlassen.
 - **Ergebnis/Status:** umgesetzt (getrimmt), Commit `b1a60ae`.
+
+## 2026-06-23 — Test-CI neu gegen `04-Source-code/`-Layout (frischer Branch, löst PR #18 ab)
+- **Kontext/Task:** DTB-11 (Test-CI) · M2 · Wiederaufnahme nach dem Repo-Root-Umzug (PR #29: Backend-Root = `04-Source-code/`). Der Alt-Branch `feat/ci-base` (PR #18) lag 50 Commits hinter `main` und nutzte das alte Root-Layout.
+- **Entscheidung:** Neue `test.yml` auf einem frischen Branch ab aktueller `main` mit `working-directory: 04-Source-code`; der veraltete `feat/ci-base`/PR #18 wird abgelöst & geschlossen statt rebased.
+- **Begründung:** Ausschlaggebend war die Kombination aus Sauberkeit und Konfliktrisiko: Der alte Branch lag 50 Commits hinter `main` und stammte noch aus dem Root-Layout vor dem Umzug nach `04-Source-code/` (PR #29). Ein Rebase hätte genau an dieser Layout-Grenze Konflikte erzeugt (Root-`requirements` vs. `04-Source-code/`) — Aufwand und Fehlerrisiko ohne Mehrwert, zumal der Branch-Inhalt ohnehin überholt war (Layout + E-35). Ein frischer Branch ab aktueller `main` setzt die CI direkt auf den korrekten Stand. Der veraltete PR #18 wurde deshalb abgelöst statt gerettet — der Wert lag nicht im Branch, sondern in der Aufgabe DTB-11, die auf dem neuen Layout ohnehin neu umzusetzen war.
+- **Alternativen (erwogen/verworfen):**
+  - *Rebase von `feat/ci-base` auf `main`:* 50-Commit-Rebase mit Layout-Konflikten (Root → `04-Source-code/`), alte Root-`requirements` müssten entfernt werden → mühsam/fehleranfällig. Verworfen.
+  - *PR #18 weiterführen:* Inhalt war durch Layout-Umzug + E-35 ohnehin überholt. Verworfen.
+- **Ergebnis/Status:** umgesetzt (Branch `feat/dtb-11-ci-tests`), gemergt als #50; PR #18 geschlossen, Branch gelöscht.
+
+## 2026-06-23 — ruff-Lint als Schritt in `test.yml`
+- **Kontext/Task:** DTB-11 · die Task nennt `lint.yml` ausdrücklich als optional.
+- **Entscheidung:** `ruff check .` als eigener Schritt innerhalb von `test.yml` — statt separater `lint.yml` oder gar kein Lint in der CI.
+- **Begründung:** Lint gehört in die CI, weil sie den Standard objektiv und automatisch für alle durchsetzt — unabhängig davon, ob jede:r lokal die Format-/Lint-Prüfung vor dem Commit laufen lässt. ruff prüft dabei nicht nur Stil, sondern mit den Regelgruppen `F`/`B` auch fehleranfällige Muster (fehlende/ungenutzte Imports, undefinierte Namen, Bug-Fallen) — ein Sicherheitsnetz vor dem Merge, nicht bloß Kosmetik. Ich habe ihn in `test.yml` gebündelt statt in eine eigene `lint.yml`, weil das einfacher ist: ein Workflow, ein Required-Check (`test`), weniger Pflege der Schutzregel. Das geht über den wörtlichen DoD hinaus (der nur `pytest --cov` fordert), kostet aber praktisch nichts (~1 s) — und liefert dafür automatische Standard-Durchsetzung.
+- **Alternativen (erwogen/verworfen):**
+  - *Separate `lint.yml`:* zweiter Workflow + zweiter Status-Check, mehr Verwaltung/Schutzregel-Pflege. Verworfen für den Projekt-Scope.
+  - *Kein Lint in der CI (nur lokale Prüfung):* Stil-/Lint-Verstöße fallen erst lokal/im Review auf, nicht automatisch vor dem Merge. Verworfen.
+- **Ergebnis/Status:** umgesetzt in `test.yml` (#50) — ein Workflow, ein Required-Check `test`.
+
+## 2026-06-23 — CI-DB-Strategie (a): MariaDB-Service-Container
+- **Kontext/Task:** DTB-11 · E-35-Hinweis im Ticket: CI-DB-Bereitstellung klären — (a) MariaDB-Service-Container im Workflow vs. (b) Coverage-Gate nur auf DB-freien Tests + Storage-Integration separat. Treiber: PyMySQL (kein SQLAlchemy). Aktuell ist die Suite vollständig DB-frei (Repository = Interface; PyMySQL-Implementierung erst DTB-28).
+- **Entscheidung:** Richtung (a) — MariaDB-Service-Container im CI-Workflow, sobald DB-Tests dazukommen (DTB-28). Jetzt noch nicht eingebaut, nur als Richtung im `test.yml`-Kommentar dokumentiert.
+- **Begründung:** Variante (a) hält die Hürde für alle niedrig: Ein Service-Container in der CI bedeutet, dass niemand lokal eine Datenbank installieren muss und trotzdem ein gemeinsames Coverage-Gate über die ganze Suite läuft — statt sie in „DB-frei" und „nur lokal/Pi" aufzuteilen (b), was zwei Coverage-Bereiche und mehr Abstimmung erzeugt. Den Container habe ich bewusst noch nicht eingebaut: Aktuell gibt es keinen DB-Test (das Repository ist nur ein Interface, die echte PyMySQL-Implementierung kommt erst mit DTB-28), und Infrastruktur für nicht existierende Tests vorzuhalten wäre verfrüht. Festgehalten ist die Richtung daher nur als Kommentar im Workflow, damit sie mit DTB-28 ohne erneute Diskussion umgesetzt werden kann — der Treiber ist über E-35 ohnehin gesetzt (PyMySQL, kein SQLAlchemy).
+- **Alternativen (erwogen/verworfen):**
+  - *(b) Coverage-Gate nur auf DB-freien Tests, Storage-Integration separat gegen Pi/lokal:* zwei getrennte Coverage-Bereiche, mehr Abstimmungsaufwand, Integration läuft nicht automatisch in der Cloud-CI. Verworfen zugunsten eines gemeinsamen Gates.
+- **Ergebnis/Status:** Richtung festgelegt + dokumentiert; Umsetzung mit DTB-28.
+
+## 2026-06-23 — Python-Matrix (3.12 + 3.14) + Aggregator-Check `test`
+*(Gemeinsame Entscheidung mit Lucas — eigener Beitrag herausgestellt.)*
+- **Kontext/Task:** DTB-11b (#52) · Erweiterung der festen Python-Version auf eine Matrix (3.12 + 3.14) · Wechselwirkung mit der Branch-Schutzregel (Required-Check `test`).
+- **Entscheidung / eigener Beitrag:** Beim Matrix-Plan erkannt und benannt, dass eine Matrix den Check-Namen ändert (`test` → `test (3.12)`/`test (3.14)`) → der Required-Check `test` würde nie erfüllt → Merge dauerhaft blockiert. Empfohlene Lösung: Aggregator-Job mit `name: test`, der auf die Matrix wartet. Umgesetzt vom Team (Lucas, #52).
+- **Begründung:** Der Kern war die Wechselwirkung zwischen Matrix und Branch-Schutzregel: Eine Python-Matrix benennt den Job-Check um (`test` → `test (3.12)`/`test (3.14)`), womit der gerade erst als Required gesetzte Check `test` nie mehr gemeldet würde — die Schutzregel hätte jeden Merge blockiert. Aus dieser Erkenntnis folgte die Entscheidung für den Aggregator-Job mit `name: test`: Er hält den Check-Namen stabil und entkoppelt ihn von der Matrix, sodass künftige Versionsänderungen die Schutzregel nicht erneut anfassen müssen — anders als bei der Alternative, wo man die Regel jedes Mal nachziehen müsste. Den Punkt habe ich beim Matrix-Plan eingebracht; umgesetzt hat ihn Lucas (#52).
+- **Alternativen (erwogen/verworfen):**
+  - *Branch-Schutzregel auf die Matrix-Checks umstellen (`test (3.12)`/`test (3.14)`):* funktioniert, aber die Regel muss bei jeder Matrix-Änderung nachgezogen werden. Verworfen zugunsten der Entkopplung über den Aggregator.
+- **Ergebnis/Status:** Matrix + Aggregator umgesetzt (#52); Required-Check bleibt stabil `test`.
+
+## 2026-06-23 — Poller-Fail-safe-Bug gefixt + verdeckte Pfade getestet
+- **Kontext/Task:** Poller `src/ingest/` (DTB-12, Code aus PR #46) · gefunden beim Selbstreview der DTB-11-CI · NF-01 (Fail-safe).
+- **Entscheidung:** Bug test-getrieben fixen — ein nicht-numerisches optionales `pressure_hpa` ließ `poll()` mit ungefangener `ValueError` crashen statt fail-safe `None`; erst ein fehlschlagender Reproducer-Test, dann der Fix (`_optional_float` in den Fail-safe-`try`), plus 7 Validierungs-Tests. Zusätzlich zwei `# pragma: no cover` entfernt und die verdeckten Fail-safe-Pfade (JSON-Parse, Repository-Fehler) mit Tests abgesichert → `poller.py` 100 % Coverage.
+- **Begründung:** Der Bug stammte nicht aus meinem eigenen Code — er fiel mir während des Testens meiner CI-Arbeit (Selbstreview) auf. Ihn sofort selbst zu beheben war die zeitökonomischste Wahl: Der Fix kostete fast keine Zeit, während das bloße Melden/Übergeben an den Autor länger gedauert hätte als die Behebung selbst — einen Fail-safe-Verstoß (NF-01) wollte ich zudem nicht offen liegen lassen. Da ich ohnehin an der Stelle war, habe ich kleine zusätzliche Punkte gleich mitabgearbeitet (die zwei verdeckten Fail-safe-Pfade mit Tests abgesichert), statt sie ungetestet zu lassen.
+- **Alternativen (erwogen/verworfen):**
+  - *Nur melden / an den Autor übergeben statt selbst fixen:* verworfen — bei einem Fail-safe-Verstoß (NF-01) dauert das Übergeben länger als der Fix und ließe das Risiko offen.
+  - *Größerer Umbau der Validierung:* verworfen zugunsten des minimalen Fix (das Feld in den bestehenden `try` ziehen).
+- **Ergebnis/Status:** umgesetzt (eigener Branch), gemergt via #53/#54.
+
+## 2026-06-23 — `_optional_status` Fehler-Muster vereinheitlicht
+- **Kontext/Task:** Poller · Review-Fund (LOW: Designinkonsistenz) — `_optional_float` wirft `ValueError` (zentral gefangen), während `_optional_status` intern loggt und `None` zurückgibt: zwei Muster für denselben Zweck.
+- **Entscheidung:** `_optional_status` wirft jetzt auch `ValueError` (wie die übrigen Parser) und wird zentral im Fail-safe-`try` gefangen → ein einheitliches Muster. Verhalten nach außen unverändert (fehlend → OK, defekt → Reading verworfen).
+- **Begründung:** Ich habe die Inkonsistenz an der Wurzel behoben statt sie nur zu kommentieren, weil ein Kommentar den doppelten Code-Pfad nicht beseitigt — die mentale Last für den nächsten Leser bliebe. Nach der Vereinheitlichung gibt es nur noch ein Muster: alle Feld-Parser werfen bei defektem Wert `ValueError`, das zentral fail-safe behandelt wird — einheitlicher und leichter zu lesen. Wichtig war mir, dass es ein reines Refactoring bleibt: das beobachtbare Verhalten ist identisch (fehlend → OK, defekt → Reading verworfen), abgesichert durch die unveränderten Tests.
+- **Alternativen (erwogen/verworfen):**
+  - *Inkonsistenz belassen + nur per Kommentar erklären:* behebt die mentale Last nicht, der Doppel-Pfad bleibt. Verworfen zugunsten des Wurzel-Fix.
+- **Ergebnis/Status:** umgesetzt, Verhalten durch Tests bestätigt (100 % Coverage), gemergt.
+
+## 2026-06-23 — Poller-Härtung im vertieften Review (inkl. Korrektur der `pressure_hpa`-Entscheidung)
+- **Kontext/Task:** Poller (DTB-12) · vertieftes/adversariales Review des Poller-PR (#53/#54) · ehrliche Korrektur einer früheren eigenen Entscheidung.
+- **Entscheidung:** Mehrere Punkte revidiert/ergänzt: (1) `pressure_hpa` defekt → nicht mehr das ganze Reading verwerfen, sondern loggen + auf `None` setzen + Reading trotzdem speichern (revidiert die frühere „defektes optional = verwerfen"-Entscheidung); (2) `status=fault` → Reading ablehnen (Fail-safe); (3) `measured_at` nur UTC akzeptieren; (4) spezifische `RepositoryError` statt breitem `except`.
+- **Begründung:** Die Korrektur folgt einer klaren Abwägung: Ein optionales Kontextfeld wie `pressure_hpa` darf die vollständigen Pflichtdaten (`surface_temp_c`/`air_temp_c`/`humidity_pct`) nicht wertlos machen — deshalb wird ein defekter Wert jetzt nur geloggt und auf `None` gesetzt, das Reading aber gespeichert, statt es komplett zu verwerfen. Im selben Zug habe ich den Poller robuster gemacht: ein vom Sensor gemeldeter Defekt (`status=fault`) führt zur Ablehnung (Fail-safe), `measured_at` wird nur als UTC akzeptiert, und Persistenzfehler fange ich gezielt über `RepositoryError` statt über ein breites `except` — präzisere Fehlerbehandlung, die keine unerwarteten Fehler verschluckt. Ehrlich festgehalten: Meine erste Lösung war bewusst defensiver (defektes optionales Feld → ganzes Reading verwerfen); das vertiefte Review hat gezeigt, dass das beim reinen Kontextfeld zu streng ist, und die Entscheidung entsprechend verfeinert.
+- **Alternativen (erwogen/verworfen):**
+  - *Bei „defektes optionales Feld = ganzes Reading verwerfen" bleiben:* verworfen, weil ein optionales Kontextfeld nicht die vollständigen Pflichtdaten unbrauchbar machen sollte.
+- **Ergebnis/Status:** umgesetzt, gemergt via #53/#54.
+
+## 2026-06-23 — Lokales Betriebsmodell → kein Multi-Flughafen-Backend
+*(Gemeinsame Abwägung mit Lucas — eigener Beitrag herausgestellt.)*
+- **Kontext/Task:** Betriebsmodell (AE-01/AE-02) · lokale Bereitstellung (native MariaDB / Pi-Hosting, E-35) vs. zentral/Cloud.
+- **Entscheidung:** Ein eigenes System pro Flughafen, lokal betrieben — kein flughafenübergreifendes/zentrales Backend. Konsequenz: ein einzelnes Backend für mehrere Flughäfen ist damit nicht möglich (keine zentrale Mehr-Standort-Architektur).
+- **Begründung:** In einem abwägenden Gespräch mit Lucas über die Backend-Logik wurde mir die Konsequenz klar: Weil verschiedene Flughäfen unterschiedliche Strukturen haben, lässt sich das System nicht sinnvoll flughafenübergreifend betreiben — pro Flughafen braucht es eine eigene, lokale Instanz statt eines zentralen Mehr-Standort-Backends. Mein Beitrag war das Erkennen und Benennen dieser Konsequenz (lokal ⇒ kein Multi-Flughafen-Backend), damit die Einschränkung bewusst dokumentiert ist und nicht später unbemerkt überrascht. Aus jetziger Projektsicht ist das ein bewusst akzeptierter Trade-off — der Fokus liegt auf dem einen Standort ANR; ob sich das künftig ändert, bleibt offen.
+- **Alternativen (erwogen/verworfen):**
+  - *Zentrales/Cloud-Betriebsmodell für mehrere Flughäfen:* würde Multi-Flughafen/Mehrmandanten ermöglichen, scheitert aber an den unterschiedlichen Strukturen der Flughäfen. Aus jetziger Sicht verworfen.
+- **Ergebnis/Status:** aus jetziger Projektsicht akzeptierter Trade-off (Fokus Standort ANR); Betriebsmodell-Frage (AE-01/AE-02) langfristig offen, kann sich ändern.
