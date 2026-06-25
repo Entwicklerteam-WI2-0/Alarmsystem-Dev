@@ -287,6 +287,17 @@ def test_tiefe_unaryop_kette_crasht_guard_nicht():
     assert verstoesse[0].fail_closed is True
 
 
+def test_surrogat_im_text_ist_fail_closed():
+    # Ein Surrogate-Codepoint (\ud800) lässt ast.parse->compile mit UnicodeEncodeError
+    # (Subklasse von ValueError) abbrechen. finde_verstoesse darf auch das nicht als Traceback
+    # durchschlagen lassen, sondern fail-closed melden (über den Datei-Pfad ohnehin unerreichbar,
+    # da read_text vorher UnicodeDecodeError wirft — hier der direkte Text-Aufruf abgesichert).
+    verstoesse = finde_verstoesse("x = 1  # " + chr(0xD800) + "\n", "x.py")
+    assert len(verstoesse) == 1
+    assert verstoesse[0].fail_closed is True
+    assert "parsebar" in verstoesse[0].grund
+
+
 def test_fail_closed_feld_unterscheidet_fundart():
     # Der Behebungs-Hinweis hängt am expliziten Feld, NICHT am Grund-Text — sonst bräche
     # die Zweig-Auswahl bei einer Umformulierung des Grund-Textes lautlos.

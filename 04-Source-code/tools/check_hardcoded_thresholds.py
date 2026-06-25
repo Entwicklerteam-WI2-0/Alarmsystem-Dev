@@ -215,10 +215,10 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     quelltext = quelltext.removeprefix("\ufeff")
     try:
         baum = ast.parse(quelltext)
-    except (SyntaxError, RecursionError, MemoryError) as exc:
+    except (SyntaxError, ValueError, RecursionError, MemoryError) as exc:
         # Fail-closed: eine nicht parsebare Datei darf das Gate nicht grün lassen. Auch
-        # RecursionError/MemoryError (Parser-Überlast bei extremer Verschachtelung, „Parser
-        # stack overflowed") werden gefangen — fail-closed statt Crash, nie still grün.
+        # ValueError (Surrogate/Null-Byte) und RecursionError/MemoryError (Parser-Überlast bei
+        # extremer Verschachtelung) werden gefangen — fail-closed statt Crash, nie still grün.
         zeile = getattr(exc, "lineno", None) or 1
         return [
             _fail_closed_verstoss(
