@@ -123,6 +123,7 @@ def test_database_config_rejects_connect_timeout_above_limit(minimal_env, monkey
 def test_load_database_config_from_env_parses_all_fields(minimal_env, monkeypatch) -> None:
     monkeypatch.setenv("DB_CONNECT_TIMEOUT", "7")
     monkeypatch.setenv("DB_AUTOCOMMIT", "false")
+    monkeypatch.setenv("DB_CHARSET", "latin1")
 
     config = load_database_config_from_env()
 
@@ -134,7 +135,17 @@ def test_load_database_config_from_env_parses_all_fields(minimal_env, monkeypatc
         password=_CREDENTIAL_PLACEHOLDER,
         connect_timeout=7,
         autocommit=False,
+        charset="latin1",
     )
+
+
+def test_load_database_config_from_env_rejects_whitespace_charset(minimal_env, monkeypatch) -> None:
+    """Ein explizit gesetztes, aber leeres DB_CHARSET scheitert laut (kein stiller
+    Fallback) - konsistent mit dem direkten Konstruktor."""
+    monkeypatch.setenv("DB_CHARSET", "   ")
+
+    with pytest.raises(DatabaseConfigError, match="CHARSET"):
+        load_database_config_from_env()
 
 
 def test_load_database_config_uses_safe_defaults(minimal_env) -> None:

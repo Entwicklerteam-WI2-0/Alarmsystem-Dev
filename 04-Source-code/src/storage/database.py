@@ -97,7 +97,13 @@ def load_database_config_from_env() -> DatabaseConfig:
         "DB_CONNECT_TIMEOUT", os.environ.get("DB_CONNECT_TIMEOUT", "5")
     )
     autocommit = _parse_bool(os.environ.get("DB_AUTOCOMMIT", "false"))
-    charset = os.environ.get("DB_CHARSET", "utf8mb4").strip() or "utf8mb4"
+    # DB_CHARSET nur defaulten, wenn die Variable gar nicht gesetzt ist. Ein
+    # explizit gesetzter, aber leerer/whitespace Wert wird NICHT still durch
+    # utf8mb4 ersetzt, sondern von DatabaseConfig.__post_init__ als
+    # Fehlkonfiguration abgelehnt (fail-fast, konsistent mit dem direkten
+    # Konstruktor; kein stiller Fallback bei Fehlkonfiguration).
+    charset_raw = os.environ.get("DB_CHARSET")
+    charset = "utf8mb4" if charset_raw is None else charset_raw.strip()
 
     return DatabaseConfig(
         host=required["DB_HOST"].strip(),
