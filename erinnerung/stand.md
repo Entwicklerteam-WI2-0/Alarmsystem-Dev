@@ -190,3 +190,60 @@
 - **Entscheidungen:** 8 neue Einträge im persönlichen `Petzold-Entscheidungslog` (noch lokal/uncommittet).
 - **Neu offen:** (1) Entscheidungslog-Edit committen/pushen (Doku-PR). (2) DTB-11/DTB-12 Jira-Status manuell.
   (3) Kritischer Pfad: DB-Setup (DTB-53–56) + Persistenz (DTB-28) → dann Bewertungsmodul DTB-38.
+
+## Update [25.06., ~00:15] — API-Contract v1.0 EINGEFROREN (P1.4) + G3-Endpoint-Auskunft (architekt)
+- **Contract v1.0 final eingefroren (DTB-35 → Erledigt):** beide Nähte beidseitig bestätigt (G1/Nils + G3-Lead,
+  Sign-off 2026-06-23). `API_FROZEN_v1.md` → Status **EINGEFROREN** + Bestätigungs-Block (im Namen der Leads durch
+  Architekt dokumentiert); `openapi.yaml` (Repo + Desktop-Versandkopie) `info.version` → **1.0.0**. Beide YAMLs
+  validiert (`openapi-spec-validator` + `openapi-typescript` grün, kein Drift ggü. `enums.py`/`schemas.py`).
+  **Lokal/ungepusht** (`API_FROZEN_v1.md`, `openapi.yaml` modified). Jira: DTB-35 → Erledigt + Kommentar;
+  DTB-19/DTB-26 waren bereits Erledigt.
+- **G3-Endpoint-Auskunft** erstellt + per 3-Agenten-Review gehärtet: vollständige G2→G3-Endpointliste; bereinigte
+  Versandkopie `Desktop/G2-API-v1-openapi.yaml`. Caveats an G3: `unknown` am `risk_level` (nicht `is_stale`)
+  erkennen; CORS serverseitig noch nötig; Fehlercodes 409/404/400/422/503; SSE Heartbeat/`Last-Event-ID`;
+  `/v1/alarms` ohne `?state` = nur offene Alarme.
+- **Neu offen:** (1) Git-Tag `api-v1.0` + P1.4-Commit auf `main` — letzter mechanischer Schritt, **Freigabe Lucas**.
+  (2) G3-Lead-Name nachtragen (`Anfrage-G3.md` + Bestätigungs-Block noch `[Name G3-Lead]`). (3) Versandkopie +
+  Kurznachricht an G3 raus. (4) **Kritischer Pfad M2:** Backend bedient `/v1` noch nicht (nur `/health`, ohne
+  Präfix) → `/v1`-Router + CORS-Middleware + Fail-safe-Durchsetzung in `assessment/` (noch leer) bauen (DTB-28/DTB-38).
+
+## Update [25.06., ~04:00] — DTB-32 Taupunkt-Funktion + DTB-60 Poller-Taupunkt (backend-dev/Luca)
+- **DTB-32 (P2.3) fertig:** reine Funktion `calculate_dew_point` (Magnus a=17,62/b=243,12 aus
+  `Schwellenwerte.md` §1) in `src/assessment/utils.py`; Guards (RH∈(0,100], `isfinite`, Magnus-Pol →
+  `ValueError`); 20 Tests inkl. Frost-/Negativ-Referenzwerte; Coverage `assessment` 100 %. Branch
+  `feat/dtb-32-taupunkt-magnus` **gepusht**.
+- **DTB-60 (gestapelt auf DTB-32) fertig:** Poller berechnet + plausibilisiert `dew_point_c`, füllt `Reading`.
+  Fail-safe: `ValueError` (RH=0) → `None`; **Ergebnis-Plausibilisierung** `T_d < MIN_TEMP_C` → `None` (schließt
+  RH≈0-Gap, sonst stilles GRÜN). 4 neue Poller-Tests, volle Suite **86 grün**, `poller.py` 100 %. Branch
+  `feat/dtb-60-poller-taupunkt` **gepusht**.
+- Beide via **TDD + santa-loop** (je 2 Prüfer + Moderator; je 1 echter Fail-safe-Blocker gefunden & gefixt).
+  Persönl. Entscheidungen (DTB-32 strikter Rechner; DTB-60 Ergebnis-Plausibilisierung) im
+  `Ganter-Entscheidungslog` auf `docs/ganter-entscheidungslog-dtb-32` **gepusht**.
+- **Neu offen:** (1) **Merge-Reihenfolge:** DTB-32 → `main` zuerst, dann DTB-60 (Base umstellen/rebasen),
+  Log-PR unabhängig; PR/Merge = Lucas-Freigabe (§7). (2) **Folge-Ticket:** DTB-38 muss `dew_point_c=None`
+  als „Feuchte vorhanden=wahr" behandeln (`Schwellenwerte.md` §2 → nie GRÜN); DTB-12 `dew_point_c: float|None`
+  absichern. (3) 3 offene PR-Branches (DTB-32, DTB-60, Entscheidungslog) — Luca hat hier keinen PR-Zugriff.
+
+## Update [25.06., ~11:10] — DTB-60 (#66) Review + Review-Fixes gepusht (architekt)
+- **PR #66 (DTB-60) reviewt** (Code-Review + `python-review`): Magnus-Werte unabhaengig nachgerechnet ✓,
+  Fail-safe NF-01 sauber, keine CRITICAL/HIGH. **Review-Fixes verhaltensneutral eingebaut & gepusht**
+  (`00de4c9`): `_compute_dew_point()` extrahiert; Konstante `MIN_PLAUSIBLE_DEW_POINT_C`; §3-Begruendung
+  praezisiert; Tests WARNING-Level + Grenzwert (strict `<`). **87 gruen, `poller.py` 100 %, ruff sauber.**
+- **Neu offen / kritischer Pfad:** (1) Merge-Reihenfolge: DTB-32 (#64) → main, dann #66 rebasen
+  (PR/Merge = Lucas-Freigabe). (2) **DTB-38 (#68)** muss `dew_point_c=None` als „Feuchte vorhanden=wahr"
+  behandeln (nie GRUEN) — Folge-Abhaengigkeit (heute neue Commits auf #68). (3) Layering ingest→assessment
+  (M2, offen, Architekten-Call).
+
+## Update [25.06., ~12:34] — DTB-28 fertig + PR #70 lokal konfliktfrei (architekt)
+- **Backlog-Review** gegen Anfrage-G1.md/G3.md + Team-Sync: CRITICAL-Fix — DTB-58 Stale-Timeout
+  war 180 s statt Contract-Wert **120 s** gefixt. **DTB-61** (SSE `GET /v1/alarms/stream`, Petzold) +
+  **DTB-62** (`GET /v1/thresholds`, Arash) neu im Backlog.
+- **DTB-28 fertig** — `ReadingRepository` auf main's `get_connection()`-Contextmanager portiert. Branch
+  `feat/dtb-28-persistenz`, 9 Tests (1 immer / 8 MariaDB-skip). 129 Tests gruen, 94 % Coverage.
+  Commit `17c81ce` — **lokal, UNGEPUSHT**.
+- **PR #70 Konflikte lokal geloest** (7 Dateien, Branch `fix/pr70-conflicts`, Commit `552d182`) —
+  **UNGEPUSHT. GitHub zeigt PR #70 weiterhin als konfliktreich.**
+- **Nächster Schritt (DRINGEND):**
+  1. Push `fix/pr70-conflicts` → `origin/docs/session-2026-06-25-backend-dev` (PR #70 GitHub-Konflikte).
+  2. Push `feat/dtb-28-persistenz` + PR oeffnen.
+  3. DTB-28 Jira auf „In Review"; DTB-43 (`GET /v1/assessment/current`) unassigned.
