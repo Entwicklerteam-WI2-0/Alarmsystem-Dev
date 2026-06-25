@@ -29,6 +29,14 @@ MAX_HUMIDITY_PCT = 100.0
 MIN_PRESSURE_HPA = 800.0
 MAX_PRESSURE_HPA = 1100.0
 
+# Untergrenze fuer einen plausiblen berechneten Taupunkt. Liegt der Magnus-Taupunkt
+# darunter, stammt er praktisch nur aus unplausiblen Eingaben (z. B. RH knapp ueber 0)
+# und wird als unbestimmbar behandelt. Bewusst = MIN_TEMP_C (kein eigener Magic-Wert):
+# nichts ist kaelter als der kaelteste plausibel messbare Wert. Konsistent mit
+# Schwellenwerte.md §3 (Wert ausserhalb des plausiblen Bereichs -> sicherer Zustand;
+# T_d hat dort keinen eigenen Sensor/Messbereich).
+MIN_PLAUSIBLE_DEW_POINT_C = MIN_TEMP_C
+
 # Pflichtfelder laut G1-Contract (Backend-Konzept §9.1).
 REQUIRED_FIELDS = ("measured_at", "sensor_id", "surface_temp_c", "air_temp_c", "humidity_pct")
 
@@ -144,26 +152,10 @@ class Poller:
             logger.error("humidity_pct ausserhalb des gueltigen Bereichs: %s", humidity_pct)
             return None
 
-        # Taupunkt (Magnus, DTB-32) berechnen. Bei nicht bestimmbarer Feuchte (RH=0)
-        # wirft calculate_dew_point ValueError; der Poller faengt ihn und setzt
-        # dew_point_c=None (Fail-safe-Auflage aus DTB-32: fehlender T_d -> die Bewertung
-        # stuft konservativ ein, statt still GRUEN). air_temp_c/humidity_pct sind hier
-        # bereits als endlich und im Plausibilitaetsbereich validiert.
-        try:
-            dew_point_c: float | None = calculate_dew_point(air_temp_c, humidity_pct)
-        except ValueError as exc:
-            logger.warning("Taupunkt nicht berechenbar (dew_point_c=None): %s", exc)
-            dew_point_c = None
-
-        # Ergebnis-Plausibilisierung: ein Taupunkt unter der Sensor-Temperaturgrenze
-        # (MIN_TEMP_C) ist physikalisch unplausibel und entsteht z. B. bei RH knapp ueber 0
-        # (unplausibler/defekter Sensorwert, Schwellenwerte.md §3). Statt einen absurden Wert
-        # zu speichern -> dew_point_c=None (Fail-safe: kein stilles GRUEN downstream).
-        if dew_point_c is not None and dew_point_c < MIN_TEMP_C:
-            logger.warning(
-                "Taupunkt unplausibel (%s < %s), dew_point_c=None", dew_point_c, MIN_TEMP_C
-            )
-            dew_point_c = None
+        # Taupunkt fail-safe berechnen (Magnus, DTB-32). None = unbestimmbar/unplausibel
+        # -> downstream konservativ (nie still GRUEN, NF-01). air_temp_c/humidity_pct sind
+        # hier bereits als endlich und im Plausibilitaetsbereich validiert.
+        dew_point_c = _compute_dew_point(air_temp_c, humidity_pct)
 
         # Validierte Werte in das DTB-12 Reading-Schema ueberfuehren.
         return Reading(
@@ -178,6 +170,35 @@ class Poller:
             received_at=datetime.now(UTC),
             source=Source.REAL,
         )
+
+
+def _compute_dew_point(air_temp_c: float, humidity_pct: float) -> float | None:
+    """Berechnet den Taupunkt (Magnus, DTB-32) fail-safe als float oder None.
+
+    None statt eines Ersatzwertes, wenn der Taupunkt nicht bestimmbar ist
+    (RH=0 -> calculate_dew_point wirft ValueError) oder das Ergebnis unplausibel
+    ist (< MIN_PLAUSIBLE_DEW_POINT_C, z. B. bei RH knapp ueber 0). None bedeutet
+    downstream "unbestimmbar": die Bewertung (DTB-38) stuft konservativ ein und
+    gibt nie still GRUEN aus (NF-01).
+
+    Voraussetzung: air_temp_c und humidity_pct sind bereits als endlich und im
+    Plausibilitaetsbereich validiert.
+    """
+    try:
+        dew_point_c = calculate_dew_point(air_temp_c, humidity_pct)
+    except ValueError as exc:
+        logger.warning("Taupunkt nicht berechenbar (dew_point_c=None): %s", exc)
+        return None
+
+    if dew_point_c < MIN_PLAUSIBLE_DEW_POINT_C:
+        logger.warning(
+            "Taupunkt unplausibel (%s < %s), dew_point_c=None",
+            dew_point_c,
+            MIN_PLAUSIBLE_DEW_POINT_C,
+        )
+        return None
+
+    return dew_point_c
 
 
 def _parse_iso_utc(value: object) -> datetime:

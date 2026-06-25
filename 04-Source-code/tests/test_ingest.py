@@ -5,6 +5,7 @@ aus src/storage/repository.py (Implementierung kommt in DTB-28).
 """
 
 import json
+import logging
 import math
 from datetime import UTC, datetime
 from unittest.mock import Mock, patch
@@ -12,7 +13,7 @@ from unittest.mock import Mock, patch
 import httpx
 import pytest
 
-from src.ingest.poller import Poller
+from src.ingest.poller import MIN_PLAUSIBLE_DEW_POINT_C, Poller
 from src.model.enums import SensorStatus
 from src.model.schemas import Reading
 from src.storage.repository import Repository, RepositoryError
@@ -558,6 +559,8 @@ def test_poll_dew_point_none_when_humidity_zero(
     assert reading.dew_point_c is None
     assert len(fake_repo.readings) == 1
     assert "Taupunkt nicht berechenbar" in caplog.text
+    # Degradiert (Reading bleibt erhalten) -> WARNING, nicht ERROR (kein Verwerfen).
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
 
 
 def test_poll_dew_point_none_when_humidity_near_zero(
@@ -576,3 +579,20 @@ def test_poll_dew_point_none_when_humidity_near_zero(
     assert reading.dew_point_c is None
     assert len(fake_repo.readings) == 1
     assert "unplausibel" in caplog.text
+    # Degradiert (Reading bleibt erhalten) -> WARNING, nicht ERROR (kein Verwerfen).
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+
+def test_poll_keeps_dew_point_at_plausibility_floor(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Grenzfall (strict <): ein Taupunkt GENAU auf MIN_PLAUSIBLE_DEW_POINT_C ist noch
+    # plausibel und wird behalten (nur Werte echt darunter -> None, s. near_zero-Test).
+    with patch("src.ingest.poller.calculate_dew_point", return_value=MIN_PLAUSIBLE_DEW_POINT_C):
+        with patch("src.ingest.poller.httpx.get") as mock_get:
+            mock_get.return_value = _ok_response(valid_snapshot)
+            reading = poller.poll()
+
+    assert reading is not None
+    assert reading.dew_point_c == MIN_PLAUSIBLE_DEW_POINT_C
+    assert fake_repo.readings[0].dew_point_c == MIN_PLAUSIBLE_DEW_POINT_C
