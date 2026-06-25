@@ -191,3 +191,13 @@
   Log-PR unabhängig; PR/Merge = Lucas-Freigabe (§7). (2) **Folge-Ticket:** DTB-38 muss `dew_point_c=None`
   als „Feuchte vorhanden=wahr" behandeln (`Schwellenwerte.md` §2 → nie GRÜN); DTB-12 `dew_point_c: float|None`
   absichern. (3) 3 offene PR-Branches (DTB-32, DTB-60, Entscheidungslog) — Luca hat hier keinen PR-Zugriff.
+
+## Update [25.06., ~11:10] — DTB-60 (#66) Review + Review-Fixes gepusht (architekt)
+- **PR #66 (DTB-60) reviewt** (Code-Review + `python-review`): Magnus-Werte unabhaengig nachgerechnet ✓,
+  Fail-safe NF-01 sauber, keine CRITICAL/HIGH. **Review-Fixes verhaltensneutral eingebaut & gepusht**
+  (`00de4c9`): `_compute_dew_point()` extrahiert; Konstante `MIN_PLAUSIBLE_DEW_POINT_C`; §3-Begruendung
+  praezisiert; Tests WARNING-Level + Grenzwert (strict `<`). **87 gruen, `poller.py` 100 %, ruff sauber.**
+- **Neu offen / kritischer Pfad:** (1) Merge-Reihenfolge: DTB-32 (#64) → main, dann #66 rebasen
+  (PR/Merge = Lucas-Freigabe). (2) **DTB-38 (#68)** muss `dew_point_c=None` als „Feuchte vorhanden=wahr"
+  behandeln (nie GRUEN) — Folge-Abhaengigkeit (heute neue Commits auf #68). (3) Layering ingest→assessment
+  (M2, offen, Architekten-Call).
