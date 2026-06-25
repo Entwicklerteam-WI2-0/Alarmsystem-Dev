@@ -202,15 +202,7 @@ Zentrale Schnittstelle aller Gruppen = **API/Datenmodell der Gruppe 2**, bis End
 Stack final (FastAPI + PyMySQL + MariaDB, E-35). Befehle:
 
 ```bash
-# Abhängigkeiten installieren (venv empfohlen)
-cd 04-Source-code
-uv sync
-
-# Tests ausführen
-pytest
-
-# Backend starten (dev)
-uv run python -m src.main
+# Backend starten / Tests ausführen — nach Stack-Wahl konkretisieren
 ```
 
 ---

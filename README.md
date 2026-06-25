@@ -88,7 +88,7 @@ Alarmsystem-Dev/
 
 ---
 
-> **Hinweis zur Struktur:** Der Backend-Code liegt unter **`04-Source-code/`** — das **P0-Grundgerüst steht** (FastAPI-Skelett, `GET /v1/health`, MariaDB-Setup **nativ** (Pi via Tunnel / lokal; kein Docker → E-35)). Struktur-/Setup-Detail siehe `04-Source-code/README.md` und `Backend-Konzept §7`. `.github/workflows/` (CI/CD) ist aktiv.
+> **Hinweis zur Struktur:** Der Backend-Code liegt unter **`04-Source-code/`** — das **P0-Grundgerüst steht** (FastAPI-Skelett, `GET /v1/health`, MariaDB-Setup **nativ** (Pi via Tunnel / lokal; kein Docker → E-35)). Struktur-/Setup-Detail siehe `04-Source-code/README.md` und `Backend-Konzept §7`. `.github/workflows/` (CI/CD) ist noch geplant.
 
 
 
@@ -111,10 +111,10 @@ Alarmsystem-Dev/
 
 > **🔄 Naht-Entscheidung (mit G1 abgestimmt, 22.06.2026 — E-31):** Die Datenübergabe G1 → G2 läuft als
 > **Pull**, nicht als Push. **G1 stellt bereit:** `GET /current` (liefert **alle** aktuellen Messwerte als
-> **einen** Snapshot mit **einem** gemeinsamen Mess-Zeitstempel `measured_at`, UTC/ISO-8601) und `GET /v1/health`
+> **einen** Snapshot mit **einem** gemeinsamen Mess-Zeitstempel `measured_at`, UTC/ISO-8601) und `GET /health`
 > (Verfügbarkeit). **G2 baut** einen **Poller**, der `GET /current` in einem **selbst bestimmten Intervall
 > (≤ 60 s)** abruft, validiert (Bereich, Stale, Defekt), persistiert und bewertet. Es gibt **keinen** von G2
-> gehosteten `POST /readings`-Endpoint mehr. **Fail-safe (NF-01):** Erreichbarkeit (`GET /v1/health`/Timeout)
+> gehosteten `POST /readings`-Endpoint mehr. **Fail-safe (NF-01):** Erreichbarkeit (`/health`/Timeout)
 > getrennt von Datenaktualität (`measured_at` zu alt → stale) prüfen — bei beidem **nie GRÜN**.
 
 ---
@@ -122,7 +122,7 @@ Alarmsystem-Dev/
 ## 📊 Datenfluss (Backend)
 
 ```
-  (G1 — Sensoren, stellt GET /current + GET /v1/health bereit)
+  (G1 — Sensoren, stellt GET /current + GET /health bereit)
          ↑  Pull (G2 pollt, Intervall ≤ 60 s)
    G2-Poller ──→ GET /current  (1 Snapshot + measured_at, UTC)
          ↓
@@ -373,7 +373,7 @@ tests/
 
 #### zu G1 (Sensorik) — **Pull**: G1 ist Server, G2 ist Client
 - **`GET /current`-Snapshot** — welche Felder, welche Einheiten, gemeinsamer `measured_at` (UTC)?
-- **`GET /v1/health`** — Verfügbarkeits-Check (200 ok / 503 fault)
+- **`GET /health`** — Verfügbarkeits-Check (200 ok / 503 fault)
 - **Poll-Intervall** — G2 bestimmt selbst (≤ 60 s); keine Push-Frequenz seitens G1 nötig
 - **Seam-Sync:** 1×/Woche (Anfang Woche 2)
 

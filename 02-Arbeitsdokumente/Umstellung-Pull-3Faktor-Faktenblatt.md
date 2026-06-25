@@ -47,7 +47,7 @@ Kontext/Prognose. Geänderte Regeln in `Schwellenwerte.md §2`:
 | **„Feuchte vorhanden"** | `ΔT ≤ 1,0 °C` (Oberflächennähe zum Taupunkt; Luft-`RH`-Schwelle entfernt → **E-33**) |
 
 GRÜN/GELB/ORANGE unverändert. Beide Pflicht-Vorfälle bleiben grün (liefen nie über Niederschlag).
-Schwellen (0 °C / 1,0 °C / 90 %) bleiben **Dummy-Startwerte**, parametrierbar (NF-05).
+Schwellen (0 °C / 1,0 °C) bleiben **Dummy-Startwerte**, parametrierbar (NF-05).
 
 ### C) Datenmodell-Delta
 

@@ -2,41 +2,44 @@
 
 ---
 
-Betreff: Seam-Sync G1 -> G2 — kurze schriftliche Bestaetigung der Sensordaten-Naht (v1)
+Betreff: Bestaetigung G1 -> G2 Sensordaten-Naht (v1) — VERTRAG EINGEFROREN
 
-Hi Nils,
+Hi Lucas / G2,
 
-wir (G2, Backend) frieren gerade den Datenvertrag zwischen euren Sensoren (G1) und unserem
-Backend ein. Wir bauen einen Poller, der euren Endpoint regelmaessig abfragt. Bitte bestaetigt
-uns kurz die folgenden vier Punkte (eine kurze Antwort-Mail oder WhatsApp reicht vollkommen aus:
+wir (G1, Sensorik) bestaetigen hiermit schriftlich den Datenvertrag zwischen unseren Sensoren
+und eurem Backend. Die folgenden vier Punkte sind von unserer Seite abgestimmt und gelten ab
+sofort als eingefrorene Naht fuer den Prototypen:
 
-1) ABRUF-ENDPOINT
-   Ihr stellt bereit:
+1) ABRUF-ENDPOINT (bestaetigt)
+   Wir stellen bereit:
    - GET /current  -> alle aktuellen Messwerte als EIN Snapshot mit EINEM gemeinsamen
      Mess-Zeitstempel (measured_at, UTC/ISO-8601)
    - GET /health   -> Verfuegbarkeit (200 = ok / 503 = fault)
-   Passt das so?
+   Das passt fuer uns.
 
-2) FELDER + TYPEN von GET /current (bitte bestaetigen oder korrigieren):
+2) FELDER + TYPEN von GET /current (bestaetigt):
    sensor_id       (Text, z. B. "anr-rwy-01")
    measured_at     (Zeitstempel, UTC/ISO-8601, z. B. 2026-06-22T14:03:05Z)
    surface_temp_c  (Zahl, Grad C)   - Oberflaechentemperatur
    air_temp_c      (Zahl, Grad C)   - Lufttemperatur
-   humidity_pct    (Zahl, Prozent)  - ist das die LUFTFEUCHTE? Bitte bestaetigen.
+   humidity_pct    (Zahl, Prozent)  - LUFTFEUCHTE, bestaetigt
    pressure_hpa    (Zahl, hPa)      - Luftdruck, optional
    status          ("ok" / "fault")
 
-3) WAS WIR NICHT VON EUCH BRAUCHEN:
-   Ihr muesst KEINEN Taupunkt und KEINEN fertigen Vereisungs-/Eis-Indikator liefern.
-   Den Taupunkt und die Risiko-Bewertung rechnen wir (G2) selbst aus euren Rohwerten.
-   Bitte nur die Messwerte oben.
+3) WAS WIR NICHT LIEFERN (bestaetigt)
+   Wir liefern KEINEN Taupunkt und KEINEN fertigen Vereisungs-/Eis-Indikator.
+   Taupunkt und Risiko-Bewertung werden von G2 aus unseren Rohwerten berechnet.
+   Wir liefern ausschliesslich die oben genannten Messwerte.
 
-4) ABFRAGE-TAKT:
-   Wir fragen GET /current alle 30 Sekunden ab. Sind eure Werte aktueller als 2 Minuten?
-   Wir behandeln Daten, die aelter als 120 Sekunden sind, als "veraltet" (Sicherheits-
-   Fallback: dann zeigen wir nie GRUEN). Passt 30 s Abruf / 120 s Stale-Grenze fuer euch?
+4) ABFRAGE-TAKT (bestaetigt)
+   G2 fragt GET /current alle 30 Sekunden ab.
+   Unsere Werte sind aktueller als 2 Minuten.
+   Daten, die aelter als 120 Sekunden sind, werden von G2 als "veraltet" behandelt
+   (Fail-safe: dann wird nie GRUEN angezeigt). Das passt fuer uns.
 
-Danke euch! Sobald ihr 1-4 bestaetigt, ist die Naht auf eurer Seite eingefroren.
+Mit dieser Bestaetigung ist die G1->G2 Naht auf unserer Seite eingefroren.
 
-Viele Gruesse
-[Lucas / G2]
+Bestaetigt von G1:
+Name:       [Nils / G1-Lead]
+Datum:      2026-06-23
+Status:     seam-sync-confirmed G1->G2 v1
