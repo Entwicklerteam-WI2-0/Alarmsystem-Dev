@@ -69,6 +69,20 @@ class Repository(ABC):
         """
         ...
 
+    @abstractmethod
+    def get_since(self, sensor_id: str, since: datetime) -> Sequence[Reading]:
+        """Liefert alle Readings eines Sensors seit einem Zeitpunkt (inklusiv, UTC).
+
+        Args:
+            sensor_id: Sensor-ID, fuer die die Readings gesucht werden.
+            since: Untere Zeitschranke (inklusiv) fuer measured_at.
+
+        Returns:
+            Sequenz der Readings, aufsteigend nach measured_at.
+            Leere Sequenz, wenn keine vorhanden sind.
+        """
+        ...
+
 
 class ReadingRepository(Repository):
     """PyMySQL-Implementierung des Reading-Repositories.
@@ -140,9 +154,7 @@ class ReadingRepository(Repository):
             with get_connection() as conn:
                 return self._insert(conn, params)
         except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
-            raise RepositoryError(
-                f"Reading konnte nicht gespeichert werden: {exc}"
-            ) from exc
+            raise RepositoryError(f"Reading konnte nicht gespeichert werden: {exc}") from exc
 
     def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
         """Liefert die neuesten Readings eines Sensors, absteigend nach measured_at.
@@ -168,9 +180,7 @@ class ReadingRepository(Repository):
             with get_connection() as conn:
                 return self._fetch(conn, sql, params)
         except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
-            raise RepositoryError(
-                f"Reading konnte nicht gelesen werden: {exc}"
-            ) from exc
+            raise RepositoryError(f"Reading konnte nicht gelesen werden: {exc}") from exc
 
     @staticmethod
     def _insert(conn: pymysql.Connection, params: tuple) -> int:
@@ -180,7 +190,11 @@ class ReadingRepository(Repository):
                 cursor.execute(ReadingRepository._INSERT_SQL, params)
                 reading_id = cursor.lastrowid
             conn.commit()
-            return reading_id  # type: ignore[return-value]
+            if reading_id is None:
+                raise RepositoryError(
+                    "INSERT lieferte keine ID (AUTO_INCREMENT auf 'reading' pruefen)"
+                )
+            return reading_id
         except pymysql.Error:
             try:
                 conn.rollback()

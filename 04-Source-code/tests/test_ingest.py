@@ -39,6 +39,13 @@ class FakeRepository(Repository):
         sorted_candidates = sorted(candidates, key=lambda r: r.measured_at, reverse=True)
         return tuple(sorted_candidates[:limit])
 
+    def get_since(self, sensor_id: str, since: datetime) -> Sequence[Reading]:
+        # Liefert alle Readings eines Sensors seit einem Zeitpunkt (aufsteigend).
+        candidates = [
+            r for r in self.readings if r.sensor_id == sensor_id and r.measured_at >= since
+        ]
+        return tuple(sorted(candidates, key=lambda r: r.measured_at))
+
 
 @pytest.fixture
 def fake_repo() -> FakeRepository:
@@ -451,7 +458,7 @@ def test_poll_measured_at_without_timezone_does_not_save(
 
     assert reading is None
     assert len(fake_repo.readings) == 0
-    assert "measured_at muss Zeitzoneninformation enthalten (UTC)" in caplog.text
+    assert "measured_at muss UTC sein" in caplog.text
 
 
 def test_poll_sensor_id_not_a_string_does_not_save(
@@ -566,6 +573,9 @@ def test_poll_repository_error_is_failsafe(
         def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
             raise RepositoryError("DB nicht erreichbar")
 
+        def get_since(self, sensor_id: str, since: datetime) -> Sequence[Reading]:
+            raise RepositoryError("DB nicht erreichbar")
+
     repo = RaisingRepository()
     poller = Poller(
         base_url="http://g1.test",
@@ -601,6 +611,9 @@ def test_poll_unexpected_repository_error_is_not_swallowed(
             raise RuntimeError("unerwarteter Bug")
 
         def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+            return ()
+
+        def get_since(self, sensor_id: str, since: datetime) -> Sequence[Reading]:
             return ()
 
     poller = Poller(
@@ -802,6 +815,27 @@ def test_poll_keeps_dew_point_at_plausibility_floor(
     assert reading is not None
     assert reading.dew_point_c == floor
     assert fake_repo.readings[0].dew_point_c == floor
+
+
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+def test_poll_dew_point_non_finite_is_none(
+    poller: Poller,
+    fake_repo: FakeRepository,
+    valid_snapshot: dict,
+    caplog,
+    bad_value: float,
+) -> None:
+    # Defense-in-depth: sollte calculate_dew_point silent NaN/Inf durchreichen,
+    # wird dew_point_c=None und das Reading trotzdem gespeichert (NF-01).
+    with patch("src.ingest.poller.calculate_dew_point", return_value=bad_value):
+        with patch("src.ingest.poller.httpx.get") as mock_get:
+            mock_get.return_value = _ok_response(valid_snapshot)
+            reading = poller.poll()
+
+    assert reading is not None
+    assert reading.dew_point_c is None
+    assert len(fake_repo.readings) == 1
+    assert "nicht endlich" in caplog.text
 
 
 # -----------------------------------------------------------------------------

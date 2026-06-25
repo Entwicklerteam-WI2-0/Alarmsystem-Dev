@@ -77,7 +77,7 @@ def load_thresholds(path: Path | str | None = None) -> Thresholds:
     """Lädt die Schwellenwerte aus der JSON-Config (Default oder eigener Pfad).
 
     Scheitert *laut* mit `ConfigError`, wenn die Datei fehlt, kein gültiges JSON-Objekt
-    ist, ein Pflicht-Abschnitt/-Schlüssel fehlt oder ein Schwellwert keine Zahl ist —
+    ist, ein Pflicht-Abschnitt/-Schlüssel fehlt oder ein Schwellenwert keine Zahl ist —
     bewusst kein stiller Default (NF-01-Geist).
     """
     config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
@@ -114,7 +114,7 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
         # bool ist in Python ein int-Subtyp, soll aber keine gültige Schwelle sein.
         if isinstance(wert, bool) or not isinstance(wert, (int, float)):
             raise ConfigError(
-                f"Abschnitt '{name}', Schlüssel '{feld}': Schwellwert muss eine Zahl sein, "
+                f"Abschnitt '{name}', Schlüssel '{feld}': Schwellenwert muss eine Zahl sein, "
                 f"ist aber {type(wert).__name__} ({wert!r})"
             )
 
@@ -156,18 +156,33 @@ def _validate_datenqualitaet(schwellen: DatenqualitaetSchwellen) -> None:
 
 
 def _validate_plausibilitaet(schwellen: PlausibilitaetSchwellen) -> None:
-    """Prueft, dass Plausibilitaets-Grenzen sinnvoll sind (min < max).
+    """Prueft, dass Plausibilitaets-Grenzen sinnvoll sind (min < max + Absolutgrenzen).
 
     Die konkreten Werte kommen von G1 (Sensorik); hier wird nur verhindert,
-    dass aus Versehen Min/Max vertauscht werden und die Validierung dadurch
-    permanent alles verwirft (NF-01).
+    dass aus Versehen Min/Max vertauscht werden oder physikalisch unsinnige
+    Werte konfiguriert werden und die Validierung dadurch permanent alles
+    verwirft (NF-01).
     """
     if schwellen.min_temp_c >= schwellen.max_temp_c:
         raise ConfigError("plausibilitaet.min_temp_c muss kleiner als max_temp_c sein")
+    if not -100.0 <= schwellen.min_temp_c <= 100.0:
+        raise ConfigError("plausibilitaet.min_temp_c muss zwischen -100.0 und 100.0 liegen")
+    if not -100.0 <= schwellen.max_temp_c <= 100.0:
+        raise ConfigError("plausibilitaet.max_temp_c muss zwischen -100.0 und 100.0 liegen")
+
     if schwellen.min_humidity_pct >= schwellen.max_humidity_pct:
         raise ConfigError("plausibilitaet.min_humidity_pct muss kleiner als max_humidity_pct sein")
+    _require_non_negative(
+        schwellen.min_humidity_pct, "plausibilitaet.min_humidity_pct", upper=100.0
+    )
+    _require_non_negative(
+        schwellen.max_humidity_pct, "plausibilitaet.max_humidity_pct", upper=100.0
+    )
+
     if schwellen.min_pressure_hpa >= schwellen.max_pressure_hpa:
         raise ConfigError("plausibilitaet.min_pressure_hpa muss kleiner als max_pressure_hpa sein")
+    _require_positive(schwellen.min_pressure_hpa, "plausibilitaet.min_pressure_hpa", upper=2000.0)
+    _require_positive(schwellen.max_pressure_hpa, "plausibilitaet.max_pressure_hpa", upper=2000.0)
 
 
 def _require_positive(value: float, name: str, upper: float) -> None:

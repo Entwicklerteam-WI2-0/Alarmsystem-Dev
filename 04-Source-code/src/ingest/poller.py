@@ -9,6 +9,7 @@ Bezug: Pull-Protokoll E-31; Datenmodell DTB-12; Persistenz DTB-28.
 
 import json
 import logging
+import math
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -244,6 +245,10 @@ def _compute_dew_point(
         logger.warning("Taupunkt nicht berechenbar (dew_point_c=None): %s", exc)
         return None
 
+    if not math.isfinite(dew_point_c):
+        logger.warning("Taupunkt ist nicht endlich (dew_point_c=%s), dew_point_c=None", dew_point_c)
+        return None
+
     if dew_point_c < min_plausible_dew_point_c:
         logger.warning(
             "Taupunkt unplausibel (%s < %s), dew_point_c=None",
@@ -261,11 +266,16 @@ def _parse_iso_utc(value: object) -> datetime:
         raise ValueError(f"measured_at muss ein String sein, erhalten: {type(value)}")
     # Python <3.11 akzeptiert 'Z' nicht direkt; ab 3.11 geht es.
     # Bewusst nur ein abschliessendes Z ersetzen, nicht alle Vorkommen im String.
-    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    if value.endswith("Z"):
+        normalized = value[:-1] + "+00:00"
+    elif value.endswith("+00:00"):
+        normalized = value
+    else:
+        raise ValueError("measured_at muss UTC sein (Z oder +00:00)")
     parsed = datetime.fromisoformat(normalized)
     if parsed.tzinfo is None:
         raise ValueError("measured_at muss Zeitzoneninformation enthalten (UTC)")
-    # Nur UTC erlauben (Offset 0), da der G1-Contract ISO-8601 UTC verlangt.
+    # Sicherstellen, dass der Offset wirklich 0 ist (z. B. +00:00).
     if parsed.utcoffset() != timedelta(0):
         raise ValueError("measured_at muss UTC sein")
     return parsed.astimezone(UTC)

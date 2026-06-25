@@ -7,6 +7,7 @@ Details (DATETIME(3), zeitzenlos) werden in der Persistenzschicht behandelt.
 Bezug: NF-01; E-34; DTB-12; Schwellenwerte.md §3.
 """
 
+import unicodedata
 from datetime import datetime, timedelta
 
 from src.config.loader import DatenqualitaetSchwellen
@@ -15,6 +16,9 @@ from src.model.schemas import Assessment, Reading
 
 # Maximale Laenge von Reason-Strings fuer Audit/Log-Ausgaben (NF-09).
 MAX_REASON_LENGTH = 256
+
+# Unicode-Kategorien, die in Audit-/Log-Reasons entfernt werden.
+_CONTROL_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
 
 
 def is_stale(reading: Reading | None, now: datetime, timeout_s: float) -> bool:
@@ -41,10 +45,11 @@ def check_plausibility(
 ) -> str | None:
     """Prueft ein Reading auf physikalische Plausibilitaet gegen ein vorheriges.
 
-    Prueft zwei laut Schwellenwerte.md §3 definierte Fehlerbilder:
-    - Sprung: Aenderung der Oberflaechentemperatur > 5 °C/min.
-    - Flatline: Keine Aenderung der Oberflaechentemperatur ueber >= 15 min
-      (innerhalb einer Toleranz fuer Sensorrauschen).
+    Prueft zwei laut Schwellenwerte.md §3 definierte Fehlerbilder;
+    die konkreten Grenzwerte kommen aus thresholds.json (NF-05):
+    - Sprung: Aenderung der Oberflaechentemperatur > thresholds.max_temp_jump_c_per_min.
+    - Flatline: Keine Aenderung der Oberflaechentemperatur ueber
+      >= thresholds.flatline_timeout_min (innerhalb einer Toleranz fuer Sensorrauschen).
 
     Args:
         current: Aktuelles Reading.
@@ -113,12 +118,9 @@ def _sanitize_reason(reason: str) -> str:
     aufblasen oder Formatierungsprobleme verursachen. Entfernt
     Zeilenumbrueche, Tabs und alle Control Characters (ASCII + Unicode).
     """
-    import unicodedata
-
     # Zeilenumbrueche und Tabs durch Leerzeichen ersetzen.
     cleaned = reason.replace("\n", " ").replace("\r", " ").replace("\t", " ")
     # Alle Control Characters entfernen (ASCII 0x00-0x1f, 0x7f sowie Unicode Cc/Zl/Zp).
-    _CONTROL_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
     cleaned = "".join(
         ch for ch in cleaned if unicodedata.category(ch) not in _CONTROL_CATEGORIES and ch != "\x7f"
     )

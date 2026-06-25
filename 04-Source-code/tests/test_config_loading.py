@@ -169,6 +169,54 @@ def test_datenqualitaet_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str
         load_thresholds(datei)
 
 
+@pytest.mark.parametrize(
+    "feld, wert",
+    [
+        ("min_temp_c", -100.1),
+        ("min_temp_c", 100.1),
+        ("max_temp_c", -100.1),
+        ("max_temp_c", 100.1),
+        ("min_humidity_pct", -0.01),
+        ("min_humidity_pct", 100.1),
+        ("max_humidity_pct", -0.01),
+        ("max_humidity_pct", 100.1),
+        ("min_pressure_hpa", 0),
+        ("min_pressure_hpa", -1),
+        ("min_pressure_hpa", 2000.1),
+        ("max_pressure_hpa", 0),
+        ("max_pressure_hpa", -1),
+        ("max_pressure_hpa", 2000.1),
+    ],
+)
+def test_plausibilitaet_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str, wert: float):
+    # Arrange — Plausibilitaets-Grenzen muessen physikalisch sinnvoll sein (NF-01).
+    daten = _minimal_config()
+    daten["plausibilitaet"][feld] = wert
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+@pytest.mark.parametrize(
+    "min_feld, max_feld",
+    [
+        ("min_temp_c", "max_temp_c"),
+        ("min_humidity_pct", "max_humidity_pct"),
+        ("min_pressure_hpa", "max_pressure_hpa"),
+    ],
+)
+def test_plausibilitaet_min_max_vertauscht_scheitert_laut(tmp_path, min_feld: str, max_feld: str):
+    daten = _minimal_config()
+    daten["plausibilitaet"][min_feld] = daten["plausibilitaet"][max_feld]
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
 def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
     """Vollständige, valide Minimal-Config für die Negativ-/Parametrier-Tests."""
     return {
