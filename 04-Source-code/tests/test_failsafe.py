@@ -198,8 +198,9 @@ def test_build_unknown_assessment_sanitizes_newlines() -> None:
 
 def test_build_unknown_assessment_truncates_long_reason() -> None:
     ts = datetime.now(UTC)
-    long_reason = "x" * 300
+    max_reason_len = 256
+    long_reason = "x" * (max_reason_len + 50)
     assessment = build_unknown_assessment(reason=long_reason, ts=ts)
 
-    assert len(assessment.explanation) <= 256 + len("Fail-safe: ")
+    assert len(assessment.explanation) <= max_reason_len + len("Fail-safe: ")
     assert assessment.explanation.endswith("...")

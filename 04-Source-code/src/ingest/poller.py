@@ -53,28 +53,19 @@ class Poller:
         self,
         base_url: str,
         repository: Repository,
+        data_quality_thresholds: DatenqualitaetSchwellen,
         timeout: float = 10.0,
-        *,
-        data_quality_thresholds: DatenqualitaetSchwellen | None = None,
     ) -> None:
         # Base-URL ohne abschliessenden Slash, damit /current sauber angehaengt wird.
         self.base_url = base_url.rstrip("/")
         # Speicherschicht wird injiziert -> Poller bleibt DB-agnostisch.
         self.repository = repository
+        # Parametrierbare Grenzwerte fuer Datenqualitaet (Stale-Timeout, Clock-Skew, ...).
+        # Muessen vom Aufrufer geladen werden (config/thresholds.json), damit NF-05 eingehalten
+        # wird und keine Schwellen im Poller hardgecoded sind.
+        self.data_quality_thresholds = data_quality_thresholds
         # Timeout fuer den HTTP-Request (Netzwerk/Sensor-Ausfall).
         self.timeout = timeout
-        # Parametrierbare Grenzwerte fuer Datenqualitaet (Stale-Timeout, Clock-Skew, ...).
-        # Default-Werte dienen nur der Rueckwaertskompatibilitaet in Tests; Produktivcode
-        # sollte immer einen geladenen Thresholds-Satz uebergeben (NF-05).
-        if data_quality_thresholds is None:
-            data_quality_thresholds = DatenqualitaetSchwellen(
-                stale_timeout_s=120.0,
-                max_temp_jump_c_per_min=5.0,
-                flatline_timeout_min=15.0,
-                flatline_epsilon_c=0.01,
-                max_clock_skew_s=5.0,
-            )
-        self.data_quality_thresholds = data_quality_thresholds
 
     def poll(self) -> Reading | None:
         """Holt Snapshot von G1, validiert ihn und speichert ein Reading.
@@ -86,6 +77,9 @@ class Poller:
         url = f"{self.base_url}/current"
 
         # 1. HTTP-Request an G1 senden.
+        # TODO: Wiederverwendeten httpx.Client einfuehren (Effizienz, DTB-??).
+        # Aktuell bewusst httpx.get, weil ein Client-Wechsel alle Poller-Tests
+        # umstellen wuerde; sollte in einem dedizierten Refactoring erfolgen.
         try:
             response = httpx.get(url, timeout=self.timeout)
             response.raise_for_status()
@@ -233,7 +227,9 @@ def _compute_dew_point(air_temp_c: float, humidity_pct: float) -> float | None:
     """
     try:
         dew_point_c = calculate_dew_point(air_temp_c, humidity_pct)
-    except ValueError as exc:
+    except (ValueError, ZeroDivisionError, OverflowError) as exc:
+        # Defense-in-depth: auch unerwartete Berechnungsfehler fangen und konservativ
+        # als "unbestimmbar" behandeln, damit der Poller-Cycle nicht abbricht (NF-01).
         logger.warning("Taupunkt nicht berechenbar (dew_point_c=None): %s", exc)
         return None
 
@@ -253,7 +249,8 @@ def _parse_iso_utc(value: object) -> datetime:
     if not isinstance(value, str):
         raise ValueError(f"measured_at muss ein String sein, erhalten: {type(value)}")
     # Python <3.11 akzeptiert 'Z' nicht direkt; ab 3.11 geht es.
-    normalized = value.replace("Z", "+00:00")
+    # Bewusst nur ein abschliessendes Z ersetzen, nicht alle Vorkommen im String.
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
     parsed = datetime.fromisoformat(normalized)
     if parsed.tzinfo is None:
         raise ValueError("measured_at muss Zeitzoneninformation enthalten (UTC)")

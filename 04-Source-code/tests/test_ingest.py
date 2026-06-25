@@ -505,7 +505,9 @@ def test_poll_non_json_response_is_failsafe(
     assert "G1-Antwort nicht als JSON parsierbar" in caplog.text
 
 
-def test_poll_repository_error_is_failsafe(caplog) -> None:
+def test_poll_repository_error_is_failsafe(
+    caplog, quality_thresholds: DatenqualitaetSchwellen
+) -> None:
     class RaisingRepository(Repository):
         def save(self, reading: Reading) -> int:
             raise RepositoryError("DB nicht erreichbar")
@@ -514,7 +516,11 @@ def test_poll_repository_error_is_failsafe(caplog) -> None:
             raise RepositoryError("DB nicht erreichbar")
 
     repo = RaisingRepository()
-    poller = Poller(base_url="http://g1.test", repository=repo)
+    poller = Poller(
+        base_url="http://g1.test",
+        repository=repo,
+        data_quality_thresholds=quality_thresholds,
+    )
     snapshot = {
         "measured_at": "2026-06-23T10:00:00Z",
         "sensor_id": "anr-rwy-01",
@@ -531,7 +537,9 @@ def test_poll_repository_error_is_failsafe(caplog) -> None:
     assert "Speichern des Readings fehlgeschlagen" in caplog.text
 
 
-def test_poll_unexpected_repository_error_is_not_swallowed(caplog) -> None:
+def test_poll_unexpected_repository_error_is_not_swallowed(
+    caplog, quality_thresholds: DatenqualitaetSchwellen
+) -> None:
     # Nur RepositoryError soll fail-safe abgefangen werden; andere Exceptions
     # muessen hochgereicht werden, um Programmierfehler nicht zu verschleiern.
     class BuggyRepository(Repository):
@@ -541,7 +549,11 @@ def test_poll_unexpected_repository_error_is_not_swallowed(caplog) -> None:
         def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
             return ()
 
-    poller = Poller(base_url="http://g1.test", repository=BuggyRepository())
+    poller = Poller(
+        base_url="http://g1.test",
+        repository=BuggyRepository(),
+        data_quality_thresholds=quality_thresholds,
+    )
     snapshot = {
         "measured_at": "2026-06-23T10:00:00Z",
         "sensor_id": "anr-rwy-01",
