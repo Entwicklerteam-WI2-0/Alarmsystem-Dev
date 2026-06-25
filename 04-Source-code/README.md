@@ -79,7 +79,7 @@ Einspielen **als `root`**, Reihenfolge `schema.sql` → `grants.sql` (cwd = `04-
     pytest --cov=src       # mit Coverage (Ziel: Bewertungslogik >= 80 %)
 
 ## Health-Check (G2)
-`GET /health` -> `{"status": "ok"}` (P0.3)
+`GET /v1/health` -> `{"status": "ok"}` (P0.3)
 
 ## Datenfluss
 `G1 (Sensorik)` ──poll `GET /current`──▶ `Ingest/Validierung` ──▶ DB `reading` ──▶ `Bewertung` (4-Stufen)
