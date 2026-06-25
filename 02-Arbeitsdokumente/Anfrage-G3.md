@@ -59,3 +59,20 @@ Bestaetigt von G3:
 Name:       [Name G3-Lead]
 Datum:      2026-06-23
 Status:     seam-sync-confirmed G2->G3 v1
+
+---
+
+## Versandbegleittext G2 -> G3 (Hinweise zur eingefrorenen v1-Spec)
+
+Geht zusammen mit der bereinigten `openapi.yaml`-Versandkopie an G3 — bewusste Design-Entscheidungen,
+keine Spec-Luecken:
+
+1. **Quittierung ist (noch) nicht authentifiziert.** `POST /v1/alarms/{id}/ack` hat im Prototyp (M2)
+   **kein** Security-Requirement; das `operator`-Feld ist aktuell der einzige Audit-Anker. Ein
+   Credential-/Auth-Konzept ist ein **offener Backlog-Punkt fuer M3** (analog zum Schwellenwert-Aendern,
+   Punkt 5 oben). **Bitte den Ack-Aufruf so bauen, dass spaeter ein Auth-Header ergaenzt werden kann** —
+   nicht davon ausgehen, dass der Endpoint dauerhaft offen bleibt.
+2. **SSE-Alarm-Events tragen `severity` + `assessment_id`, aber kein `risk_level`.** Bewusst (E-37): ein
+   Alarm ist ein Ereignis, kein Bewertungs-Snapshot. Fuer den Ampel-/Risiko-Kontext (Initial-Load bzw. je
+   Event) einen Folge-Call `GET /v1/assessment/current` machen (siehe auch die `AlarmSeverity`-Beschreibung
+   in der Spec).
