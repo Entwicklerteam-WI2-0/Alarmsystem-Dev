@@ -114,3 +114,13 @@ def test_taupunkt_am_magnus_pol_wirft_valueerror() -> None:
     # statt nacktem ZeroDivisionError (Defense-in-depth; real durch Poller-Range geschuetzt).
     with pytest.raises(ValueError):
         calculate_dew_point(-243.12, 60.0)
+
+
+@pytest.mark.parametrize("near_pole_temp", [-243.12 - 5e-10, -243.12 + 5e-10])
+def test_taupunkt_nahe_magnus_pol_wirft_valueerror(near_pole_temp: float) -> None:
+    # Arrange/Act/Assert: Werte, die durch Einlesen/Umrechnung/Rundung minimal neben
+    # dem Pol -b landen (z. B. -243,120000000001), duerfen NICHT still durchrutschen.
+    # Ein ==0-Vergleich wuerde hier nicht greifen und durch nahezu null teilen ->
+    # physikalisch unsinniges Riesen-Ergebnis statt eines fangbaren ValueError (Fail-safe).
+    with pytest.raises(ValueError):
+        calculate_dew_point(near_pole_temp, 60.0)
