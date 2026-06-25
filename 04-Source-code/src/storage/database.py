@@ -59,6 +59,7 @@ class DatabaseConfig:
     password: str = field(repr=False)
     connect_timeout: int = 5
     autocommit: bool = False
+    charset: str = "utf8mb4"
 
     def __post_init__(self) -> None:
         for field_name in ("host", "name", "user", "password"):
@@ -96,6 +97,7 @@ def load_database_config_from_env() -> DatabaseConfig:
         "DB_CONNECT_TIMEOUT", os.environ.get("DB_CONNECT_TIMEOUT", "5")
     )
     autocommit = _parse_bool(os.environ.get("DB_AUTOCOMMIT", "false"))
+    charset = os.environ.get("DB_CHARSET", "utf8mb4").strip() or "utf8mb4"
 
     return DatabaseConfig(
         host=required["DB_HOST"].strip(),
@@ -105,6 +107,7 @@ def load_database_config_from_env() -> DatabaseConfig:
         password=required["DB_PASSWORD"],
         connect_timeout=connect_timeout,
         autocommit=autocommit,
+        charset=charset,
     )
 
 
@@ -172,7 +175,7 @@ def get_connection(
             password=cfg.password,
             connect_timeout=cfg.connect_timeout,
             autocommit=cfg.autocommit,
-            charset="utf8mb4",
+            charset=cfg.charset,
         )
     except (PyMySQLError, OSError) as exc:
         # Infrastruktur-Details separat loggen, nicht in der Exception-Message
