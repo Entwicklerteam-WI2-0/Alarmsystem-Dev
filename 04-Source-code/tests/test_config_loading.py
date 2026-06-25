@@ -129,6 +129,29 @@ def test_boolescher_schwellwert_scheitert_laut(tmp_path):
         load_thresholds(datei)
 
 
+@pytest.mark.parametrize(
+    "feld, wert",
+    [
+        ("stale_timeout_s", 0),
+        ("stale_timeout_s", -1),
+        ("max_temp_jump_c_per_min", 0),
+        ("max_temp_jump_c_per_min", -1),
+        ("flatline_timeout_min", 0),
+        ("flatline_timeout_min", -1),
+        ("flatline_epsilon_c", -0.01),
+    ],
+)
+def test_datenqualitaet_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str, wert: float):
+    # Arrange — DTB-13: Fail-safe-Grenzwerte muessen positiv (bzw. nicht negativ) sein
+    daten = _minimal_config()
+    daten["datenqualitaet"][feld] = wert
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
 def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
     """Vollständige, valide Minimal-Config für die Negativ-/Parametrier-Tests."""
     return {

@@ -103,4 +103,23 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
                 f"Abschnitt '{name}', Schlüssel '{feld}': Schwellwert muss eine Zahl sein, "
                 f"ist aber {type(wert).__name__} ({wert!r})"
             )
-    return cls(**werte)
+
+    obj = cls(**werte)
+    # Sektionsspezifische Plausibilitaet: Datenqualitaet-Grenzwerte muessen positiv
+    # sein, damit die Fail-safe-Logik (DTB-13) nicht ins Gegenteil verkehrt.
+    if cls is DatenqualitaetSchwellen:
+        _validate_datenqualitaet(obj)
+
+    return obj
+
+
+def _validate_datenqualitaet(schwellen: DatenqualitaetSchwellen) -> None:
+    """Prueft, dass Datenqualitaet-Schwellen keine ungueltigen Grenzwerte enthalten."""
+    if schwellen.stale_timeout_s <= 0:
+        raise ConfigError("datenqualitaet.stale_timeout_s muss groesser als 0 sein")
+    if schwellen.max_temp_jump_c_per_min <= 0:
+        raise ConfigError("datenqualitaet.max_temp_jump_c_per_min muss groesser als 0 sein")
+    if schwellen.flatline_timeout_min <= 0:
+        raise ConfigError("datenqualitaet.flatline_timeout_min muss groesser als 0 sein")
+    if schwellen.flatline_epsilon_c < 0:
+        raise ConfigError("datenqualitaet.flatline_epsilon_c darf nicht negativ sein")

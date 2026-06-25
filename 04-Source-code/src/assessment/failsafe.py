@@ -82,14 +82,30 @@ def build_unknown_assessment(reason: str, ts: datetime) -> Assessment:
     - Unplausible Daten: Sprung oder Flatline.
 
     Args:
-        reason: Menschenlesbare Begruendung fuer Audit/Log.
+        reason: Menschenlesbare Begruendung fuer Audit/Log. Sollte aus
+            kontrollierter interner Logik stammen; wird auf 256 Zeichen
+            gekuerzt und von Zeilenumbruechen bereinigt.
         ts: Zeitstempel der Bewertung (UTC).
 
     Returns:
         Assessment mit risk_level=RiskLevel.UNKNOWN.
     """
+    safe_reason = _sanitize_reason(reason)
     return Assessment(
         ts=ts,
         risk_level=RiskLevel.UNKNOWN,
-        explanation=f"Fail-safe: {reason}",
+        explanation=f"Fail-safe: {safe_reason}",
     )
+
+
+def _sanitize_reason(reason: str) -> str:
+    """Bereinigt einen Reason-String fuer Audit/Log-Ausgaben.
+
+    Verhindert, dass lange oder mehrzeilige Strings die Explanation
+    aufblasen oder Formatierungsprobleme verursachen.
+    """
+    cleaned = reason.replace("\n", " ").replace("\r", " ").strip()
+    max_len = 256
+    if len(cleaned) > max_len:
+        cleaned = cleaned[: max_len - 3] + "..."
+    return cleaned

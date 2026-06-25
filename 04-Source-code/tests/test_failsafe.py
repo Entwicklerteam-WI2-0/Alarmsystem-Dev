@@ -90,6 +90,15 @@ def test_check_plausibility_no_previous_returns_none(
     assert check_plausibility(fresh_reading, None, quality_thresholds) is None
 
 
+def test_check_plausibility_negative_timestamp_order_is_unplausible(
+    fresh_reading: Reading,
+    quality_thresholds: DatenqualitaetSchwellen,
+) -> None:
+    previous = _build_previous(fresh_reading, minutes_ago=-1.0, surface_temp_c=-0.4)
+    reason = check_plausibility(fresh_reading, previous, quality_thresholds)
+    assert reason == "invalid timestamp order"
+
+
 def test_check_plausibility_normal_change_is_plausible(
     fresh_reading: Reading,
     quality_thresholds: DatenqualitaetSchwellen,
@@ -176,3 +185,20 @@ def test_build_unknown_assessment_for_plausibility_has_correct_values() -> None:
     assert assessment.risk_level is RiskLevel.UNKNOWN
     assert assessment.explanation == "Fail-safe: temperature jump"
     assert assessment.ts == ts
+
+
+def test_build_unknown_assessment_sanitizes_newlines() -> None:
+    ts = datetime.now(UTC)
+    assessment = build_unknown_assessment(reason="line1\nline2", ts=ts)
+
+    assert "\n" not in assessment.explanation
+    assert "line1 line2" in assessment.explanation
+
+
+def test_build_unknown_assessment_truncates_long_reason() -> None:
+    ts = datetime.now(UTC)
+    long_reason = "x" * 300
+    assessment = build_unknown_assessment(reason=long_reason, ts=ts)
+
+    assert len(assessment.explanation) <= 256 + len("Fail-safe: ")
+    assert assessment.explanation.endswith("...")
