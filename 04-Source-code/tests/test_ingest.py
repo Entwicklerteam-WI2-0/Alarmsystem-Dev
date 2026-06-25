@@ -6,6 +6,7 @@ aus src/storage/repository.py (Implementierung kommt in DTB-28).
 
 import json
 import math
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
@@ -27,6 +28,14 @@ class FakeRepository(Repository):
     def save(self, reading: Reading) -> int:
         self.readings.append(reading)
         return len(self.readings)
+
+    def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+        # Liefert die neuesten Readings fuer einen Sensor (nach measured_at, absteigend).
+        candidates = [r for r in self.readings if r.sensor_id == sensor_id]
+        if not candidates:
+            return ()
+        sorted_candidates = sorted(candidates, key=lambda r: r.measured_at, reverse=True)
+        return tuple(sorted_candidates[:limit])
 
 
 @pytest.fixture
@@ -470,6 +479,9 @@ def test_poll_repository_error_is_failsafe(caplog) -> None:
         def save(self, reading: Reading) -> int:
             raise RepositoryError("DB nicht erreichbar")
 
+        def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+            raise RepositoryError("DB nicht erreichbar")
+
     repo = RaisingRepository()
     poller = Poller(base_url="http://g1.test", repository=repo)
     snapshot = {
@@ -494,6 +506,9 @@ def test_poll_unexpected_repository_error_is_not_swallowed(caplog) -> None:
     class BuggyRepository(Repository):
         def save(self, reading: Reading) -> int:
             raise RuntimeError("unerwarteter Bug")
+
+        def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+            return ()
 
     poller = Poller(base_url="http://g1.test", repository=BuggyRepository())
     snapshot = {

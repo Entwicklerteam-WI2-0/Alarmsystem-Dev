@@ -49,6 +49,26 @@ class Repository(ABC):
         """
         ...
 
+    @abstractmethod
+    def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+        """Liefert die neuesten Readings eines Sensors.
+
+        Wird u. a. fuer die Stale-Erkennung (DTB-13) verwendet: Aufrufer
+        pruefen `result[0]` falls vorhanden, sonst liegen noch keine Daten vor.
+        Bei einem Fehler in der Persistenzschicht wird RepositoryError geworfen
+        -> separater Fail-safe-Fall gegenueber "Sensor liefert keine aktuellen
+        Daten" (NF-01/E-34).
+
+        Args:
+            sensor_id: Sensor-ID, fuer die die neuesten Readings gesucht werden.
+            limit: Maximale Anzahl zurueckzugebender Readings (Default: 1).
+
+        Returns:
+            Sequenz der neuesten Readings, absteigend nach measured_at.
+            Leere Sequenz, wenn noch keines vorhanden ist.
+        """
+        ...
+
 
 class ReadingRepository(Repository):
     """PyMySQL-Implementierung des Reading-Repositories.
