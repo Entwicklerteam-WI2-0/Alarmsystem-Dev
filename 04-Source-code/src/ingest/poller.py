@@ -155,6 +155,16 @@ class Poller:
             logger.warning("Taupunkt nicht berechenbar (dew_point_c=None): %s", exc)
             dew_point_c = None
 
+        # Ergebnis-Plausibilisierung: ein Taupunkt unter der Sensor-Temperaturgrenze
+        # (MIN_TEMP_C) ist physikalisch unplausibel und entsteht z. B. bei RH knapp ueber 0
+        # (unplausibler/defekter Sensorwert, Schwellenwerte.md §3). Statt einen absurden Wert
+        # zu speichern -> dew_point_c=None (Fail-safe: kein stilles GRUEN downstream).
+        if dew_point_c is not None and dew_point_c < MIN_TEMP_C:
+            logger.warning(
+                "Taupunkt unplausibel (%s < %s), dew_point_c=None", dew_point_c, MIN_TEMP_C
+            )
+            dew_point_c = None
+
         # Validierte Werte in das DTB-12 Reading-Schema ueberfuehren.
         return Reading(
             sensor_id=sensor_id,

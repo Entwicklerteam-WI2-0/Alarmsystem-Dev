@@ -518,10 +518,28 @@ def test_poll_computes_dew_point(
         mock_get.return_value = _ok_response(valid_snapshot)
         reading = poller.poll()
 
+    # Referenz: Magnus(a=17,62; b=243,12; Schwellenwerte.md §1) fuer T_a=1,2 °C, RH=96 %
+    # ergibt T_d = 0,6325 °C (unabhaengig nachgerechnet, nicht aus der Implementierung).
     assert reading is not None
-    # calculate_dew_point(1.2, 96) ~= 0,63 °C (Magnus, Schwellenwerte.md §1);
-    # konkreter Sollwert faengt auch ein versehentliches Vertauschen der Argumente.
     assert reading.dew_point_c == pytest.approx(0.63, abs=1e-2)
+    # dew_point_c muss auch persistiert sein, nicht nur im Returnwert stehen.
+    assert len(fake_repo.readings) == 1
+    assert fake_repo.readings[0].dew_point_c == pytest.approx(0.63, abs=1e-2)
+
+
+def test_poll_computes_negative_dew_point_in_frost(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Use-Case-Kern (Frost): bei Minustemperaturen muss ein negativer Taupunkt
+    # korrekt ins Reading geschrieben werden. Magnus(-5 °C, 80 %) = -7,92 °C.
+    snapshot = {**valid_snapshot, "surface_temp_c": -6.0, "air_temp_c": -5.0, "humidity_pct": 80}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.dew_point_c == pytest.approx(-7.92, abs=1e-2)
 
 
 def test_poll_dew_point_none_when_humidity_zero(
@@ -539,3 +557,22 @@ def test_poll_dew_point_none_when_humidity_zero(
     assert reading is not None
     assert reading.dew_point_c is None
     assert len(fake_repo.readings) == 1
+    assert "Taupunkt nicht berechenbar" in caplog.text
+
+
+def test_poll_dew_point_none_when_humidity_near_zero(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # H1-Regression: RH knapp ueber 0 liefert einen absurden Taupunkt (< -50 °C).
+    # Der Poller plausibilisiert das Ergebnis und setzt dew_point_c=None, statt einen
+    # unsinnigen Wert zu speichern, der downstream faelschlich GRUEN ausloesen koennte.
+    snapshot = {**valid_snapshot, "humidity_pct": 0.01}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.dew_point_c is None
+    assert len(fake_repo.readings) == 1
+    assert "unplausibel" in caplog.text
