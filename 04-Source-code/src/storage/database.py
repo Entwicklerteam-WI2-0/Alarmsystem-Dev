@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 import pymysql
@@ -62,7 +62,7 @@ class DatabaseConfig:
     charset: str = "utf8mb4"
 
     def __post_init__(self) -> None:
-        for field_name in ("host", "name", "user", "password"):
+        for field_name in ("host", "name", "user", "password", "charset"):
             value = getattr(self, field_name)
             if value.strip() == "":
                 raise DatabaseConfigError(
@@ -97,7 +97,13 @@ def load_database_config_from_env() -> DatabaseConfig:
         "DB_CONNECT_TIMEOUT", os.environ.get("DB_CONNECT_TIMEOUT", "5")
     )
     autocommit = _parse_bool(os.environ.get("DB_AUTOCOMMIT", "false"))
-    charset = os.environ.get("DB_CHARSET", "utf8mb4").strip() or "utf8mb4"
+    # DB_CHARSET nur defaulten, wenn die Variable gar nicht gesetzt ist. Ein
+    # explizit gesetzter, aber leerer/whitespace Wert wird NICHT still durch
+    # utf8mb4 ersetzt, sondern von DatabaseConfig.__post_init__ als
+    # Fehlkonfiguration abgelehnt (fail-fast, konsistent mit dem direkten
+    # Konstruktor; kein stiller Fallback bei Fehlkonfiguration).
+    charset_raw = os.environ.get("DB_CHARSET")
+    charset = "utf8mb4" if charset_raw is None else charset_raw.strip()
 
     return DatabaseConfig(
         host=required["DB_HOST"].strip(),
@@ -227,16 +233,10 @@ def transaction(
     """
     cfg = config if config is not None else load_database_config_from_env()
     # Eine Transaktion erfordert zwingend autocommit=False; wir erzwingen das
-    # auf der Verbindung, unabhaengig von der urspruenglichen Config.
-    tx_cfg = DatabaseConfig(
-        host=cfg.host,
-        port=cfg.port,
-        name=cfg.name,
-        user=cfg.user,
-        password=cfg.password,
-        connect_timeout=cfg.connect_timeout,
-        autocommit=False,
-    )
+    # auf der Verbindung, unabhaengig von der urspruenglichen Config. replace()
+    # uebernimmt alle uebrigen Felder automatisch, damit kein Parameter (z. B.
+    # charset, DTB-55) beim Kopieren vergessen werden kann.
+    tx_cfg = replace(cfg, autocommit=False)
 
     with get_connection(tx_cfg) as conn:
         commit_error: PyMySQLError | None = None
