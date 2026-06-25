@@ -1,9 +1,40 @@
 # Persönliches Entscheidungslog — Andi (G2)
-> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-23
+> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-25
 > **Autor:** Andi · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
 ---
+
+## 2026-06-25 — DTB-13: Stale + Plausibilität als DB-agnostisches Fail-safe
+
+- **Kontext/Task:** DTB-13 (Plausibilität + Stale-Erkennung) · NF-01 (Fail-safe) · E-34
+  (Kaskade + UNKNOWN) · Schwellenwerte.md §3. Ziel: Datenqualität vor der Bewertung erkennen
+  und bei Problemen nie GRÜN ausgeben.
+
+- **Entscheidung:**
+  - Stale-Logik, Sprung- und Flatline-Erkennung in `src/assessment/failsafe.py` bundeln.
+  - Stale-Schwelle auf **120 s** parametrieren (nicht 180 s aus Schwellenwerte.md §3),
+    um schneller auf Ausfälle reagieren zu können.
+  - Plausibilität wird **paarweise** geprüft: aktuelles Reading gegen das vorherige
+    (`Repository.get_latest()`), da das Interface schon für Stale benötigt wird.
+  - Flatline wird mit einer **Epsilon-Toleranz** (`flatline_epsilon_c = 0,01 °C`) geprüft,
+    um Sensorrauschen zu tolerieren.
+  - Stale, DB-Ausfall und unplausible Daten bleiben ** drei getrennte Fälle**, liefern aber
+    gemeinsam `RiskLevel.UNKNOWN`.
+
+- **Begründung:** *(noch vom Autor zu vervollständigen)*
+
+- **Alternativen:**
+  - **Stale-Schwelle = 180 s (3 × Messintervall)** wie in Schwellenwerte.md §3 — verworfen,
+    da 120 s konservativer ist und früher auf veraltete Daten hinweist.
+  - **Plausibilität über Sliding-Window mit mehreren Readings** — verworfen, weil das
+    Repository-Interface aktuell nur `get_latest()` vorsieht und DTB-13 ein Enabler für
+    DTB-38 sein soll, ohne DTB-28 zu blockieren.
+  - **Flatline ohne Epsilon (exakt gleiche Werte)** — verworfen, weil reales Sensorrauschen
+    sonst zu viele False-Positives erzeugen würde.
+
+- **Ergebnis/Status:** Umgesetzt in Commit `8901068` auf `feat/dtb-13-stale-erkennung`.
+  121 Tests grün, ruff sauber. Offen: PR nach Genehmigung durch Lucas.
 
 ## 2026-06-23 — DB-Zugriff: PyMySQL statt SQLAlchemy/Alembic
 
