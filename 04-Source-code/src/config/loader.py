@@ -36,6 +36,9 @@ class PrognoseSchwellen:
 @dataclass(frozen=True)
 class DatenqualitaetSchwellen:
     stale_timeout_s: float
+    max_temp_jump_c_per_min: float
+    flatline_timeout_min: float
+    flatline_epsilon_c: float
 
 
 @dataclass(frozen=True)
