@@ -205,7 +205,12 @@ def _py_dateien(ziele: Iterable[str | Path]) -> list[Path]:
             dateien.append(pfad)
         elif pfad.is_dir():
             dateien.extend(sorted(pfad.rglob("*.py")))
-    return dateien
+    # Überlappende Ziele (Datei zweimal, oder Datei + ihr Verzeichnis) deduplizieren,
+    # damit kein Verstoß doppelt gemeldet/gezählt wird; Reihenfolge bleibt erhalten.
+    eindeutig: dict[Path, Path] = {}
+    for datei in dateien:
+        eindeutig.setdefault(datei.resolve(), datei)
+    return list(eindeutig.values())
 
 
 def pruefe_dateien(dateien: Iterable[Path]) -> list[Verstoss]:
@@ -225,19 +230,29 @@ def pruefe_verzeichnisse(verzeichnisse: Iterable[str | Path]) -> list[Verstoss]:
 
 
 def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:
-    """Druckt den FEHLER-Block (Verstöße + Behebungs-Hinweis) für `main`."""
+    """Druckt den FEHLER-Block für `main` — mit auf die Fund-Art zugeschnittenem Rat."""
     print("FEHLER: hartcodierte Schwellen oder nicht prüfbare Dateien (NF-05 — config/ nutzen):\n")
     for verstoss in verstoesse:
         print(f"  {verstoss.datei}:{verstoss.zeile}: {verstoss.inhalt.strip()}")
-    print(
-        f"\n{len(verstoesse)} Verstoß/Verstöße. Schwellen über config/ laden "
-        f"(src/config/loader.py) oder begründete Ausnahme mit '# {ERLAUBT_MARKER}' "
-        f"auf der gemeldeten Zeile markieren (bei mehrzeiligem Vergleich: erste Zeile)."
-    )
+    print(f"\n{len(verstoesse)} Verstoß/Verstöße.")
+    # Rat getrennt nach Fund-Art — für eine nicht parsebare Datei ist „config/ laden" falsch.
+    if any("nicht parsebar" not in v.grund for v in verstoesse):
+        print(
+            f"  → Schwellen über config/ laden (src/config/loader.py) oder begründete Ausnahme "
+            f"mit '# {ERLAUBT_MARKER}' auf der gemeldeten Zeile markieren "
+            f"(bei mehrzeiligem Vergleich: erste Zeile)."
+        )
+    if any("nicht parsebar" in v.grund for v in verstoesse):
+        print("  → Nicht parsebare Dateien reparieren (Syntax/Encoding) — sie sind nicht prüfbar.")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """CLI-Einstieg: Exit 0 = sauber, 1 = Verstoß gefunden."""
+    # Ausgabe robust gegen die Windows-Konsole (cp1252): UTF-8 erzwingen, sonst crasht
+    # ein Zeichen wie „→" oder ein Umlaut mit UnicodeEncodeError (Linux/CI ist UTF-8).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
     args = list(argv) if argv is not None else sys.argv[1:]
     verzeichnisse = args if args else list(SCAN_DIRS)
 

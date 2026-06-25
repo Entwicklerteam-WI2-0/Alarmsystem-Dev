@@ -338,6 +338,46 @@ def test_main_datei_als_argument_wird_geprueft(tmp_path, capsys):
     assert "core.py" in ausgabe
 
 
+def test_main_syntaxfehler_meldung_raet_zu_reparatur(tmp_path, capsys):
+    # Bei einer nicht parsebaren Datei ist „config/ laden/noqa" falscher Rat -> Reparatur-Hinweis.
+    d = tmp_path / "assessment"
+    d.mkdir()
+    (d / "core.py").write_text("def kaputt(:\n", encoding="utf-8")
+    code = main([str(d)])
+    ausgabe = capsys.readouterr().out
+    assert code == 1
+    assert "reparieren" in ausgabe
+    assert "Schwellen über config/ laden" not in ausgabe
+
+
+def test_main_ausgabe_crasht_nicht_auf_cp1252(tmp_path):
+    # Regression: die Ausgabe (inkl. „→"/Umlaute) darf auf einer cp1252-Konsole
+    # (Windows-Default) nicht mit UnicodeEncodeError crashen.
+    import io
+    import sys
+
+    d = tmp_path / "assessment"
+    d.mkdir()
+    (d / "core.py").write_text("if t_s > 1.0:\n    pass\n", encoding="utf-8")
+    alt = sys.stdout
+    sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    try:
+        code = main([str(d)])  # darf nicht mit UnicodeEncodeError crashen
+    finally:
+        sys.stdout = alt
+    assert code == 1
+
+
+def test_main_duplikat_argument_einmal_gemeldet(tmp_path, capsys):
+    # Dieselbe Datei zweimal als Argument -> Verstoß nur EINMAL gemeldet (Dedup).
+    f = tmp_path / "core.py"
+    f.write_text("if t_s > 1.0:\n    pass\n", encoding="utf-8")
+    code = main([str(f), str(f)])
+    ausgabe = capsys.readouterr().out
+    assert code == 1
+    assert "1 Verstoß" in ausgabe
+
+
 def test_isclose_kwargs_entpackung_kein_fehlalarm():
     # kw.arg is None bei **tol-Entpackung -> übersprungen, kein Kandidat, kein Fehlalarm.
     assert _scan("import math\ntol = {}\nif math.isclose(t_s, x, **tol):\n    pass\n") == []
