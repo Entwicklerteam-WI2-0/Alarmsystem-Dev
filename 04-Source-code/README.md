@@ -41,13 +41,19 @@ App-User existiert (DB-Init), Zugangsdaten in `.env` (s. `.env.example`), nie co
 
 Einspielen **als `root`**, Reihenfolge `schema.sql` → `grants.sql` (cwd = `04-Source-code`):
 
-    # PowerShell (Windows-Standardshell — '<' funktioniert hier NICHT):
+    # PowerShell (Windows-Standardshell — '<' funktioniert hier NICHT).
+    # Bei Erstinstallation liefert grants.sql ERROR 1141 (keine bestehenden Grants);
+    # der mysql-Client setzt fort, gibt aber Exit-Code != 0 zurueck. Daher
+    # $ErrorActionPreference = 'Stop' hier vermeiden oder Exit-Code ignorieren.
     Get-Content migrations\schema.sql | mysql -h 127.0.0.1 -P 3306 -u root -p alarmsystem
     Get-Content migrations\grants.sql | mysql -h 127.0.0.1 -P 3306 -u root -p alarmsystem
 
-    # cmd.exe / Linux-Shell (Eingabe-Umleitung '<' ok):
+    # cmd.exe / Linux-Shell (Eingabe-Umleitung '<' ok).
+    # Auch hier kann grants.sql bei Erstinstallation Exit-Code != 0 liefern.
     mysql -h 127.0.0.1 -P 3306 -u root -p alarmsystem < migrations/schema.sql
     mysql -h 127.0.0.1 -P 3306 -u root -p alarmsystem < migrations/grants.sql
+
+> **Maßgeblich ist die Verifikation via `SHOW GRANTS FOR 'alarm'@'localhost';`**, nicht der Exit-Code.
 
 **Verifikation** (läuft bei der MariaDB-Initialisierung am Pi — DTB-54 DoD-Nachweis, noch offen):
 
@@ -73,6 +79,9 @@ Einspielen **als `root`**, Reihenfolge `schema.sql` → `grants.sql` (cwd = `04-
 > - [ ] (2) Typen/Charset/Indizes stichprobenhaft geprüft
 > - [ ] (3) Idempotenz: `schema.sql` 2× fehlerfrei eingespielt
 > - [ ] (4) append-only erzwungen (Negativ-Test `ERROR 1142` für audit_log **und** reading)
+>
+> Prozess: diese Checkliste muss bei Pi-MariaDB-Init abgehakt und in Jira/DTB-54
+> als Abschlussnachweis dokumentiert werden — nicht nur in dieser README.
 
 ## Tests
     pytest                 # alle Tests

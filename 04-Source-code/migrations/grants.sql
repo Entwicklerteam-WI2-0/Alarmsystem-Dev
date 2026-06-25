@@ -10,7 +10,9 @@
 -- KEIN "FLUSH PRIVILEGES": GRANT/REVOKE wirken in MariaDB sofort; FLUSH ist nur
 -- bei direkter Manipulation der mysql.*-Tabellen noetig -- hier bewusst weggelassen.
 --
--- Platzhalter an .env koppeln:  DB_NAME=alarmsystem, DB_USER=alarm.
+-- DB-Name und User sind in diesem Skript hart kodiert (SQL kann keine .env lesen).
+-- Bei abweichendem DB_NAME/DB_USER muessen alle Bezeichner manuell ersetzt werden.
+-- Empfohlene Werte aus .env: DB_NAME=alarmsystem, DB_USER=alarm.
 -- Host 'localhost' passt fuer native lokale MariaDB UND Pi via SSH-Tunnel
 -- (getunnelte Verbindungen erscheinen serverseitig als 'localhost').
 -- Anderer Verbindungsweg -> Host-Specifier anpassen.
