@@ -17,8 +17,8 @@
 #        risk_level=unknown + is_stale=true (200). 503 nur bei echter
 #        G2-Nichtverfuegbarkeit.
 #
-# Status: ENTWURF — wird eingefroren, sobald G1- und G3-Lead schriftlich
-#        bestaetigt haben (DTB-26, Label seam-sync-confirmed). Dann Tag api-v1.0.
+# Status: EINGEFROREN (v1.0, 2026-06-24) — G1- und G3-Lead haben bestaetigt
+#        (DTB-26, seam-sync-confirmed). Git-Tag api-v1.0 ausstehend (Freigabe Lucas).
 # OPERATIONSZAHL: Die urspruengliche DTB-19-DoD nannte ">= 15 Operationen". Diese
 #        ist durch die verbindliche Architekten-Vorlage (Jira DTB-19, Kommentar
 #        23.06., Lucas Voehringer/DRI) UEBERHOLT: massgeblich ist das Lean-Set von
@@ -30,7 +30,7 @@ openapi: 3.0.3
 
 info:
   title: Alarmsystem-Backend G2 — API v1 (Vereisungserkennung ANR)
-  version: 1.0.0-draft
+  version: 1.0.0
   description: |
     REST-Schnittstelle des G2-Backends (Erfassung & Bewertung von
     Vereisungsbedingungen am Regionalflughafen ANR). **G2 ist hier Server**,
