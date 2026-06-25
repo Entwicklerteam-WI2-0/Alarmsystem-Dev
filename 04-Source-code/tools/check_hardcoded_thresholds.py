@@ -11,10 +11,10 @@ Vergleichs-Calls `operator.gt`/`math.isclose`) statt über Regex auf Textzeilen.
 deckt die ursprünglichen DoD-Beispiele (`>\\s*[0-9.]`, `<\\s*[0-9.]`, `delta_T <= 1.0`)
 semantisch ab und ist robust gegen Zeilenumbrüche, Strings, Kommentare und Docstrings.
 
-**Fail-closed:** Eine nicht parsebare Datei (echter SyntaxError) wird als Verstoß
-gemeldet (Gate rot), statt still „OK" zu liefern — ein Schwellen-Modul, das nicht
-geprüft werden kann, darf nicht grün durchrutschen. BOM-Dateien werden über
-`utf-8-sig` korrekt gelesen.
+**Fail-closed:** Eine nicht parsebare Datei (SyntaxError oder Parser-Überlast durch
+extreme Verschachtelung: RecursionError/MemoryError) wird als Verstoß gemeldet (Gate rot),
+statt still „OK" zu liefern — ein Schwellen-Modul, das nicht geprüft werden kann, darf
+nicht grün durchrutschen. BOM-Dateien werden über `utf-8-sig` korrekt gelesen.
 
 Aufruf (aus 04-Source-code/):
     python tools/check_hardcoded_thresholds.py            # Default-Verzeichnisse
@@ -215,11 +215,10 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     quelltext = quelltext.removeprefix("\ufeff")
     try:
         baum = ast.parse(quelltext)
-    except (SyntaxError, RecursionError) as exc:
-        # Fail-closed: eine nicht prüfbare Schwellen-Datei darf das Gate nicht grün lassen.
-        # SyntaxError = kaputter Code; RecursionError = extrem tiefe Verschachtelung, die den
-        # Parser überlastet. Beide dürfen den Guard nicht mit Traceback crashen lassen, sondern
-        # werden einheitlich fail-closed gemeldet (gleiche Invariante wie beim SyntaxError).
+    except (SyntaxError, ValueError, RecursionError, MemoryError) as exc:
+        # Fail-closed: eine nicht parsebare Datei darf das Gate nicht grün lassen. Auch
+        # ValueError (Surrogate/Null-Byte) und RecursionError/MemoryError (Parser-Überlast bei
+        # extremer Verschachtelung) werden gefangen — fail-closed statt Crash, nie still grün.
         zeile = getattr(exc, "lineno", None) or 1
         return [
             _fail_closed_verstoss(
