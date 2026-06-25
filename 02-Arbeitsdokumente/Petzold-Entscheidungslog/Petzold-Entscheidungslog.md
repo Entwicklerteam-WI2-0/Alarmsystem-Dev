@@ -1,5 +1,5 @@
 # Persönliches Entscheidungslog — Johannes Petzold (G2)
-> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-23  ·  **Zeitraum:** 2026-06-22 bis 2026-06-23
+> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-25  ·  **Zeitraum:** 2026-06-22 bis 2026-06-25
 > **Autor:** Johannes Petzold · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
@@ -160,3 +160,102 @@
 - **Alternativen (erwogen/verworfen):**
   - *Zentrales/Cloud-Betriebsmodell für mehrere Flughäfen:* würde Multi-Flughafen/Mehrmandanten ermöglichen, scheitert aber an den unterschiedlichen Strukturen der Flughäfen. Aus jetziger Sicht verworfen.
 - **Ergebnis/Status:** aus jetziger Projektsicht akzeptierter Trade-off (Fokus Standort ANR); Betriebsmodell-Frage (AE-01/AE-02) langfristig offen, kann sich ändern.
+
+## 2026-06-25 — Hardcode-Schwellen-Guard über AST statt Regex
+- **Kontext/Task:** DTB-22 (No-Hardcode-Schwellen-Guard + CI-Gate) · Enabler für NF-05 (Schwellen müssen parametrierbar bleiben, nie als Literal im Code). Die Aufgabe schlug Regex-Beispiele (`>\s*[0-9.]`, `delta_T <= 1.0`) als Erkennungsmuster vor.
+- **Entscheidung:** Erkennung über den abstrakten Syntaxbaum (AST) — `ast.Compare` mit Zahl-Operand plus die indirekten Vergleiche `operator.gt`/`math.isclose` — statt über Regex auf den Quelltext-Zeilen.
+- **Begründung:** Die Aufgabenvorgaben sind für mich Vorgaben zum *Ziel*, nicht zur *Methode* — beim Ausarbeiten habe ich den Syntaxbaum als die bessere Lösung erkannt. Eine reine Textsuche kann Code nicht von Text *über* Code unterscheiden: Sie hätte einen Schwellenvergleich auch dann gemeldet, wenn er nur in einem Text, Kommentar oder Beschreibungsblock vorkommt (Fehlalarm), und über mehrere Zeilen verteilte Vergleiche übersehen. Genau solche Fehlalarme wollte ich vermeiden, weil sie sinnlos Zeit und Aufmerksamkeit kosten — und im schlimmeren Fall zu Fehlinformationen führen, die in einem sicherheitsnahen Projekt sogar Fehlentscheidungen begünstigen können. Der Syntaxbaum versteht die Struktur und schlägt nur an, wo wirklich ein Vergleich im Code steht; dieselbe Schwelle wird auch in ihrer Funktions-Schreibweise erkannt, damit man sie nicht getarnt am Wächter vorbeischreiben kann. Der etwas höhere Aufwand ist verschmerzbar, zumal ohne zusätzliche Abhängigkeit.
+- **Alternativen (erwogen/verworfen):**
+  - *Regex auf Textzeilen (wie skizziert):* Fehlalarme in Strings/Kommentaren/Docstrings, verpasst mehrzeilige Vergleiche. Verworfen.
+  - *Externes Lint-Plugin als Abhängigkeit:* mehr Setup, Stdlib reicht. Verworfen.
+- **Ergebnis/Status:** umgesetzt, gemergt als PR #73.
+
+## 2026-06-25 — Nicht-Schwellen-Randfälle von der Erkennung ausgenommen (Toleranzen, Wahrheitswerte)
+- **Kontext/Task:** DTB-22 · Zwei Fälle sehen für eine naive Erkennung wie ein „Vergleich gegen ein Zahl-Literal" aus, sind aber keine Schwellen: die Toleranz-Parameter von `math.isclose` (`rel_tol`/`abs_tol`, z. B. `math.isclose(t_s, 0.0, rel_tol=0.01)`) und Vergleiche gegen Wahrheitswerte (`flag > True`; `bool` ist in Python technisch eine Unterart von `int`).
+- **Entscheidung:** Beide werden ausdrücklich von der Schwellen-Erkennung ausgenommen — nur echte Zahl-Vergleichswerte zählen.
+- **Begründung:** Eine Toleranz-/Genauigkeitsangabe und ein Wahrheitswert sind begrifflich etwas anderes als eine Schwelle. Die Schwelle ist der Wert, *gegen den* fachlich verglichen wird; eine Toleranz beschreibt nur, *wie genau* verglichen wird, und ein Wahrheitswert ist eine Ja/Nein-Aussage, kein einstellbarer Grenzwert. Solche Randfälle als Schwelle zu werten wäre fachlich falsch — und praktisch ein Fehlalarm, weil der Wächter etwas anschwärzen würde, wo gar keine konfigurationspflichtige Schwelle steht. Mir war wichtig, dass der Wächter genau bleibt und nur das meldet, was wirklich eine Schwelle ist — sonst verliert er an Glaubwürdigkeit (gleiches Motiv wie bei der Methodenwahl).
+- **Alternativen (erwogen/verworfen):**
+  - *Toleranzen bzw. Wahrheitswerte mitprüfen:* sichere Fehlalarme auf Nicht-Schwellen. Verworfen.
+- **Ergebnis/Status:** umgesetzt, gemergt als PR #73.
+
+## 2026-06-25 — Grenzen der statischen Erkennung bewusst akzeptiert und dokumentiert
+- **Kontext/Task:** DTB-22 · Die AST-Erkennung ist statisch und kann dem Datenfluss nicht folgen. Bauartbedingt offen bleiben u. a.: ein Literal, das erst einer Variablen zugewiesen und dann verglichen wird (`grenze = 1.0` … `if t_s > grenze`), sowie Alias-/bare-Importe (`import operator as op` → `op.gt(...)`).
+- **Entscheidung:** Diese Fälle werden bewusst NICHT erkannt; sie sind als „bekannte Grenzen" im Code und im PR-Template dokumentiert und dem Code-Review als zweiter Instanz überlassen.
+- **Begründung:** Eine statische Analyse hat prinzipielle Grenzen — dem Datenfluss über Variablen oder Alias-Importe hinterherzulaufen würde den Wächter deutlich aufwändiger und fehleranfälliger machen, für vergleichsweise kleinen Zusatznutzen. Für mich ist der Wächter ohnehin eine *Hilfe, kein Allheilmittel*: Er fängt die häufigen, offensichtlichen Fälle automatisch ab, der Mensch im Review bleibt die zweite Instanz für den Rest. Entscheidend war mir, diese Lücken nicht stillschweigend zu lassen, sondern ausdrücklich festzuhalten — bewusste Lücken gehören immer dokumentiert, egal ob es nur um die Nachvollziehbarkeit geht oder darum, dass man die Stelle später gezielt aus- oder umbauen will. So weiß jeder, worauf er sich beim Wächter verlassen kann und worauf nicht.
+- **Alternativen (erwogen/verworfen):**
+  - *Datenfluss/Alias-Fälle auch abdecken:* deutlich höhere Komplexität für geringen Nutzen, statisch ohnehin nicht vollständig. Verworfen.
+  - *Lücken unkommentiert lassen:* lässt im Unklaren und erschwert spätere Erweiterung. Verworfen.
+- **Ergebnis/Status:** umgesetzt + dokumentiert, gemergt als PR #73.
+
+## 2026-06-25 — Scan bewusst auf die fachlichen Schwellen-Module begrenzt (SCAN_DIRS)
+- **Kontext/Task:** DTB-22 · Der Guard scannt per Default nur `src/assessment` + `src/forecast` (über die Liste `SCAN_DIRS`), nicht das ganze `src/`; erweiterbar ohne Code-Änderung.
+- **Entscheidung:** Den Scan eng auf die Module mit echten Vereisungs-/Prognose-Schwellen begrenzen; weitere Verzeichnisse nur bewusst über `SCAN_DIRS` ergänzen.
+- **Begründung:** Schwellenwerte kommen fachlich nur in der Bewertung und der Prognose vor — nur dort lohnt die Prüfung. Ein globaler Scan über das ganze Projekt hätte legitime Zahlenvergleiche an anderer Stelle fälschlich angeschwärzt (etwa Status-Codes, Seiten-/Längenangaben, Indizes). Genau diese Fehlalarme wollte ich vermeiden, weil ein Wächter, der ständig grundlos anschlägt, schnell an Glaubwürdigkeit verliert und im Zweifel ignoriert oder abgeschaltet wird. Gleichzeitig habe ich den Scope nicht starr verdrahtet, sondern bewusst leicht erweiterbar gehalten: Bekommt künftig ein weiteres Modul echte Schwellen, lässt es sich an einer Stelle ergänzen, ohne den Wächter umzubauen — die Eingrenzung ist eine bewusste Vorsichtsmaßnahme gegen Fehlalarme, keine endgültige Festlegung.
+- **Alternativen (erwogen/verworfen):**
+  - *Global das ganze `src/` scannen:* Fehlalarme → Gate unglaubwürdig/ignoriert. Verworfen.
+  - *Scope starr verdrahten:* spätere Ausweitung würde zur Umbau-Aktion. Verworfen.
+- **Ergebnis/Status:** umgesetzt, gemergt als PR #73.
+
+## 2026-06-25 — Wächter-Tooling: schlank, überall identisch, Aufgaben sauber getrennt
+- **Kontext/Task:** DTB-22 · Der Wächter läuft an drei Stellen (CI-Gate `lint-config`, optionaler lokaler pre-commit-Hook, direkter Aufruf), nutzt nur die Python-Standardbibliothek (kein `pip install`), die Scan-Pfade (`SCAN_DIRS`) werden skript-relativ aufgelöst. Die Unit-Tests des Wächters laufen nicht im Gate-Workflow, sondern im allgemeinen Test-Workflow `test.yml`.
+- **Entscheidung:** (1) keine externen Abhängigkeiten; (2) die Scan-Pfade an genau einer Stelle (`SCAN_DIRS`) führen statt sie in CI und pre-commit zu duplizieren; (3) das schlanke Gate prüft nur, die Tests des Wächters laufen getrennt im Test-Workflow.
+- **Begründung:** Mir ging es vor allem darum, dass es keine zweite Stelle gibt, die man pflegen muss und die unbemerkt auseinanderlaufen kann. Stünden die Scan-Pfade einmal in der CI und einmal in der pre-commit-Konfiguration, würde früher oder später jemand die eine anpassen und die andere vergessen — dann prüft der Wächter lokal etwas anderes als in der CI, ohne dass es auffällt. Eine einzige Quelle der Wahrheit schließt das aus. In dieselbe Richtung geht die Aufgabentrennung der Workflows: Jeder soll genau eine Sache tun — das Gate prüft nur auf hartcodierte Schwellen und soll als schlanker, abhängigkeitsfreier Lauf nicht das ganze Test-Framework mitschleppen; die Tests des Wächters gehören zum übrigen Test-Lauf, wo ein Defekt am Wächter den Lauf rot färbt. Zweitrangig, aber willkommen: Weil der Wächter nur die Standardbibliothek braucht, läuft er ohne Installation überall gleich — niedrige Hürde, vorhersagbar identisches Verhalten.
+- **Alternativen (erwogen/verworfen):**
+  - *Pfade in CI und pre-commit getrennt pflegen:* zwei Quellen → Drift-Risiko. Verworfen.
+  - *Wächter-Tests im Gate mitlaufen lassen:* belastet das schlanke Gate mit dem Test-Framework, vermischt zwei Aufgaben. Verworfen.
+  - *Externe Abhängigkeit/Lint-Framework:* Installation/Setup ohne Mehrwert. Verworfen.
+- **Ergebnis/Status:** umgesetzt, gemergt als PR #73.
+
+## 2026-06-25 — Regel und Wächter-Grenzen im PR-Template sichtbar gemacht
+- **Kontext/Task:** DTB-22 · Begleitend zum Wächter wurde das Pull-Request-Template ergänzt: Es erinnert in jeder neuen PR an die Regel „keine hartcodierten Schwellen, Werte aus der Konfiguration laden" und benennt die bekannten Grenzen des Wächters (nicht erkannte Fälle, die Schreibweise für begründete Ausnahmen).
+- **Entscheidung:** Regel und Grenzen dort platzieren, wo Entwickler ohnehin hinschauen (PR-Template), statt sie nur im Code/Docstring zu hinterlegen.
+- **Begründung:** Ein automatischer Wächter fängt viel ab, aber ein Werkzeug allein ändert kein Verhalten — Menschen müssen die Regel kennen und wissen, worauf sich der Wächter *nicht* verlässt. Im Code vergraben liest das kaum jemand; im PR-Template steht es bei jeder Änderung vor Augen. So bleibt die Regel beim Arbeiten präsent, und die Grenzen erreichen auch die, die den Wächter-Code nie öffnen — gerade weil er eine Hilfe ist und kein Allheilmittel, braucht die menschliche Ebene diese Information sichtbar. Günstige Maßnahme, große Wirkung: ein paar Zeilen Template gegen wiederkehrende Missverständnisse.
+- **Alternativen (erwogen/verworfen):**
+  - *Regel/Grenzen nur im Code/Docstring:* wird selten gelesen, erreicht Beitragende nicht beim Arbeiten. Verworfen.
+- **Ergebnis/Status:** umgesetzt, gemergt als PR #73.
+
+## 2026-06-25 — Fail-closed: Was der Wächter nicht prüfen kann, färbt das Gate rot
+- **Kontext/Task:** DTB-22 · Mehrere „nicht prüfbar"-Fälle werden einheitlich als Verstoß (Exit 1, rot) behandelt statt als „OK": Syntaxfehler, nicht als UTF-8 lesbare Datei, und der Fall, dass gar keine prüfbare Datei gefunden wurde. Die Invariante ist bewusst „0 prüfbare Dateien → rot", nicht „Pfad existiert → ok".
+- **Entscheidung:** Jeden Fall, in dem eine Schwellen-Datei nicht zuverlässig geprüft werden konnte (nicht parsebar, nicht sauber lesbar, oder nichts Prüfbares gefunden), als Verstoß melden — nie still grün.
+- **Begründung:** Der ganze Zweck des Wächters ist „keine hartcodierte Schwelle rutscht durch". Daraus folgt zwingend: „Ich konnte diese Datei nicht prüfen" muss als *Fehler* gelten, nicht als Erfolg — sonst hebelt genau das den Wächter dort aus, wo er gebraucht wird. Eine kaputte oder unleserliche Schwellen-Datei durchzuwinken wäre der gefährlichste Ausgang, weil das Problem dann unbemerkt grün durchläuft. Ich habe das bewusst an den Fail-safe-Gedanken des Projekts angelehnt (NF-01: bei Ausfall/defekten Daten nie GRÜN, sondern sicherer Zustand) — derselbe Grundsatz, auf den Wächter übertragen. Wichtig war mir auch die *richtige* Invariante: Es genügt nicht zu prüfen, ob ein Pfad existiert; entscheidend ist, ob wirklich etwas Prüfbares gefunden wurde — ein leeres/falsches Ziel darf nicht wie „alles sauber" aussehen. Und eine nicht sauber lesbare Datei prüfe ich lieber gar nicht best-effort (mit Ersatzzeichen, die Inhalt verschlucken könnten), sondern melde sie als nicht prüfbar.
+- **Alternativen (erwogen/verworfen):**
+  - *Nicht prüfbares still überspringen (grün):* hebelt den Zweck aus. Verworfen.
+  - *Invariante „Pfad existiert → ok":* wertet leere/falsche Ziele fälschlich als sauber. Verworfen.
+  - *Best-effort-Scan mit Ersatzzeichen:* könnte Inhalt verschlucken. Verworfen.
+- **Ergebnis/Status:** umgesetzt, gemergt als PR #73.
+
+## 2026-06-25 — Fail-closed auch bei Parser-Überlast: iterativ gehärtet
+- **Kontext/Task:** DTB-22 / PR #91 · Das Fail-closed-Verhalten bei nicht parsebaren Dateien wurde schrittweise vervollständigt. Zuerst fing der Wächter nur den klaren `SyntaxError`. Sehr tief verschachtelter Code lässt den Parser aber unterschiedlich abbrechen: `RecursionError` (von Lucas ergänzt), `MemoryError` („Parser stack overflowed") und ein `ValueError`/Surrogate-Fall (von mir in PR #91 gefunden). `MemoryError` wird bewusst breit gefangen.
+- **Entscheidung:** Alle diese Parser-Ausfälle einheitlich fail-closed melden, statt den Wächter mit Traceback crashen zu lassen; den breiten `MemoryError`-Fall bewusst mitnehmen, auch wenn dadurch theoretisch ein echtes Speicherproblem als „nicht prüfbar" gewertet würde.
+- **Begründung:** Der ehrlichste Teil dieser Aufgabe ist für mich der Prozess. Meine erste Lösung deckte nur den offensichtlichen Fall ab. Dass extrem tiefe Verschachtelung den Parser auf *mehrere* Arten überlasten kann, hätte ich vorher nicht erraten — diese Randfälle kamen erst ans Licht, weil ich und das vertiefte Review den Wächter gezielt zu brechen versucht haben. Genau das ist der Wert dieses adversarialen Testens: Solche Lücken findet man nicht durch Nachdenken allein, sondern indem man das System bewusst an seine Grenzen treibt. Jedes Mal war die Entscheidung dieselbe und folgte dem Fail-closed-Prinzip: den Fall fangen, damit der Wächter sauber rot meldet statt unkontrolliert abzustürzen. Beim `MemoryError` habe ich bewusst breit gefangen, obwohl das im Extremfall auch ein echtes Speicherproblem schlucken würde — denn bei einem Sicherheits-Gate ist „nicht prüfbar → rot" immer die sichere Richtung: Ein roter Lauf, der zu viel anzeigt, ist harmlos; ein still grüner Lauf, der etwas übersieht, ist es nicht. Die Lehre, die ich mitnehme: Robustheit an den Rändern entsteht nicht beim ersten Entwurf, sondern durch beharrliches Suchen nach dem, was schiefgehen kann — und die Fail-closed-Invariante hat über alle gefundenen Fälle gehalten.
+- **Alternativen (erwogen/verworfen):**
+  - *Nur `SyntaxError` fangen:* ließe die Geschwister-Fälle crashen. Verworfen, sobald bekannt.
+  - *`MemoryError` nicht fangen (echtes OOM durchlassen):* wählt bei einem Sicherheits-Gate die unsichere Richtung. Verworfen zugunsten „im Zweifel rot".
+- **Ergebnis/Status:** Grundlogik in PR #73, Parser-Überlast-Härtung in PR #91. Über alle Fälle verifiziert.
+
+## 2026-06-25 — Saubere Trennung: Prüf-Logik rein, Nebeneffekte nur im CLI-Einstieg
+- **Kontext/Task:** DTB-22 · Die öffentlichen Prüf-Funktionen (z. B. `pruefe_verzeichnisse`) geben ihr Ergebnis nur zurück — sie drucken nicht und verändern keinen globalen Zustand. Alles mit Nebeneffekt ist im CLI-Einstieg `main` gekapselt: Warnungen (auf stderr) und die nur *temporäre* UTF-8-Umstellung von stdout/stderr mit anschließender Wiederherstellung.
+- **Entscheidung:** Prüf-Logik als reine Funktionen halten (Eingabe → Rückgabe, keine Ausgabe/Mutation); Ausgabe und temporäre Stream-Umstellung ausschließlich in `main`, inkl. Restaurierung.
+- **Begründung:** Eine Funktion, die nur prüft, soll auch nur prüfen — wer sie aufruft, bekommt ein vorhersagbares Ergebnis und keine Überraschungen. Würde eine Prüf-Funktion selbst auf den Bildschirm schreiben oder gar globale Einstellungen wie das Ausgabe-Encoding dauerhaft verändern, hätte jeder spätere Aufrufer (ein Test, ein anderes Skript) unsichtbare Seiteneffekte am Hals, die schwer zu finden sind. Deshalb lebt alles, was nach außen wirkt, an genau einer Stelle: im CLI-Einstieg. Dass `main` die Konsole nur vorübergehend umstellt und danach zurücksetzt, gehört zur selben Idee — ein Werkzeug soll die Umgebung, in der es läuft, nicht bleibend verändern. Das macht den Wächter berechenbar und wiederverwendbar, statt ihn an einen bestimmten Aufrufkontext zu fesseln.
+- **Alternativen (erwogen/verworfen):**
+  - *Prüf-Funktionen selbst drucken lassen:* belastet reine Funktionen mit Nebeneffekten, überrascht Aufrufer. Verworfen.
+  - *Stream-Umstellung dauerhaft lassen:* bleibende globale Mutation beim Aufrufer. Verworfen.
+- **Ergebnis/Status:** umgesetzt, gemergt als PR #73.
+
+## 2026-06-25 — Eine gemergte Änderung erst verifiziert, bevor ich darauf aufgebaut habe
+- **Kontext/Task:** DTB-22 / PR #91 · Lucas hatte den `RecursionError`-Fang ergänzt und bereits nach `main` gemergt. Bevor ich darauf aufgebaut habe, habe ich seine Änderung adversarial nachgeprüft — und dabei zwei weitere, bis dahin ungefangene Parser-Ausfälle entdeckt (`MemoryError`, Surrogate/`ValueError`), die ich anschließend geschlossen habe.
+- **Entscheidung:** Eine Änderung — auch eine bereits gemergte von jemand anderem — vor dem Weiterbauen verifizieren, statt sie als „erledigt" hinzunehmen.
+- **Begründung:** Ein Fix ist für mich nicht automatisch fertig, nur weil er gemergt ist. Gerade bei einer sicherheitskritischen Invariante prüfe ich lieber zweimal nach, als etwas einfach stehen zu lassen — der kleine Mehraufwand ist nichts gegen das Risiko, auf einer Annahme aufzubauen, die gar nicht hält. Genau das hat sich hier ausgezahlt: Beim Nachprüfen von Lucas' Ergänzung kamen die weiteren Lücken überhaupt erst ans Licht; hätte ich seine Änderung blind übernommen, wären sie unbemerkt geblieben. Vertrauen in die Arbeit der anderen und eigenes Nachprüfen schließen sich für mich nicht aus — bei Sicherheitsthemen gehört die zweite Prüfung schlicht dazu.
+- **Alternativen (erwogen/verworfen):**
+  - *Die gemergte Änderung als erledigt hinnehmen und direkt darauf aufbauen:* hätte die weiteren Lücken übersehen. Verworfen.
+- **Ergebnis/Status:** Verifikation + Folge-Härtung in PR #91.
+
+## 2026-06-25 — SHA-Pinning der CI-Actions bewusst ausgelagert statt im Guard-PR
+*(Gemeinsame Architekten-Entscheidung mit Lucas — eigener Beitrag herausgestellt.)*
+- **Kontext/Task:** DTB-22 · Ein Review-Befund mahnte mehrfach an, die GitHub-Actions auf feste Commit-SHAs zu pinnen statt auf Tags (`@v4`). Die Frage betrifft nicht nur den Guard-Workflow, sondern alle Workflows im Repo.
+- **Entscheidung:** Das SHA-Pinning nicht im Guard-PR erledigen, sondern als repo-weite Härtung der Architektenrolle vorbehalten — Lucas und ich haben das gemeinsam so entschieden.
+- **Begründung:** Mein Beitrag war, zu erkennen und zu benennen, dass dieser Befund über den Guard-PR hinausreicht: Nur einen einzelnen Workflow zu pinnen, während alle anderen auf Tags bleiben, wäre inkonsistent und würde ein flächiges Sicherheitsthema in Stückwerk zerlegen — das gehört in einen bewussten, einheitlichen Schritt, nicht beiläufig in einen unbeteiligten Feature-PR. Dazu ein ehrlicher praktischer Punkt: Die korrekten SHAs lassen sich nicht ohne Weiteres lokal verifizieren; auf einen ungeprüften SHA zu pinnen wäre selbst ein Risiko und damit das Gegenteil der beabsichtigten Härtung. Aus beidem folgte, dem Review-Druck hier *nicht* nachzugeben, sondern den richtigen Rahmen zu wählen. Weil das Thema das ganze Repo betrifft und in die geteilte Architektenverantwortung fällt, haben Lucas und ich es gemeinsam entschieden, statt dass ich es im Alleingang in meinem PR umsetze.
+- **Alternativen (erwogen/verworfen):**
+  - *Nur die Guard-Workflow-Actions pinnen:* inkonsistent, Stückwerk. Verworfen.
+  - *Auf einen unverifizierten SHA pinnen, um den Befund schnell zu schließen:* selbst ein Risiko. Verworfen.
+- **Ergebnis/Status:** als repo-weite Aufgabe der Architektenrolle (Lucas/ich) festgehalten; nicht Teil des Guard-PRs.
