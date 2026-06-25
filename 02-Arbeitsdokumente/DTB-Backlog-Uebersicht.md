@@ -71,6 +71,8 @@
 - **DTB-58** Poller: Stale-Erkennung für G1-Snapshots (**>120 s** — Contract-Wert, war fälschlich „180 s") — *Ganter, offen*
 - **DTB-59** Poller: `GET /health` von G1 abfragen + auswerten — *Lucas, offen*
 - **DTB-60** Poller: `dew_point_c` aus `air_temp_c`+`humidity_pct` berechnen — *Ganter, in Review (PR #66)*
+- **DTB-61** API: SSE-Alarm-Stream `GET /v1/alarms/stream` (Push, E-37) — *Petzold, offen (High)* — **neu erstellt 25.06.**; schließt Contract-Lücke (Push-Komponente; Poll/Resync/Ack = DTB-31/24)
+- **DTB-62** API: `GET /v1/thresholds` (Schwellenwerte lesen, NF-07) — *Arash, offen (Medium)* — **neu erstellt 25.06.**; Arashs erste Task (einfach, RB-01-neutral; Ändern → später NF-07)
 
 ---
 
