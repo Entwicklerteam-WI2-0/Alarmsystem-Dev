@@ -21,14 +21,6 @@ from src.storage.database import (
 
 
 class RepositoryError(Exception):
-    """Domänen-Exception fuer Fehler in der Persistenzschicht.
-
-    Der Poller faengt diese ab und geht fail-safe (kein Speichern, kein GRUEN).
-    Konkrete Implementierungen leiten ihre Fehler auf diese Exception herunter.
-    """
-
-
-class RepositoryError(Exception):
     """Domänen-Exception für Fehler in der Persistenzschicht.
 
     Der Poller fängt diese ab und geht fail-safe (kein Speichern, kein GRÜN).
