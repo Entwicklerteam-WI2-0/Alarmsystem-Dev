@@ -249,3 +249,11 @@
 - **#93 (DTB-58/60)** als Ersatz fuer das ueberholte #66 angelegt — **Achtung:** Branch vermischt DTB-13/#84-Commits; **DTB-58 (Poller-Stale) vs DTB-13 (assessment/failsafe) = offene Architekturentscheidung** (Stale-Ebene).
 - **Governance verschaerft:** kein `main`-Merge ohne ausdrueckliche Architekten-Einzelfreigabe; Agenten pushen nur auf PR-Branches (siehe Lucas-Entscheidungslog 2026-06-25).
 - **Neu offen:** (1) **#94 (DTB-29) + #93 (DTB-58/60) von Lucas mergen.** (2) DTB-58 vs DTB-13 Stale-Ebene klaeren. (3) Jira DTB-32/DTB-29 → Done nachtragen. (4) Parallele zweite Instanz erzeugte Doppel-Branches (Doppel-Revert geloescht, Rest belassen). (5) Branch `docs/entscheidungslog-session-2026-06-25` noch zu pushen.
+
+## Update [25.06., ~23:15] — DTB-22 Guard abgeschlossen (#91) + Entscheidungslog (Petzold)
+- **DTB-22 Guard fertig & auf `main`** (AST, Scan assessment+forecast, fail-closed, noqa, PR-Template/pre-commit; #73).
+  **Folge-PR #91 gemergt:** Lucas' `RecursionError`-Härtung verifiziert → `MemoryError` + `ValueError`/Surrogate
+  gefunden & fail-closed geschlossen. 199 Tests grün.
+- **Entscheidungslog:** 11 DTB-22-Einträge + Save-Session auf `docs/dtb-22-entscheidungslog` **gepusht**.
+- **Team-OS:** `/update` gelaufen (`claude-sync.md` +89 Z., 53 uni-Skills, v1.6.0).
+- **Status: ✅ DTB-22 vollständig abgeschlossen** (Code auf `main`, Doku gepusht).
