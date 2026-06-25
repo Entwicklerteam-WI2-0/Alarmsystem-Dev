@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
   actor       VARCHAR(128) NOT NULL DEFAULT 'system',
   detail      JSON         NULL,
   PRIMARY KEY (id),
-  KEY idx_audit_ts_event (ts, event_type),         -- DTB-29: Abfragen nach Zeit + Ereignistyp
+  KEY idx_audit_ts (ts),
   CONSTRAINT chk_audit_event CHECK (event_type IN
     ('reading_ingested','assessment_made','alarm_raised','alarm_acknowledged','threshold_changed','sensor_fault'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
