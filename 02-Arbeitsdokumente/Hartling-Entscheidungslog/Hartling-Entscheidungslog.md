@@ -10,7 +10,7 @@
   Quelle: `02-Arbeitsdokumente/Surprise Anforderungen.txt` (Mitteilung der Geschäftsleitung).
 - **Entscheidung:** Die Persistenz läuft durchgängig auf **MySQL/MariaDB** (dev = prod). Ich nehme die
   GL-Vorgabe **als gesetzt an** und fechte sie **nicht** an.
-- **Begründung:** *(eigene Formulierung — bitte prüfen/anpassen)* Die IT des Flughafens betreibt ihre
+- **Begründung:** Die IT des Flughafens betreibt ihre
   bestehenden betrieblichen Anwendungen bereits auf MySQL und hat dort die Erfahrung/Kompetenz. Ein anderer
   DB-Stack (z. B. PostgreSQL) hätte bedeutet, dass sich **die dortige IT an uns** anpassen müsste — das
   wollten wir dem Betreiber nicht aufzwingen und auch **nicht weiter eskalieren**. Die Vorgabe gewichtet
@@ -36,7 +36,7 @@
 - **Entscheidung:** Das DB-Schema wird als **handgeschriebenes, idempotentes `schema.sql`**
   (`CREATE TABLE IF NOT EXISTS`, Enums als `VARCHAR` + `CHECK`) gepflegt und direkt gegen MariaDB
   eingespielt — **kein Alembic**, **kein ORM** (rohes PyMySQL hinter Repository-Pattern).
-- **Begründung:** *(eigene Formulierung — bitte prüfen/anpassen)* Für ~6 stabile Tabellen ist ein
+- **Begründung:** Für ~6 stabile Tabellen ist ein
   Migrationsframework (Alembic) + ORM **Overkill**: mehr bewegliche Teile, höhere Lernkurve für ein
   ~2.-Semester-Team, ohne realen Mehrwert in einem 3-Wochen-Prototyp. Ein einziges, gut kommentiertes
   `schema.sql` ist **vollständig überblickbar**, versionierbar und idempotent wieder einspielbar. Den
