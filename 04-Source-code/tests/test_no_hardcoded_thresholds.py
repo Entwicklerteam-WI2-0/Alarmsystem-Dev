@@ -213,7 +213,7 @@ def test_noqa_auf_anderer_zeile_unterdrueckt_nicht():
 
 
 def test_marker_mit_suffix_unterdrueckt_nicht():
-    # L7: '# noqa: hardcoded-threshold-OFF' ist NICHT der Marker -> Verstoß bleibt bestehen.
+    # L7: der Marker-Suffix-Fall 'hardcoded-threshold-OFF' ist NICHT gueltig -> Verstoß bleibt.
     assert _scan("if t_s > 1.0:  # noqa: hardcoded-threshold-OFF\n    pass\n")
 
 
