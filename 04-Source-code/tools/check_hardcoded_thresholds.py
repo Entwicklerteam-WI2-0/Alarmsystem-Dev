@@ -39,6 +39,8 @@ Bekannte Grenzen (bewusst). Zwei Ursachen:
     bare-Import (`from operator import gt`) oder Fremd-Libs (`np.greater`).
   - Verkettete Vergleiche (`0.0 < t_s < 1.0`) zählen als ein Befund (ein Compare-Knoten).
   - Nur UTF-8-Quellen; abweichende PEP-263-`coding:`-Deklarationen werden fail-closed gemeldet.
+  - `# noqa: hardcoded-threshold` wirkt zeilenweise: es unterdrückt ALLE Vergleiche seiner
+    Zeile — ein zweiter, hartcodierter Vergleich auf derselben Zeile würde mit-unterdrückt.
 Diese Fälle bleiben dem Code-Review (zweite Instanz) überlassen. Legitime Nicht-Schwellen-
 Vergleiche (Längen/Indizes/Status, z. B. `len(x) > 0`) mit dem noqa-Marker entschärfen —
 relevant erst bei Erweiterung von SCAN_DIRS auf ingest/api.

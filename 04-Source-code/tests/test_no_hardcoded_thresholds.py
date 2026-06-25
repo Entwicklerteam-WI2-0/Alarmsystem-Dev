@@ -273,6 +273,14 @@ def test_bom_datei_wird_geprueft(tmp_path):
     assert len(verstoesse) == 1
 
 
+def test_doppelte_bom_text_ist_fail_closed():
+    # removeprefix entfernt genau EINE BOM -> die zweite bleibt -> SyntaxError -> fail-closed
+    # (lstrip haette beide entfernt und die Datei evtl. faelschlich parsebar gemacht).
+    verstoesse = finde_verstoesse("\ufeff\ufeffif t_s > 1.0:\n    pass\n", "x.py")
+    assert len(verstoesse) == 1
+    assert verstoesse[0].fail_closed is True
+
+
 def test_pruefe_verzeichnisse_ist_fail_closed_bei_0_dateien():
     # Konsistent zu main(): keine prüfbare .py -> fail_closed-Verstoss, NICHT stilles [].
     verstoesse = pruefe_verzeichnisse(["gibt/es/nicht"])
