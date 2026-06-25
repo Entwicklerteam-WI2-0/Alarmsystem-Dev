@@ -38,14 +38,16 @@ REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`assessment`    FROM 'alarm
 REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`audit_log`     FROM 'alarm'@'localhost';
 REVOKE ALL PRIVILEGES, GRANT OPTION ON `alarmsystem`.`acknowledgement` FROM 'alarm'@'localhost';
 
--- 2) Veraenderliche Tabellen (Zustand/Config): INSERT/SELECT/UPDATE -- KEIN DELETE.
---    alarm         -- UPDATE fuer state-Uebergaenge (active -> acknowledged -> cleared).
---    threshold_set -- Config-Saetze werden per neuem valid_from-Satz ersetzt (Supersession),
---                     nicht geloescht. DELETE bewusst NICHT vergeben (geringste Rechte):
---                     es ist ungenutzt UND FK-unsicher, da assessment via
---                     fk_assessment_threshold auf historische Schwellen-Saetze verweist.
+-- 2) Zustand/Config -- gezielte DML nur nach tatsaechlichem Bedarf (geringste Rechte):
+--    alarm         -- INSERT/SELECT/UPDATE: UPDATE fuer state-Uebergaenge
+--                     (active -> acknowledged -> cleared). KEIN DELETE.
+--    threshold_set -- NUR INSERT/SELECT: Config-Saetze werden per neuem valid_from-Satz
+--                     ersetzt (Supersession) -- nie ge-UPDATE-t, nie geloescht. Es gibt
+--                     kein active_flag/superseded_at; UPDATE/DELETE bewusst NICHT vergeben,
+--                     da assessment.fk_assessment_threshold (ohne ON DELETE) auf historische
+--                     Saetze verweist -- Ueberschreiben/Loeschen wuerde den Audit-Trail brechen.
 GRANT INSERT, SELECT, UPDATE ON `alarmsystem`.`alarm`         TO 'alarm'@'localhost';
-GRANT INSERT, SELECT, UPDATE ON `alarmsystem`.`threshold_set` TO 'alarm'@'localhost';
+GRANT INSERT, SELECT         ON `alarmsystem`.`threshold_set` TO 'alarm'@'localhost';
 
 -- 3) append-only / unveraenderlich (NF-09): NUR INSERT + SELECT -> kein UPDATE/DELETE.
 --    reading/assessment sind konzeptuell unveraenderlich (Roh-Messwerte von G1 bzw.
