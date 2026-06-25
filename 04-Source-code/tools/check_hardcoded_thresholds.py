@@ -215,10 +215,16 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     quelltext = quelltext.removeprefix("\ufeff")
     try:
         baum = ast.parse(quelltext)
-    except SyntaxError as exc:
+    except (SyntaxError, RecursionError) as exc:
         # Fail-closed: eine nicht prüfbare Schwellen-Datei darf das Gate nicht grün lassen.
+        # SyntaxError = kaputter Code; RecursionError = extrem tiefe Verschachtelung, die den
+        # Parser überlastet. Beide dürfen den Guard nicht mit Traceback crashen lassen, sondern
+        # werden einheitlich fail-closed gemeldet (gleiche Invariante wie beim SyntaxError).
+        zeile = getattr(exc, "lineno", None) or 1
         return [
-            _fail_closed_verstoss(dateiname, exc.lineno or 1, "Datei nicht parsebar (SyntaxError)")
+            _fail_closed_verstoss(
+                dateiname, zeile, f"Datei nicht parsebar ({exc.__class__.__name__})"
+            )
         ]
 
     noqa = _noqa_zeilen(quelltext, dateiname)

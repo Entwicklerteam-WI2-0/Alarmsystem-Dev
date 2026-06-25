@@ -248,6 +248,21 @@ def test_syntaxfehler_ist_fail_closed():
     assert "parsebar" in verstoesse[0].grund
 
 
+def test_recursion_error_beim_parsen_ist_fail_closed(monkeypatch):
+    # Extrem tiefe Verschachtelung kann ast.parse mit RecursionError überlasten — der
+    # Guard muss auch das fail-closed abfangen und darf nicht mit Traceback crashen
+    # (konsistent zur SyntaxError-Behandlung; Invariante: nie still grün, nie Crash).
+    def _crash(_quelltext):
+        raise RecursionError("zu tief verschachtelt")
+
+    monkeypatch.setattr("tools.check_hardcoded_thresholds.ast.parse", _crash)
+    verstoesse = finde_verstoesse("x = 1\n", "x.py")
+    assert len(verstoesse) == 1
+    assert verstoesse[0].fail_closed is True
+    assert "parsebar" in verstoesse[0].grund
+    assert "RecursionError" in verstoesse[0].grund
+
+
 def test_fail_closed_feld_unterscheidet_fundart():
     # Der Behebungs-Hinweis hängt am expliziten Feld, NICHT am Grund-Text — sonst bräche
     # die Zweig-Auswahl bei einer Umformulierung des Grund-Textes lautlos.
