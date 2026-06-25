@@ -12,8 +12,15 @@ DTB-28/DTB-55. Diese Datei haelt die DB-agnostische Naht + ein In-Memory-Double.
 import json
 from abc import ABC, abstractmethod
 
+import pymysql
+
 from src.model.schemas import AuditLogEntry
-from src.storage.database import DatabaseConfig, DatabaseConnectionError, transaction
+from src.storage.database import (
+    DatabaseConfig,
+    DatabaseConfigError,
+    DatabaseConnectionError,
+    transaction,
+)
 from src.storage.repository import RepositoryError
 
 # Spaltenreihenfolge des INSERT -- entspricht migrations/schema.sql (audit_log).
@@ -95,8 +102,15 @@ class MySqlAuditRepository(AuditRepository):
             with transaction(self._config) as conn, conn.cursor() as cursor:
                 cursor.execute(_INSERT_SQL, params)
                 # AUTO_INCREMENT-ID des gerade eingefuegten Eintrags.
-                return int(cursor.lastrowid)
-        except DatabaseConnectionError as exc:
-            # Treiber-/Verbindungsfehler auf die Domaenen-Exception herunterbrechen,
-            # damit Aufrufer fail-safe reagieren koennen (NF-01) statt zu crashen.
+                row_id = cursor.lastrowid
+        except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
+            # Verbindungs-, Config- UND Query-Fehler (z. B. CHECK-Constraint-Verletzung
+            # bei ungueltigem event_type, Broken-Pipe mitten in der Query) auf die
+            # Domaenen-Exception herunterbrechen, damit Aufrufer fail-safe reagieren
+            # koennen (NF-01) statt mit rohem Treiberfehler zu crashen.
             raise RepositoryError("Audit-Eintrag konnte nicht gespeichert werden") from exc
+        if row_id is None:
+            # Kein AUTO_INCREMENT-Wert vergeben -> Eintrag-ID unbekannt. Fail-safe als
+            # Domaenenfehler statt TypeError aus int(None).
+            raise RepositoryError("Audit-Eintrag wurde ohne vergebene ID gespeichert")
+        return int(row_id)
