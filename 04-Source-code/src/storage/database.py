@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 import pymysql
@@ -227,17 +227,10 @@ def transaction(
     """
     cfg = config if config is not None else load_database_config_from_env()
     # Eine Transaktion erfordert zwingend autocommit=False; wir erzwingen das
-    # auf der Verbindung, unabhaengig von der urspruenglichen Config.
-    tx_cfg = DatabaseConfig(
-        host=cfg.host,
-        port=cfg.port,
-        name=cfg.name,
-        user=cfg.user,
-        password=cfg.password,
-        connect_timeout=cfg.connect_timeout,
-        autocommit=False,
-        charset=cfg.charset,
-    )
+    # auf der Verbindung, unabhaengig von der urspruenglichen Config. replace()
+    # uebernimmt alle uebrigen Felder automatisch, damit kein Parameter (z. B.
+    # charset, DTB-55) beim Kopieren vergessen werden kann.
+    tx_cfg = replace(cfg, autocommit=False)
 
     with get_connection(tx_cfg) as conn:
         commit_error: PyMySQLError | None = None

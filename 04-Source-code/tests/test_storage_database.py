@@ -390,6 +390,33 @@ def test_transaction_forces_autocommit_off() -> None:
     mock_conn.commit.assert_called_once()
 
 
+def test_transaction_propagates_non_default_charset() -> None:
+    """transaction() muss einen abweichenden charset durchreichen (DTB-55).
+
+    Regressionstest: tx_cfg entsteht via dataclasses.replace. Faellt charset
+    beim Kopieren weg, landet still der Default utf8mb4 auf der Verbindung,
+    obwohl die uebergebene Config einen anderen Zeichensatz vorgibt.
+    """
+    mock_conn = MagicMock()
+
+    config = DatabaseConfig(
+        host="db.test",
+        port=3306,
+        name="alarmsystem",
+        user="alarm",
+        password=_CREDENTIAL_PLACEHOLDER,
+        connect_timeout=5,
+        autocommit=False,
+        charset="latin1",
+    )
+
+    with patch("src.storage.database.pymysql.connect", return_value=mock_conn) as mock_connect:
+        with transaction(config):
+            pass
+
+    assert mock_connect.call_args.kwargs["charset"] == "latin1"
+
+
 def test_transaction_wraps_commit_error() -> None:
     mock_conn = MagicMock()
     mock_conn.commit.side_effect = pymysql.Error("constraint violation")
