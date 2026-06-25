@@ -5,6 +5,7 @@ erreichbar ist. Schema wird idempotent aus migrations/schema.sql aufgebaut.
 """
 
 import os
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -53,9 +54,10 @@ def _root_connection() -> pymysql.Connection:
 def db_available() -> bool:
     """Prueft, ob die Test-DB erreichbar ist."""
     try:
-        with _root_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT 1")
+        conn = _root_connection()
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        conn.close()
     except pymysql.Error:
         return False
     return True
@@ -77,12 +79,13 @@ def database(test_db_name: str, db_available: bool) -> None:
             "MariaDB-Test-DB nicht erreichbar (DB_HOST/DB_PORT/DB_USER/DB_PASSWORD pruefen)"
         )
 
-    with _root_connection() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                f"CREATE DATABASE IF NOT EXISTS {test_db_name} "
-                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-            )
+    root_conn = _root_connection()
+    with root_conn.cursor() as cursor:
+        cursor.execute(
+            f"CREATE DATABASE IF NOT EXISTS {test_db_name} "
+            "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+        )
+    root_conn.close()
 
     schema_path = Path(__file__).parent.parent / "migrations" / "schema.sql"
     ddl = schema_path.read_text(encoding="utf-8")
@@ -265,8 +268,10 @@ def test_save_without_connection_raises_repository_error(
 ) -> None:
     """Simuliert einen Verbindungsfehler und prueft Fail-safe-Verhalten."""
 
-    def failing_connection() -> pymysql.Connection:
+    @contextmanager
+    def failing_connection(config=None):
         raise pymysql.Error("Verbindung fehlgeschlagen")
+        yield  # noqa: unreachable -- @contextmanager protocol requires yield
 
     monkeypatch.setattr("src.storage.repository.get_connection", failing_connection)
     repo = ReadingRepository()

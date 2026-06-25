@@ -1,5 +1,5 @@
 # Persönliches Entscheidungslog — Lucas Vöhringer (G2)
-> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-23
+> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-25
 > **Autor:** Lucas Vöhringer (Systemarchitekt) · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 > Persönliches Log (Einzelleistung). Das zentrale Architektur-Logbuch des Teams ist
@@ -51,3 +51,16 @@
 - **Begründung:** (1) Der Naht-Freeze ist M2-kritisch (G3 hängt dran) und darf nicht an der ORM-/Treiber-Debatte blockieren — Vertrag ≠ Umsetzung. (2) Eine Bewertung ist sicherheitskritisch und auditpflichtig (NF-09) und muss nachvollziehbar bleiben, **auch wenn der zugehörige `reading` per Retention (DTB-57) gelöscht wird** → Snapshot statt reinem Verweis. (3) G1 ist die Quelle der Sensor-Felder; eigene Sensor-Felder zu erfinden würde die Naht aufblähen und den Seam-Sync erschweren. (4) Retention-Löschung eines `reading` darf die `assessment`-Historie nicht brechen.
 - **Alternativen (verworfen):** SQLAlchemy-Modell je Entität in DTB-12 (vermischt Contract + Implementierung → nach DTB-28 verschoben); `assessment` nur mit `reading_id` ohne Snapshot (bricht den Audit-Trail bei Retention); `ice_indicator` behalten (kein G1-Feed, nicht im Block).
 - **Ergebnis/Status:** umgesetzt (`src/model/`, `migrations/schema.sql`, 8 Tests grün, PR #37 gemergt). Offen: `unknown`/Stale-Darstellung gegenüber G3 nachzuiterieren (DTB-19); `reading`-Feldnamen mit G1 final bestätigen (P1.4).
+
+## 2026-06-25 — DTB-38: Fail-safe in `assess_ice_risk` (NaN/inf → UNKNOWN) und Prognose-Schnittstelle
+- **Kontext/Task:** P2.4 · DTB-38 (Bewertungsmodul — 4-Stufen-Logik, kritischer Pfad) · FA-05 (Risikobewertung) · NF-01 (Fail-safe, nie GRÜN bei fehlenden/ungültigen Daten) · `Schwellenwerte.md §2`.
+- **Entscheidung:**
+  1. `assess_ice_risk` validiert ihre numerischen Eingaben mit `math.isfinite`. Nicht-endliche Werte (`NaN`, `±inf`) für `surface_temp_c` oder `dew_point_c` führen zu `RiskLevel.UNKNOWN`, niemals zu `GREEN`.
+  2. Die optionale Prognose (`forecast_surface_temp_c`) ist ein separater Parameter der Bewertungsfunktion; ungültige Prognosewerte werden ignoriert (Fail-safe, da optionaler Zusatzinput).
+  3. Die Taupunktberechnung (Magnus-Formel) bleibt in DTB-32; `assess_ice_risk` erwartet `dew_point_c` als berechneten Input.
+- **Begründung:** Der Subagent-Review auf `03ebde5` fand einen echten BLOCKER: `assess_ice_risk(float('nan'), 0.0, thresholds)` lieferte stillschweigend `GREEN`, weil `NaN <= x` immer `False` ist und die Kaskade durchfiel. In einem sicherheitskritischen System (NF-01, K1) dürfen ungültige Sensorwerte nicht die niedrigste Risikostufe erzeugen. `UNKNOWN` ist der im Datenmodell (`RiskLevel.UNKNOWN`) vorgesehene Fail-safe-Zustand. Die Validierung direkt in der Bewertungsfunktion ist die kleinste, nachvollziehbarste Schutzmaßnahme — unabhängig davon, ob der Aufrufer (Poller/Serving) ebenfalls validiert. Die Prognose als optionaler Parameter zu modellieren (statt sie in DTB-38 zu berechnen) hält die reine Bewertungsfunktion frei von Trend-Logik; DTB-33 (Forecast) kann die Prognose liefern, ohne die Kaskade zu kennen.
+- **Alternativen (erwogen/verworfen):**
+  - *Exception werfen statt `UNKNOWN` zurückgeben:* verworfen — der Aufrufer müsste jeden Aufruf in try/except verpacken; `UNKNOWN` ist expliziter Fail-safe-Wert im Enum und passt besser zum Datenmodell.
+  - *Ungültige Prognose ebenfalls als `UNKNOWN` behandeln:* verworfen — die Prognose ist optionaler Zusatzinput; ihr Ausfall darf einen aktuell gültigen Zustand nicht auf `UNKNOWN` hochstufen. Ignorieren ist konservativer als GRÜN erzwingen.
+  - *Taupunktberechnung in DTB-38 mitaufnehmen:* verworfen — DTB-32 (Magnus-Formel) war bereits in Arbeit; Mischen würde die Review- und Testbarkeit verschlechtern.
+- **Ergebnis/Status:** umgesetzt (`src/assessment/core.py`, `tests/test_assessment.py`, 21 Tests, 100 % Coverage, ruff sauber). Review-Protokoll `02-Arbeitsdokumente/DTB-38-Review-Protokoll.md` dokumentiert den Review-Befund und die Nachbesserung. PR offen.

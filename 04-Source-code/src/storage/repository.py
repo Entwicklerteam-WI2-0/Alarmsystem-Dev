@@ -13,7 +13,11 @@ import pymysql
 
 from src.model.enums import SensorStatus, Source
 from src.model.schemas import Reading
-from src.storage.database import get_connection
+from src.storage.database import (
+    DatabaseConfigError,
+    DatabaseConnectionError,
+    get_connection,
+)
 
 
 class RepositoryError(Exception):
@@ -50,44 +54,52 @@ class ReadingRepository(Repository):
 
     Alle Queries sind parametrisiert. Zeitstempel werden als UTC gespeichert und
     zurueckgegeben. Bei Datenbankfehlern wird eine RepositoryError geworfen.
+
+    Args:
+        connection: Optional bestehende PyMySQL-Verbindung (z. B. fuer Tests).
+            Wird keine uebergeben, oeffnet jede Operation per get_connection()
+            eine kurzlebige Verbindung aus den Umgebungsvariablen.
+    """
+
+    _INSERT_SQL = """
+        INSERT INTO reading (
+            sensor_id, measured_at, received_at,
+            surface_temp_c, air_temp_c, humidity_pct,
+            pressure_hpa, dew_point_c, source, status
+        ) VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+    """
+
+    _LATEST_SQL = """
+        SELECT
+            id, sensor_id, measured_at, received_at,
+            surface_temp_c, air_temp_c, humidity_pct,
+            pressure_hpa, dew_point_c, source, status
+        FROM reading
+        WHERE sensor_id = %s
+        ORDER BY measured_at DESC, id DESC
+        LIMIT %s
+    """
+
+    _SINCE_SQL = """
+        SELECT
+            id, sensor_id, measured_at, received_at,
+            surface_temp_c, air_temp_c, humidity_pct,
+            pressure_hpa, dew_point_c, source, status
+        FROM reading
+        WHERE sensor_id = %s AND measured_at >= %s
+        ORDER BY measured_at ASC, id ASC
     """
 
     def __init__(self, connection: pymysql.Connection | None = None) -> None:
-        """Initialisiert das Repository.
-
-        Args:
-            connection: Optional bestehende PyMySQL-Verbindung. Wird keine
-                uebergeben, oeffnet save() fuer jede Operation eine neue
-                Verbindung und schliesst sie wieder.
-        """
         self._connection = connection
-
-    def _get_connection(self) -> pymysql.Connection:
-        """Liefert die bestehende oder eine neue Verbindung."""
-        if self._connection is not None:
-            return self._connection
-        return get_connection()
 
     def save(self, reading: Reading) -> int:
         """Speichert ein Reading und gibt die generierte ID zurueck.
 
-        Args:
-            reading: Das zu speichernde Reading-Objekt.
-
-        Returns:
-            Die vom Speichermedium vergebene ID.
-
         Raises:
-            RepositoryError: Bei Datenbank- oder Konvertierungsfehlern.
-        """
-        sql = """
-            INSERT INTO reading (
-                sensor_id, measured_at, received_at,
-                surface_temp_c, air_temp_c, humidity_pct,
-                pressure_hpa, dew_point_c, source, status
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-            )
+            RepositoryError: Bei Verbindungs-, Konfigurations- oder SQL-Fehlern.
         """
         params = (
             reading.sensor_id,
@@ -101,91 +113,67 @@ class ReadingRepository(Repository):
             str(reading.source),
             str(reading.status),
         )
-
-        conn: pymysql.Connection | None = None
-        own_connection = self._connection is None
         try:
-            conn = self._get_connection()
-            with conn.cursor() as cursor:
-                cursor.execute(sql, params)
-                reading_id = cursor.lastrowid
-            conn.commit()
-            return reading_id  # type: ignore[return-value]
-        except pymysql.Error as exc:
-            if conn is not None:
-                try:
-                    conn.rollback()
-                except pymysql.Error:
-                    pass
-            raise RepositoryError(f"Reading konnte nicht gespeichert werden: {exc}") from exc
-        finally:
-            if own_connection and conn is not None:
-                conn.close()
+            if self._connection is not None:
+                return self._insert(self._connection, params)
+            with get_connection() as conn:
+                return self._insert(conn, params)
+        except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
+            raise RepositoryError(
+                f"Reading konnte nicht gespeichert werden: {exc}"
+            ) from exc
 
     def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
-        """Liefert die neuesten Readings eines Sensors.
-
-        Args:
-            sensor_id: ID des Sensors.
-            limit: Maximale Anzahl Ergebnisse (default 1).
-
-        Returns:
-            Sequenz von Reading-Objekten, absteigend nach measured_at sortiert.
+        """Liefert die neuesten Readings eines Sensors, absteigend nach measured_at.
 
         Raises:
             RepositoryError: Bei Datenbankfehlern.
         """
-        sql = """
-            SELECT
-                id, sensor_id, measured_at, received_at,
-                surface_temp_c, air_temp_c, humidity_pct,
-                pressure_hpa, dew_point_c, source, status
-            FROM reading
-            WHERE sensor_id = %s
-            ORDER BY measured_at DESC, id DESC
-            LIMIT %s
-        """
-        return self._execute_read(sql, (sensor_id, limit))
+        return self._execute_read(self._LATEST_SQL, (sensor_id, limit))
 
     def get_since(self, sensor_id: str, since: datetime) -> Sequence[Reading]:
-        """Liefert alle Readings eines Sensors seit einem Zeitpunkt.
-
-        Args:
-            sensor_id: ID des Sensors.
-            since: Zeitstempel (inklusiv), ab dem gelesen wird (UTC).
-
-        Returns:
-            Sequenz von Reading-Objekten, aufsteigend nach measured_at sortiert.
+        """Liefert alle Readings eines Sensors seit einem Zeitpunkt (inklusiv, UTC).
 
         Raises:
             RepositoryError: Bei Datenbankfehlern.
         """
-        sql = """
-            SELECT
-                id, sensor_id, measured_at, received_at,
-                surface_temp_c, air_temp_c, humidity_pct,
-                pressure_hpa, dew_point_c, source, status
-            FROM reading
-            WHERE sensor_id = %s AND measured_at >= %s
-            ORDER BY measured_at ASC, id ASC
-        """
-        return self._execute_read(sql, (sensor_id, since))
+        return self._execute_read(self._SINCE_SQL, (sensor_id, since))
 
     def _execute_read(self, sql: str, params: tuple) -> Sequence[Reading]:
         """Fuehrt eine Lese-Query aus und mappt Zeilen auf Reading-Objekte."""
-        conn: pymysql.Connection | None = None
-        own_connection = self._connection is None
         try:
-            conn = self._get_connection()
+            if self._connection is not None:
+                return self._fetch(self._connection, sql, params)
+            with get_connection() as conn:
+                return self._fetch(conn, sql, params)
+        except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
+            raise RepositoryError(
+                f"Reading konnte nicht gelesen werden: {exc}"
+            ) from exc
+
+    @staticmethod
+    def _insert(conn: pymysql.Connection, params: tuple) -> int:
+        """Fuehrt INSERT aus, committet und gibt lastrowid zurueck."""
+        try:
             with conn.cursor() as cursor:
-                cursor.execute(sql, params)
-                rows = cursor.fetchall()
-            return tuple(self._row_to_reading(row) for row in rows)
-        except pymysql.Error as exc:
-            raise RepositoryError(f"Reading konnte nicht gelesen werden: {exc}") from exc
-        finally:
-            if own_connection and conn is not None:
-                conn.close()
+                cursor.execute(ReadingRepository._INSERT_SQL, params)
+                reading_id = cursor.lastrowid
+            conn.commit()
+            return reading_id  # type: ignore[return-value]
+        except pymysql.Error:
+            try:
+                conn.rollback()
+            except pymysql.Error:
+                pass
+            raise
+
+    @staticmethod
+    def _fetch(conn: pymysql.Connection, sql: str, params: tuple) -> Sequence[Reading]:
+        """Fuehrt SELECT aus und mappt Zeilen auf Reading-Objekte."""
+        with conn.cursor() as cursor:
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+        return tuple(ReadingRepository._row_to_reading(row) for row in rows)
 
     @staticmethod
     def _row_to_reading(row: dict) -> Reading:
