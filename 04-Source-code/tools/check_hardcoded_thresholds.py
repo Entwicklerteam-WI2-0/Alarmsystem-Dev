@@ -143,12 +143,14 @@ def _hat_marker(kommentar: str) -> bool:
     Beide Seiten werden geprüft, damit weder ein Suffix (`…-OFF`) noch ein Präfix
     (`x-noqa: …`) den Marker fälschlich erkennt und einen echten Verstoß unterdrückt.
     """
-    idx = kommentar.find(ERLAUBT_MARKER)
-    if idx == -1:
-        return False
-    vorher = kommentar[idx - 1] if idx > 0 else ""
-    nachher = kommentar[idx + len(ERLAUBT_MARKER) : idx + len(ERLAUBT_MARKER) + 1]
-    return _ist_wortgrenze(vorher) and _ist_wortgrenze(nachher)
+    start = 0
+    while (idx := kommentar.find(ERLAUBT_MARKER, start)) != -1:
+        vorher = kommentar[idx - 1] if idx > 0 else ""
+        nachher = kommentar[idx + len(ERLAUBT_MARKER) : idx + len(ERLAUBT_MARKER) + 1]
+        if _ist_wortgrenze(vorher) and _ist_wortgrenze(nachher):
+            return True  # ein abgegrenztes Vorkommen genügt (auch wenn ein anderes umrandet ist)
+        start = idx + 1
+    return False
 
 
 def _noqa_zeilen(quelltext: str, dateiname: str) -> set[int]:
@@ -196,7 +198,7 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     """
     # BOM nur für direkte Text-Aufrufe (z. B. Tests) entfernen — beim Datei-Pfad strippt
     # utf-8-sig die BOM bereits, hier also redundant, aber defensiv.
-    quelltext = quelltext.lstrip("\ufeff")
+    quelltext = quelltext.removeprefix("\ufeff")
     try:
         baum = ast.parse(quelltext)
     except SyntaxError as exc:

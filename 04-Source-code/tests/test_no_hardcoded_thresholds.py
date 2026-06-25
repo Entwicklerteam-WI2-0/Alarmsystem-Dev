@@ -206,6 +206,13 @@ def test_marker_mit_praefix_unterdrueckt_nicht():
     assert _scan("if t_s > 1.0:  # x-noqa: hardcoded-threshold\n    pass\n")
 
 
+def test_marker_zweites_gueltiges_vorkommen_unterdrueckt():
+    # Erstes Vorkommen umrandet (x-noqa), zweites korrekt abgegrenzt -> unterdrückt
+    # (alle Vorkommen werden geprüft, nicht nur das erste).
+    code = "if t_s > 1.0:  # x-noqa: hardcoded-threshold noqa: hardcoded-threshold\n    pass\n"
+    assert _scan(code) == []
+
+
 # --- Dokumentierte verbleibende Grenze (Datenfluss, bewusst nicht erkannt) ---
 
 
@@ -447,12 +454,15 @@ def test_main_ausgabe_crasht_nicht_auf_cp1252(tmp_path):
     d = tmp_path / "assessment"
     d.mkdir()
     (d / "core.py").write_text("if t_s > 1.0:\n    pass\n", encoding="utf-8")
-    alt = sys.stdout
+    # stdout UND stderr ersetzen — main() reconfiguriert beide; beide sauber restaurieren,
+    # damit spätere Tests nicht mit verändertem Encoding (errors="replace") laufen.
+    alt_out, alt_err = sys.stdout, sys.stderr
     sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+    sys.stderr = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
     try:
         code = main([str(d)])  # darf nicht mit UnicodeEncodeError crashen
     finally:
-        sys.stdout = alt
+        sys.stdout, sys.stderr = alt_out, alt_err
     assert code == 1
 
 
