@@ -7,14 +7,15 @@ eigenstaendige Schema-Definition.
 Bezug: Pull-Protokoll E-31; Datenmodell DTB-12; Persistenz DTB-28.
 """
 
+import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
 from src.model.enums import SensorStatus, Source
 from src.model.schemas import Reading
-from src.storage.repository import Repository
+from src.storage.repository import Repository, RepositoryError
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class Poller:
         # 2. Antwort als JSON parsen.
         try:
             data = response.json()
-        except Exception as exc:  # pragma: no cover - JSON-Fehler sind schwer robust zu testen
+        except json.JSONDecodeError as exc:
             logger.error("G1-Antwort nicht als JSON parsierbar: %s", exc)
             return None
 
@@ -74,7 +75,7 @@ class Poller:
         # 4. Reading ueber das Repository-Interface speichern.
         try:
             reading_id = self.repository.save(reading)
-        except Exception as exc:  # pragma: no cover - Repository-Fehler aus DTB-28
+        except RepositoryError as exc:
             logger.error("Speichern des Readings fehlgeschlagen: %s", exc)
             return None
 
@@ -98,15 +99,37 @@ class Poller:
                 logger.error("Pflichtfeld in G1-Antwort fehlt: %s", field)
                 return None
 
-        # Typ-Konvertierung der Pflichtfelder.
+        # Pflichtfelder + status (optional, aber defekter Wert verwirft Reading).
+        # Alle Feld-Parser werfen bei defektem Wert ValueError, die hier zentral
+        # fail-safe zu None fuehrt (NF-01).
         try:
             measured_at = _parse_iso_utc(data["measured_at"])
             sensor_id = _as_string(data["sensor_id"], "sensor_id")
             surface_temp_c = _as_float(data["surface_temp_c"], "surface_temp_c")
             air_temp_c = _as_float(data["air_temp_c"], "air_temp_c")
             humidity_pct = _as_float(data["humidity_pct"], "humidity_pct")
+            status = _optional_status(data.get("status"))
         except ValueError as exc:
             logger.error("G1-Feld ungueltig: %s", exc)
+            return None
+
+        # Optionales pressure_hpa: defekter Wert wird geloggt und auf None gesetzt,
+        # das Reading wird trotzdem gespeichert (Kontextfeld darf die Pflicht-Trias
+        # aus surface_temp_c, air_temp_c und humidity_pct nicht blockieren).
+        pressure_hpa: float | None = None
+        try:
+            pressure_hpa = _optional_float(data.get("pressure_hpa"), "pressure_hpa")
+        except ValueError as exc:
+            logger.error("G1-Feld ungueltig: %s", exc)
+            pressure_hpa = None
+
+        if pressure_hpa is not None and not (MIN_PRESSURE_HPA <= pressure_hpa <= MAX_PRESSURE_HPA):
+            logger.error("pressure_hpa ausserhalb des gueltigen Bereichs: %s", pressure_hpa)
+            pressure_hpa = None
+
+        # Sensor meldet selbst einen Defekt -> Reading ablehnen (Fail-safe, NF-01).
+        if status is SensorStatus.FAULT:
+            logger.error("G1-Sensor meldet status=fault, Reading wird verworfen")
             return None
 
         # Plausibilitaet: Temperatur-/Feuchte-Werte muessen in physikalischen Grenzen liegen.
@@ -118,17 +141,6 @@ class Poller:
             return None
         if not (MIN_HUMIDITY_PCT <= humidity_pct <= MAX_HUMIDITY_PCT):
             logger.error("humidity_pct ausserhalb des gueltigen Bereichs: %s", humidity_pct)
-            return None
-
-        # Optionales Feld pressure_hpa verarbeiten und pruefen.
-        pressure_hpa = _optional_float(data.get("pressure_hpa"), "pressure_hpa")
-        if pressure_hpa is not None and not (MIN_PRESSURE_HPA <= pressure_hpa <= MAX_PRESSURE_HPA):
-            logger.error("pressure_hpa ausserhalb des gueltigen Bereichs: %s", pressure_hpa)
-            return None
-
-        # Optionales Feld status verarbeiten (Default: ok).
-        status = _optional_status(data.get("status"))
-        if status is None:
             return None
 
         # Validierte Werte in das DTB-12 Reading-Schema ueberfuehren.
@@ -146,7 +158,7 @@ class Poller:
 
 
 def _parse_iso_utc(value: object) -> datetime:
-    # ISO-8601-String mit Zeitzone erzwingen (z. B. 2026-06-23T10:00:00Z).
+    # ISO-8601-String mit UTC-Zeitzone erzwingen (z. B. 2026-06-23T10:00:00Z).
     if not isinstance(value, str):
         raise ValueError(f"measured_at muss ein String sein, erhalten: {type(value)}")
     # Python <3.11 akzeptiert 'Z' nicht direkt; ab 3.11 geht es.
@@ -154,6 +166,9 @@ def _parse_iso_utc(value: object) -> datetime:
     parsed = datetime.fromisoformat(normalized)
     if parsed.tzinfo is None:
         raise ValueError("measured_at muss Zeitzoneninformation enthalten (UTC)")
+    # Nur UTC erlauben (Offset 0), da der G1-Contract ISO-8601 UTC verlangt.
+    if parsed.utcoffset() != timedelta(0):
+        raise ValueError("measured_at muss UTC sein")
     return parsed.astimezone(UTC)
 
 
@@ -184,15 +199,15 @@ def _optional_float(value: object, field: str) -> float | None:
         raise ValueError(f"{field} muss eine Zahl sein, erhalten: {value!r}") from exc
 
 
-def _optional_status(value: object) -> SensorStatus | None:
-    # Optionaler G1-Status: fehlend -> ok, sonst muss Wert im Enum liegen.
+def _optional_status(value: object) -> SensorStatus:
+    # Optionaler G1-Status: fehlend -> Default OK; sonst muss der Wert im Enum liegen.
+    # Defekte Werte werfen ValueError (wie die uebrigen Feld-Parser) -> zentrale
+    # Fail-safe-Behandlung in _build_reading (kein stilles None mehr).
     if value is None:
         return SensorStatus.OK
     if not isinstance(value, str):
-        logger.error("status muss ein String sein, erhalten: %s", type(value))
-        return None
+        raise ValueError(f"status muss ein String sein, erhalten: {type(value)}")
     try:
         return SensorStatus(value)
-    except ValueError:
-        logger.error("Ungueltiger status-Wert: %s", value)
-        return None
+    except ValueError as exc:
+        raise ValueError(f"Ungueltiger status-Wert: {value!r}") from exc
