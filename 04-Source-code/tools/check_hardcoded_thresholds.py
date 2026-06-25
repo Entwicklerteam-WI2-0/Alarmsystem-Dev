@@ -194,7 +194,7 @@ def finde_verstoesse(quelltext: str, dateiname: str) -> list[Verstoss]:
     Docstrings lösen keinen Fehlalarm aus; `# noqa: hardcoded-threshold` auf der
     Vergleichszeile unterdrückt. Nicht parsebarer Code wird fail-closed gemeldet.
     """
-    # BOM nur f\u00fcr direkte Text-Aufrufe (z. B. Tests) entfernen \u2014 beim Datei-Pfad strippt
+    # BOM nur für direkte Text-Aufrufe (z. B. Tests) entfernen — beim Datei-Pfad strippt
     # utf-8-sig die BOM bereits, hier also redundant, aber defensiv.
     quelltext = quelltext.lstrip("\ufeff")
     try:
