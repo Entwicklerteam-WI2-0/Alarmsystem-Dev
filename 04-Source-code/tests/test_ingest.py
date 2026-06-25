@@ -16,7 +16,6 @@ import pytest
 
 from src.config.loader import DatenqualitaetSchwellen, PlausibilitaetSchwellen
 from src.ingest.poller import Poller
-from src.model.enums import SensorStatus
 from src.model.schemas import Reading
 from src.storage.repository import Repository, RepositoryError
 
@@ -373,7 +372,7 @@ def test_poll_non_numeric_optional_pressure_is_set_to_none(
     assert reading is not None
     assert reading.pressure_hpa is None
     assert len(fake_repo.readings) == 1
-    assert "pressure_hpa muss eine Zahl sein, erhalten: 'abc'" in caplog.text
+    assert "pressure_hpa muss eine Zahl sein, erhalten: <class 'str'>" in caplog.text
 
 
 def test_poll_missing_optional_pressure_is_none(
@@ -527,7 +526,7 @@ def test_poll_non_numeric_required_field_does_not_save(
 
     assert reading is None
     assert len(fake_repo.readings) == 0
-    assert "surface_temp_c muss eine Zahl sein, erhalten: 'kalt'" in caplog.text
+    assert "surface_temp_c muss eine Zahl sein, erhalten: <class 'str'>" in caplog.text
 
 
 @pytest.mark.parametrize("field", ["surface_temp_c", "air_temp_c", "humidity_pct"])
@@ -556,18 +555,20 @@ def test_poll_inf_required_field_does_not_save(
     assert len(fake_repo.readings) == 0
 
 
-def test_poll_missing_optional_status_defaults_to_ok(
-    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+def test_poll_missing_status_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
 ) -> None:
+    # status ist Pflichtfeld laut G1-Contract; fehlendes Feld darf nicht still
+    # auf OK defaulten -> Fail-safe verworfen (NF-01).
     snapshot = dict(valid_snapshot)
     del snapshot["status"]
 
     with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
-    assert reading is not None
-    assert reading.status is SensorStatus.OK
-    assert len(fake_repo.readings) == 1
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "Pflichtfeld in G1-Antwort fehlt: status" in caplog.text
 
 
 def test_poll_status_not_a_string_does_not_save(
@@ -637,6 +638,7 @@ def test_poll_repository_error_is_failsafe(
         "surface_temp_c": -0.4,
         "air_temp_c": 1.2,
         "humidity_pct": 96,
+        "status": "ok",
     }
 
     with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
@@ -677,6 +679,7 @@ def test_poll_unexpected_repository_error_is_not_swallowed(
         "surface_temp_c": -0.4,
         "air_temp_c": 1.2,
         "humidity_pct": 96,
+        "status": "ok",
     }
 
     with pytest.raises(RuntimeError, match="unerwarteter Bug"):
@@ -719,7 +722,7 @@ def test_poll_snapshot_at_freshness_boundary_saves(
 
 
 def test_poll_snapshot_just_over_boundary_does_not_save(
-    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
 ) -> None:
     # Grenze + 1 s: 121 s alt -> stale -> verworfen. Sichert die "> 120"-Kante gegen Regression.
     snapshot = {**valid_snapshot, "measured_at": "2026-06-23T09:58:59Z"}
@@ -730,6 +733,7 @@ def test_poll_snapshot_just_over_boundary_does_not_save(
 
     assert reading is None
     assert len(fake_repo.readings) == 0
+    assert "veraltet" in caplog.text
 
 
 def test_poll_future_timestamp_does_not_save(
@@ -751,8 +755,9 @@ def test_poll_future_timestamp_does_not_save(
 def test_poll_minor_clock_skew_still_saves(
     poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
 ) -> None:
-    # Kleiner Vorlauf (3 s, innerhalb der Skew-Toleranz) ist normale Uhren-Drift -> gespeichert.
-    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:00:57Z"}
+    # Kleiner Vorlauf (3 s in der Zukunft, innerhalb der Skew-Toleranz) ist
+    # normale Uhren-Drift -> gespeichert.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:01:03Z"}
 
     with patch("src.ingest.poller.httpx.get") as mock_get:
         mock_get.return_value = _ok_response(snapshot)
@@ -760,6 +765,35 @@ def test_poll_minor_clock_skew_still_saves(
 
     assert reading is not None
     assert len(fake_repo.readings) == 1
+
+
+def test_poll_clock_skew_exactly_at_limit_saves(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Genau am Limit (5 s in der Zukunft) -> noch akzeptiert.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:01:05Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_clock_skew_just_over_limit_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # 5,001 s in der Zukunft -> ueber der Toleranz -> verworfen.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:01:05.001Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "Zukunft" in caplog.text
 
 
 @pytest.mark.real_clock

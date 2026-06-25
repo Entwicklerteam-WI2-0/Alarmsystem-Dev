@@ -8,6 +8,7 @@ parametrisierten Queries (Injection-Schutz).
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Any
 
 import pymysql
 
@@ -70,9 +71,7 @@ class Repository(ABC):
         ...
 
     @abstractmethod
-    def get_since(
-        self, sensor_id: str, since: datetime, limit: int = 1000
-    ) -> Sequence[Reading]:
+    def get_since(self, sensor_id: str, since: datetime, limit: int = 1000) -> Sequence[Reading]:
         """Liefert Readings eines Sensors seit einem Zeitpunkt (inklusiv, UTC).
 
         Args:
@@ -168,9 +167,7 @@ class ReadingRepository(Repository):
         """
         return self._execute_read(self._LATEST_SQL, (sensor_id, limit))
 
-    def get_since(
-        self, sensor_id: str, since: datetime, limit: int = 1000
-    ) -> Sequence[Reading]:
+    def get_since(self, sensor_id: str, since: datetime, limit: int = 1000) -> Sequence[Reading]:
         """Liefert Readings eines Sensors seit einem Zeitpunkt (inklusiv, UTC).
 
         Raises:
@@ -228,12 +225,10 @@ class ReadingRepository(Repository):
             # ValueError: ungueltiger Enum-Wert nach DB-Korruption/Migration.
             # KeyError/TypeError: Schema-Drift oder falscher Cursor-Typ (z. B. Tupel
             # statt Dict) -> immer als RepositoryError fail-safe behandeln.
-            raise RepositoryError(
-                f"Reading konnte nicht gelesen werden: {exc}"
-            ) from exc
+            raise RepositoryError(f"Reading konnte nicht gelesen werden: {exc}") from exc
 
     @staticmethod
-    def _row_to_reading(row: dict) -> Reading:
+    def _row_to_reading(row: dict[str, Any]) -> Reading:
         """Mappt eine DB-Zeile auf ein Reading-Objekt.
 
         PyMySQL liefert DATETIME-Spalten als naive datetime-Objekte ohne

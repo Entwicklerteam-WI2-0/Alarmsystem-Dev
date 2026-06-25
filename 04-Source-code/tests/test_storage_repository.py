@@ -272,9 +272,7 @@ def test_get_latest_wraps_row_to_reading_value_error_as_repository_error(
     def _failing_row_to_reading(_row: dict) -> Reading:
         raise ValueError("ungueltiger Enum-Wert")
 
-    monkeypatch.setattr(
-        ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading)
-    )
+    monkeypatch.setattr(ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading))
     repository.save(
         Reading(
             sensor_id="anr-rwy-05",
@@ -301,9 +299,7 @@ def test_get_latest_wraps_key_error_as_repository_error(
     def _failing_row_to_reading(_row: dict) -> Reading:
         raise KeyError("source")
 
-    monkeypatch.setattr(
-        ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading)
-    )
+    monkeypatch.setattr(ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading))
     repository.save(
         Reading(
             sensor_id="anr-rwy-key",
@@ -330,9 +326,7 @@ def test_get_latest_wraps_type_error_as_repository_error(
     def _failing_row_to_reading(_row: dict) -> Reading:
         raise TypeError("tuple indices must be integers or slices, not str")
 
-    monkeypatch.setattr(
-        ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading)
-    )
+    monkeypatch.setattr(ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading))
     repository.save(
         Reading(
             sensor_id="anr-rwy-type",

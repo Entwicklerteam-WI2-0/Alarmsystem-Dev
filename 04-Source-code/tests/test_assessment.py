@@ -77,9 +77,8 @@ def test_vorfall_1_kein_fehlalarm_bei_trockener_kalter_oberflaeche(thresholds):
 def test_vorfall_2_vereisung_erkannt_bei_kalter_oberflaeche(thresholds):
     """Vorfall 2: Luft +1,2 °C, aber Oberfläche < 0 °C und feucht -> Eis."""
     t_s = -1.0
-    t_d = -1.2  # ΔT = 0.2 -> feucht, nahe Kondensation
-    result = assess_ice_risk(t_s, t_d, thresholds)
-    assert result in (RiskLevel.ORANGE, RiskLevel.RED)
+    t_d = -1.2  # ΔT = 0.2 -> feucht, nahe Kondensation -> ORANGE
+    assert assess_ice_risk(t_s, t_d, thresholds) == RiskLevel.ORANGE
 
 
 # ---------------------------------------------------------------------------

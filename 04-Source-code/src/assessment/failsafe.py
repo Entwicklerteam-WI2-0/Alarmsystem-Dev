@@ -34,6 +34,8 @@ def is_stale(reading: Reading | None, now: datetime, timeout_s: float) -> bool:
     """
     if reading is None:
         return True
+    if now.tzinfo is None:
+        raise ValueError("now muss zeitzonenbewusst sein (UTC)")
     age = now - reading.measured_at
     return age > timedelta(seconds=timeout_s)
 
@@ -65,14 +67,15 @@ def check_plausibility(
 
     # Sicherstellen, dass keine Cross-Sensor-Vergleiche stattfinden.
     # Der Aufrufer ist dafuer verantwortlich, aber ein frueher Check verhindert
-    # subtile Bugs in DTB-38.
-    assert current.sensor_id == previous.sensor_id, (
-        f"check_plausibility erwartet denselben Sensor, "
-        f"erhalten: {current.sensor_id!r} vs {previous.sensor_id!r}"
-    )
+    # subtile Bugs in DTB-38. ValueError statt assert, damit der Guard auch unter
+    # python -O (optimiert/Container) erhalten bleibt (NF-01).
+    if current.sensor_id != previous.sensor_id:
+        raise ValueError(
+            f"check_plausibility erwartet denselben Sensor, "
+            f"erhalten: {current.sensor_id!r} vs {previous.sensor_id!r}"
+        )
 
     delta_t = current.measured_at - previous.measured_at
-    delta_min = delta_t.total_seconds() / 60.0
     if delta_t <= timedelta(seconds=0):
         # Negativer oder gleicher Zeitstempel ist ein Datenfehler -> unplausibel.
         return "invalid timestamp order"
@@ -82,6 +85,7 @@ def check_plausibility(
     if delta_t < timedelta(seconds=1):
         return None
 
+    delta_min = delta_t.total_seconds() / 60.0
     delta_temp_c = current.surface_temp_c - previous.surface_temp_c
     jump_rate = abs(delta_temp_c) / delta_min
     if jump_rate > thresholds.max_temp_jump_c_per_min:
@@ -137,9 +141,7 @@ def _sanitize_reason(reason: str) -> str:
     )
     # Alle Control Characters entfernen (ASCII 0x00-0x1f und Unicode Cc/Zl/Zp).
     # U+007F (DEL) ist ueber Unicode-Kategorie "Cc" mit abgedeckt.
-    cleaned = "".join(
-        ch for ch in cleaned if unicodedata.category(ch) not in _CONTROL_CATEGORIES
-    )
+    cleaned = "".join(ch for ch in cleaned if unicodedata.category(ch) not in _CONTROL_CATEGORIES)
     cleaned = cleaned.strip()
     if len(cleaned) > MAX_REASON_LENGTH:
         cleaned = cleaned[: MAX_REASON_LENGTH - 3] + "..."

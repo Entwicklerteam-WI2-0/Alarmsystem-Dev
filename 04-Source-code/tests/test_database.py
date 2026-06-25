@@ -13,8 +13,10 @@ def test_get_connection_uses_dict_cursor() -> None:
     """
     mock_conn = MagicMock()
 
-    with patch("src.storage.database.load_database_config_from_env") as mock_load_cfg, \
-         patch("pymysql.connect", return_value=mock_conn) as mock_connect:
+    with (
+        patch("src.storage.database.load_database_config_from_env") as mock_load_cfg,
+        patch("pymysql.connect", return_value=mock_conn) as mock_connect,
+    ):
         mock_load_cfg.return_value = MagicMock(
             host="db.test",
             port=3306,

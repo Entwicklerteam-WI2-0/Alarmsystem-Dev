@@ -23,7 +23,14 @@ from src.storage.repository import Repository, RepositoryError
 logger = logging.getLogger(__name__)
 
 # Pflichtfelder laut G1-Contract (Backend-Konzept §9.1).
-REQUIRED_FIELDS = ("measured_at", "sensor_id", "surface_temp_c", "air_temp_c", "humidity_pct")
+REQUIRED_FIELDS = (
+    "measured_at",
+    "sensor_id",
+    "surface_temp_c",
+    "air_temp_c",
+    "humidity_pct",
+    "status",
+)
 
 
 def _now() -> datetime:
@@ -143,7 +150,7 @@ class Poller:
             surface_temp_c = _as_float(data["surface_temp_c"], "surface_temp_c")
             air_temp_c = _as_float(data["air_temp_c"], "air_temp_c")
             humidity_pct = _as_float(data["humidity_pct"], "humidity_pct")
-            status = _optional_status(data.get("status"))
+            status = _as_status(data["status"])
         except ValueError as exc:
             logger.error("G1-Feld ungueltig: %s", exc)
             return None
@@ -265,7 +272,7 @@ def _compute_dew_point(
         return None
 
     if not math.isfinite(dew_point_c):
-        logger.warning("Taupunkt ist nicht endlich (dew_point_c=%s), dew_point_c=None", dew_point_c)
+        logger.warning("Taupunkt ist nicht endlich: %s", dew_point_c)
         return None
 
     if dew_point_c < min_plausible_dew_point_c:
@@ -312,35 +319,38 @@ def _as_string(value: object, field: str) -> str:
 
 
 def _as_float(value: object, field: str) -> float:
-    # Pflicht-Zahlenfelder muessen in float konvertierbar sein.
+    # Pflicht-Zahlenfelder muessen JSON-Zahlen sein (int oder float).
     # bool ist in Python ein int-Subtyp und wuerde stumm zu 0.0/1.0 werden — das ist
     # fuer defekte G1-Payloads (z. B. "surface_temp_c": true) gefaehrlich (NF-01).
+    # Strings wie "23.5" werden ebenfalls abgelehnt (Contract verlangt JSON-Zahl).
     if isinstance(value, bool):
         raise ValueError(f"{field} muss eine Zahl sein, erhalten: bool ({value!r})")
-    try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field} muss eine Zahl sein, erhalten: {value!r}") from exc
+    if not isinstance(value, int | float):
+        raise ValueError(f"{field} muss eine Zahl sein, erhalten: {type(value)}")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{field} muss endlich sein, erhalten: {value!r}")
+    return result
 
 
 def _optional_float(value: object, field: str) -> float | None:
-    # Optionale Zahlenfelder: None ist erlaubt, sonst float-Konvertierung.
+    # Optionale Zahlenfelder: None ist erlaubt, sonst muss der Wert eine JSON-Zahl sein.
     if value is None:
         return None
     if isinstance(value, bool):
         raise ValueError(f"{field} muss eine Zahl sein, erhalten: bool ({value!r})")
-    try:
-        return float(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"{field} muss eine Zahl sein, erhalten: {value!r}") from exc
+    if not isinstance(value, int | float):
+        raise ValueError(f"{field} muss eine Zahl sein, erhalten: {type(value)}")
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError(f"{field} muss endlich sein, erhalten: {value!r}")
+    return result
 
 
-def _optional_status(value: object) -> SensorStatus:
-    # Optionaler G1-Status: fehlend -> Default OK; sonst muss der Wert im Enum liegen.
+def _as_status(value: object) -> SensorStatus:
+    # Pflichtfeld G1-Status (Backend-Konzept §9.1): muss im Enum liegen.
     # Defekte Werte werfen ValueError (wie die uebrigen Feld-Parser) -> zentrale
-    # Fail-safe-Behandlung in _build_reading (kein stilles None mehr).
-    if value is None:
-        return SensorStatus.OK
+    # Fail-safe-Behandlung in _build_reading.
     if not isinstance(value, str):
         raise ValueError(f"status muss ein String sein, erhalten: {type(value)}")
     try:

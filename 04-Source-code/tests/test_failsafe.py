@@ -82,6 +82,14 @@ def test_is_stale_with_none_reading_returns_true() -> None:
     assert is_stale(None, now, timeout_s=120) is True
 
 
+def test_is_stale_with_naive_now_raises(fresh_reading: Reading) -> None:
+    # Naive now-Werte muessen frueh erkannt werden, bevor is_stale in DTB-38
+    # verdrahtet wird -> sonst TypeError-Crash im Assessment-Loop.
+    naive_now = datetime(2026, 6, 23, 10, 2, 0)
+    with pytest.raises(ValueError, match="zeitzonenbewusst"):
+        is_stale(fresh_reading, naive_now, timeout_s=120)
+
+
 # ---------------------------------------------------------------------------
 # Plausibilitaet - Sprung
 # ---------------------------------------------------------------------------
@@ -152,7 +160,8 @@ def test_check_plausibility_cross_sensor_raises(
 ) -> None:
     previous = _build_previous(fresh_reading, minutes_ago=1.0, surface_temp_c=-0.5)
     previous = previous.model_copy(update={"sensor_id": "anr-rwy-02"})
-    with pytest.raises(AssertionError, match="denselben Sensor"):
+    # ValueError statt assert, damit der Guard auch unter python -O erhalten bleibt.
+    with pytest.raises(ValueError, match="denselben Sensor"):
         check_plausibility(fresh_reading, previous, quality_thresholds)
 
 
