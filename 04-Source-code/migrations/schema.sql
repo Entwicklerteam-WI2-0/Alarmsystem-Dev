@@ -87,7 +87,15 @@ CREATE TABLE IF NOT EXISTS audit_log (
   actor       VARCHAR(128) NOT NULL DEFAULT 'system',
   detail      JSON         NULL,
   PRIMARY KEY (id),
-  KEY idx_audit_ts (ts),
+  KEY idx_audit_ts_event (ts, event_type),         -- DTB-29: Abfragen nach Zeit + Ereignistyp
   CONSTRAINT chk_audit_event CHECK (event_type IN
     ('reading_ingested','assessment_made','alarm_raised','alarm_acknowledged','threshold_changed','sensor_fault'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Idempotente Index-Migration fuer bestehende audit_log-Tabellen (DTB-29).
+-- CREATE TABLE IF NOT EXISTS ueberspringt bereits existierende Tabellen; daher wird der
+-- alte Index idx_audit_ts hier explizit entfernt und der Composite-Index idx_audit_ts_event
+-- (ts, event_type) angelegt, falls noch nicht vorhanden.
+ALTER TABLE audit_log
+  DROP INDEX IF EXISTS idx_audit_ts,
+  ADD INDEX IF NOT EXISTS idx_audit_ts_event (ts, event_type);
