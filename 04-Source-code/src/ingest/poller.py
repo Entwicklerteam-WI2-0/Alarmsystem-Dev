@@ -46,13 +46,21 @@ class Poller:
     def poll(self) -> Reading | None:
         """Holt Snapshot von G1, validiert ihn und speichert ein Reading.
 
+        Fragt zuerst GET /health ab; bei 503 oder jedem HTTP-Fehler wird das
+        Snapshot verworfen (Fail-safe, NF-01). Erst bei 200 OK wird /current
+        gepollt.
+
         Bei jeder Art von Fehler (HTTP, Parsing, fehlende Pflichtfelder,
         Out-of-Range) wird geloggt und None zurueckgegeben -> kein Speichern,
         kein GRUEN (Fail-safe).
         """
+        # 1. Verfuegbarkeits-Check: G1 muss vor /current gesund sein.
+        if not self._is_g1_healthy():
+            return None
+
         url = f"{self.base_url}/current"
 
-        # 1. HTTP-Request an G1 senden.
+        # 2. HTTP-Request an G1 senden.
         try:
             response = httpx.get(url, timeout=self.timeout)
             response.raise_for_status()
@@ -60,19 +68,19 @@ class Poller:
             logger.error("G1-Poll fehlgeschlagen: %s", exc)
             return None
 
-        # 2. Antwort als JSON parsen.
+        # 3. Antwort als JSON parsen.
         try:
             data = response.json()
         except json.JSONDecodeError as exc:
             logger.error("G1-Antwort nicht als JSON parsierbar: %s", exc)
             return None
 
-        # 3. Validieren und in das Reading-Schema ueberfuehren.
+        # 4. Validieren und in das Reading-Schema ueberfuehren.
         reading = self._build_reading(data)
         if reading is None:
             return None
 
-        # 4. Reading ueber das Repository-Interface speichern.
+        # 5. Reading ueber das Repository-Interface speichern.
         try:
             reading_id = self.repository.save(reading)
         except RepositoryError as exc:
@@ -86,6 +94,17 @@ class Poller:
             reading.measured_at.isoformat(),
         )
         return reading
+
+    def _is_g1_healthy(self) -> bool:
+        """Ruft GET /health ab; gibt True bei 200 OK, sonst False."""
+        url = f"{self.base_url}/health"
+        try:
+            response = httpx.get(url, timeout=self.timeout)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            logger.error("G1-Health-Check fehlgeschlagen: %s", exc)
+            return False
+        return True
 
     def _build_reading(self, data: object) -> Reading | None:
         # Pruefung: G1 muss ein JSON-Objekt liefern, keine Liste/Zahl.
