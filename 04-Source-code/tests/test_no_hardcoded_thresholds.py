@@ -72,6 +72,11 @@ def test_negatives_literal_wird_erkannt():
     assert _scan("if t_s > -2.1:\n    pass\n")
 
 
+def test_mehrfaches_vorzeichen_wird_erkannt():
+    # ---1.0 = drei verschachtelte UnaryOps -> iterativ entpackt, weiterhin als Literal erkannt.
+    assert _scan("if t_s > ---1.0:\n    pass\n")
+
+
 def test_mehrere_zeilen_mehrere_verstoesse():
     verstoesse = _scan("a = t_s > 1.0\nb = delta_t <= 1.0\n")
     assert [v.zeile for v in verstoesse] == [1, 2]

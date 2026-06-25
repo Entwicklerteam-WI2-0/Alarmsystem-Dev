@@ -58,8 +58,10 @@ from pathlib import Path
 
 # Bewusst nur die Module, in denen Schwellen-Vergleiche fachlich vorkommen
 # (Bewertungskaskade + Prognose). Ein globaler Scan würde Status-Codes, Pagination
-# und Indizes als Fehlalarm treffen. Erweiterbar (z. B. ("src/assessment",
-# "src/forecast", "src/ingest")) ohne weitere Code-Änderung — siehe DTB-22-Scope.
+# und Indizes als Fehlalarm treffen.
+# WICHTIG (kein CI erzwingt das): Wer Schwellen-Vergleiche in ein NEUES Modul legt
+# (z. B. src/ingest), MUSS dieses Verzeichnis hier ergänzen — sonst rutschen die
+# Schwellen ungeprüft durch. Erweiterung ist eine bewusste Entscheidung (DTB-22-Scope).
 SCAN_DIRS: tuple[str, ...] = ("src/assessment", "src/forecast")
 
 # Default-Ziele relativ zum Skript auflösen (cwd-unabhängig). So läuft der Guard ohne
@@ -98,11 +100,15 @@ class Verstoss:
 
 def _ist_zahl_literal(knoten: ast.AST) -> bool:
     """True, wenn der Knoten ein numerisches Literal ist (auch mit Vorzeichen, ohne bool)."""
-    if isinstance(knoten, ast.Constant):
-        return isinstance(knoten.value, (int, float)) and not isinstance(knoten.value, bool)
-    if isinstance(knoten, ast.UnaryOp) and isinstance(knoten.op, (ast.UAdd, ast.USub)):
-        return _ist_zahl_literal(knoten.operand)
-    return False
+    # Vorzeichen-Ketten (`-1.0` = UnaryOp(USub, Constant), pathologisch auch `---1.0`)
+    # iterativ entpacken — keine Rekursion, daher kein Tiefenproblem.
+    while isinstance(knoten, ast.UnaryOp) and isinstance(knoten.op, (ast.UAdd, ast.USub)):
+        knoten = knoten.operand
+    return (
+        isinstance(knoten, ast.Constant)
+        and isinstance(knoten.value, (int, float))
+        and not isinstance(knoten.value, bool)
+    )
 
 
 # Keyword-Argumente, die Toleranzen sind (math.isclose) — keine Schwellen, daher ignoriert.
@@ -329,14 +335,8 @@ def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:
         )
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """CLI-Einstieg: Exit 0 = sauber, 1 = Verstoß gefunden."""
-    # Ausgabe robust gegen die Windows-Konsole (cp1252): UTF-8 erzwingen (stdout UND stderr),
-    # sonst crasht ein Zeichen wie „→"/Umlaut mit UnicodeEncodeError (Linux/CI ist UTF-8).
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace")
-
+def _main(argv: Sequence[str] | None) -> int:
+    """Eigentliche Gate-Logik (ohne Stream-Seiteneffekte) — von `main()` umschlossen."""
     args = list(argv) if argv is not None else sys.argv[1:]
     verzeichnisse = args if args else _default_ziele()
 
@@ -376,6 +376,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"({len(gescannte)} Datei(en) geprüft in: {', '.join(map(str, verzeichnisse))})"
     )
     return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """CLI-Einstieg: Exit 0 = sauber, 1 = Verstoß gefunden.
+
+    Stellt stdout/stderr nur WÄHREND des Laufs auf UTF-8 (cp1252-Robustheit der Windows-
+    Konsole; sonst crasht „→"/Umlaut mit UnicodeEncodeError) und restauriert das Encoding
+    danach — kein dauerhafter Seiteneffekt für programmatische Aufrufer.
+    """
+    streams = [
+        (s, s.encoding, s.errors) for s in (sys.stdout, sys.stderr) if hasattr(s, "reconfigure")
+    ]
+    for stream, _, _ in streams:
+        stream.reconfigure(encoding="utf-8", errors="replace")
+    try:
+        return _main(argv)
+    finally:
+        for stream, enc, err in streams:
+            stream.reconfigure(encoding=enc, errors=err)
 
 
 if __name__ == "__main__":
