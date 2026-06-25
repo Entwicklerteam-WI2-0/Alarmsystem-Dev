@@ -1,11 +1,29 @@
 # Persönliches Entscheidungslog — Lucas Vöhringer (G2)
-> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-25
+> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-26
 > **Autor:** Lucas Vöhringer (Systemarchitekt) · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 > Persönliches Log (Einzelleistung). Das zentrale Architektur-Logbuch des Teams ist
 > `Entscheidungslog-Lucas-Systemarchitektur.md` (ADR-Format E-xx); je Eintrag steht der Querverweis dorthin.
 
 ---
+
+## 2026-06-26 — DTB-54: Append-only über DB-Rechte (grants.sql) statt Trigger; Least-Privilege-Matrix
+- **Kontext/Task:** P2.2 · DTB-54 / NF-09 (append-only) · E-35 (rohes PyMySQL, kein ORM, native MariaDB) · betrifft `migrations/grants.sql` + Apply-/Verifikations-Anleitung in `04-Source-code/README.md`. Ergänzt DTB-29/E-39 (Audit-Log append-only auf Interface-Ebene) um die **DB-seitige** Durchsetzung. Auslöser: PR #85-Reviews — grants.sql-Rechte-Matrix + Least-Privilege-Feinschliff.
+- **Entscheidung:**
+  1. **NF-09 wird über DB-Privilegien (`GRANT`/`REVOKE`) erzwungen, nicht über DB-Trigger.** Der App-User `alarm@localhost` erhält pro Tabelle nur die fachlich nötigen Rechte.
+  2. **Privilegien-Matrix (geringste Rechte):** `reading`, `assessment`, `audit_log`, `acknowledgement` → nur `INSERT, SELECT` (unveränderlich); `alarm` → `INSERT, SELECT, UPDATE` (State-Übergänge active→acknowledged→cleared), **kein DELETE**; `threshold_set` → nur `INSERT, SELECT` (Supersession per neuem `valid_from`-Satz, **kein** UPDATE/DELETE).
+  3. **Clean-Slate-Struktur:** erst DB-weiter `REVOKE`, dann **pro Tabelle** ein zusätzlicher Table-Level-`REVOKE` (MariaDB widerruft Table-Grants nicht über `ON db.*`), danach gezielte `GRANT`s — idempotent/wiederholbar.
+  4. **Kein `CREATE USER`, kein Passwort im Skript (NF-07):** der App-User wird beim DB-Init angelegt; grants.sql vergibt nur Rechte.
+  5. **DB-Name/User/Host hartkodiert** (SQL kann keine `.env` lesen) — bewusst akzeptierter Trade-off, im Skript dokumentiert (Default `alarmsystem`/`alarm`; Host `localhost` deckt native MariaDB UND Pi via SSH-Tunnel ab).
+- **Begründung:** Append-only ist eine **Sicherheits-/Audit-Invariante** (NF-09); sie nur in der Repository-Schicht zu garantieren genügt nicht, weil ein App-Bug oder eine SQL-Injection die Schicht umgehen könnte. DB-Rechte sind die **kleinste, deklarative Defense-in-depth**: Was der User nicht darf, kann auch fehlerhafter Code nicht. `threshold_set` ohne UPDATE/DELETE schützt den Audit-Trail, weil `assessment.fk_assessment_threshold` (ohne `ON DELETE`) auf **historische** Schwellen-Sätze verweist — Überschreiben/Löschen würde die Nachvollziehbarkeit einer alten Bewertung brechen; die Schwellen-Historie wächst stattdessen per Supersession (neuer Satz mit höherem `valid_from`). `alarm` braucht UPDATE für den Zustandsautomaten, aber kein DELETE (RB-01: Clearing ist manuell, keine Tilgung).
+- **Alternativen (erwogen/verworfen):**
+  - *Append-only per DB-Trigger (`BEFORE UPDATE/DELETE → SIGNAL`):* verworfen — fügt prozedurale Logik in die DB ein, ist schwerer zu reviewen/testen und für ein ~2.-Sem.-Team undurchsichtiger als eine deklarative Rechte-Matrix; Grants erreichen dasselbe mit weniger beweglichen Teilen.
+  - *Nur Repository-seitig append-only (keine DB-Rechte):* verworfen — kein Schutz gegen Code-Bugs/Injection, die das Repository umgehen; NF-09 verlangt eine harte Garantie, daher Durchsetzung auf DB-Ebene.
+  - *`threshold_set` mit UPDATE/DELETE (mutable Config):* verworfen — bricht den Audit-Trail über die FK auf historische Sätze; Supersession per INSERT ist nachvollziehbar und unveränderlich. (UPDATE wurde auf PR-Review-Befund hin nachträglich entfernt — least privilege.)
+  - *`GRANT OPTION` aus den Table-Level-`REVOKE`s streichen (PR-Review-LOW):* **zurückgewiesen mit Beleg** — die Befund-Prämisse trifft nicht zu: `GRANT OPTION` **ist** in MariaDB ein Table-Level-Privileg (MariaDB-Doku, GRANT/REVOKE), die `REVOKE`s sind wirksam und kein No-op; Streichen würde die Clean-Slate-Bereinigung abschwächen.
+  - *DB-Name/User per Platzhalter + Such-/Ersetz-Schritt:* verworfen für den Prototyp — Mehraufwand ohne Nutzen; Defaults dokumentiert, abweichende Umgebung passt die Bezeichner manuell an.
+- **Bewusster Tradeoff (ehrlich):** Die 6-Tabellen-Liste in grants.sql spiegelt `schema.sql` **doppelt** (REVOKE + GRANT) — eine neue Tabelle muss manuell nachgezogen werden (Drift-Risiko). Bewusst akzeptiert und per `WARTUNG`-Kommentar im Skript abgesichert; ein automatischer Abgleich wäre für den Prototyp-Scope überengineert. Die Pi-MariaDB-Init-Verifikation (4 DoD-Punkte: 6 Tabellen, Typen/Charset, Idempotenz, append-only-Negativtest) ist hardwareabhängig und steht noch aus → in DTB-54 (Jira) als Abschlussnachweis zu führen.
+- **Ergebnis/Status:** umgesetzt in `feat/dtb-54-schema-apply` (PR #85): grants.sql-Rechte-Matrix + Apply-/Verifikations-README; Review-Findings eingearbeitet (threshold_set ohne UPDATE, Drift-Schutz-Kommentar, GRANT-OPTION-Finding mit Beleg zurückgewiesen). ruff sauber, Tests grün (129 passed / 9 skipped), `src/assessment` 100 % Coverage (von DTB-54 unberührt). Offen: Pi-Init-Verifikation (DTB-54 Jira). Querverweis zentrales Log: **E-35** (Persistenz) / **E-39** (append-only Audit).
 
 ## 2026-06-25 — DTB-29: Audit-Log Repository append-only + Review-Findings PR #94
 - **Kontext/Task:** P2.2 · DTB-29 / NF-09 (Audit-Log append-only) · E-35 (rohes PyMySQL, kein ORM) · betrifft `src/storage/audit_repository.py`, `src/model/schemas.py`, `migrations/schema.sql`. Auslöser: PR-Review #94 ergab MEDIUM (nicht abgefangener `json.dumps`-TypeError) + LOW (leere Strings für `entity_type`/`actor` erlaubt) + fehlender Entscheidungslog-Eintrag.
