@@ -64,6 +64,11 @@ def check_plausibility(
         # Negativer oder gleicher Zeitstempel ist ein Datenfehler -> unplausibel.
         return "invalid timestamp order"
 
+    # Sub-Sekunden-Intervalle liefern keine sinnvolle Sprung-Rate;
+    # Division durch fast-0 wuerde immer einen unplausibel hohen Wert ergeben.
+    if delta_t < timedelta(seconds=1):
+        return None
+
     delta_temp_c = current.surface_temp_c - previous.surface_temp_c
     jump_rate = abs(delta_temp_c) / delta_min
     if jump_rate > thresholds.max_temp_jump_c_per_min:
@@ -106,13 +111,18 @@ def _sanitize_reason(reason: str) -> str:
 
     Verhindert, dass lange oder mehrzeilige Strings die Explanation
     aufblasen oder Formatierungsprobleme verursachen. Entfernt
-    Zeilenumbrueche, Tabs und andere ASCII-Steuerzeichen.
+    Zeilenumbrueche, Tabs und alle Control Characters (ASCII + Unicode).
     """
-    # Zeilenumbrueche und Tabs durch Leerzeichen ersetzen; restliche
-    # ASCII-Steuerzeichen (0x00-0x1f) und DEL (0x7f) entfernen.
+    import unicodedata
+
+    # Zeilenumbrueche und Tabs durch Leerzeichen ersetzen.
     cleaned = reason.replace("\n", " ").replace("\r", " ").replace("\t", " ")
-    cleaned = cleaned.translate(str.maketrans(dict.fromkeys(range(0x20))))
-    cleaned = cleaned.replace("\x7f", "").strip()
+    # Alle Control Characters entfernen (ASCII 0x00-0x1f, 0x7f sowie Unicode Cc/Zl/Zp).
+    _CONTROL_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
+    cleaned = "".join(
+        ch for ch in cleaned if unicodedata.category(ch) not in _CONTROL_CATEGORIES and ch != "\x7f"
+    )
+    cleaned = cleaned.strip()
     if len(cleaned) > MAX_REASON_LENGTH:
         cleaned = cleaned[: MAX_REASON_LENGTH - 3] + "..."
     return cleaned

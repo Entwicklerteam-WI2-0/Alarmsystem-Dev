@@ -129,6 +129,23 @@ def test_check_plausibility_jump_at_exact_limit_is_plausible(
     assert check_plausibility(fresh_reading, previous, quality_thresholds) is None
 
 
+def test_check_plausibility_sub_second_interval_is_plausible(
+    fresh_reading: Reading,
+    quality_thresholds: DatenqualitaetSchwellen,
+) -> None:
+    # Sub-Sekunden-Intervalle duerfen nicht zu einer Division durch fast-0 fuehren
+    # und falsch als Sprung gewertet werden (LOW aus Review).
+    previous = Reading(
+        sensor_id=fresh_reading.sensor_id,
+        measured_at=fresh_reading.measured_at - timedelta(milliseconds=500),
+        surface_temp_c=fresh_reading.surface_temp_c - 10.0,
+        air_temp_c=fresh_reading.air_temp_c,
+        humidity_pct=fresh_reading.humidity_pct,
+        received_at=fresh_reading.received_at - timedelta(milliseconds=500),
+    )
+    assert check_plausibility(fresh_reading, previous, quality_thresholds) is None
+
+
 # ---------------------------------------------------------------------------
 # Plausibilitaet - Flatline
 # ---------------------------------------------------------------------------
@@ -195,6 +212,15 @@ def test_build_unknown_assessment_sanitizes_newlines() -> None:
 
     assert "\n" not in assessment.explanation
     assert "line1 line2" in assessment.explanation
+
+
+def test_build_unknown_assessment_sanitizes_unicode_control_chars() -> None:
+    ts = datetime.now(UTC)
+    assessment = build_unknown_assessment(reason="foo\u2028bar\u2029baz", ts=ts)
+
+    assert "\u2028" not in assessment.explanation
+    assert "\u2029" not in assessment.explanation
+    assert "foobarbaz" in assessment.explanation
 
 
 def test_build_unknown_assessment_truncates_long_reason() -> None:
