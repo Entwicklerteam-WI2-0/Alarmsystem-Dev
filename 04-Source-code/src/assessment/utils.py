@@ -19,10 +19,11 @@ MAX_HUMIDITY_PCT = 100.0
 # Divisor zur Normierung der Prozent-Feuchte auf einen Anteil (0, 1].
 PERCENT_DIVISOR = 100.0
 
-# Toleranz fuer die Naehe zum Magnus-Pol -b: (b + T_a) wird zum Divisor; liegt der
-# Betrag darunter, ist das Ergebnis numerisch instabil/physikalisch unsinnig. Ein
-# exakter ==0-Vergleich greift nur beim Idealwert -243,12 und laesst gerundete
-# Nachbarwerte (z. B. -243,120000000001) still durchrutschen -> Fail-safe-Luecke.
+# Magnus ist nur fuer T_a > -b definiert: am Pol -b wird der Divisor (b + T_a) null,
+# UNTERHALB liefert die Formel ein still falsches (physikalisch unsinniges) Ergebnis,
+# weil (b + T_a) negativ wird. Beides wird zurueckgewiesen (Fail-safe NF-01: kein
+# stilles Ersatzergebnis). Die kleine Toleranz oberhalb -b faengt zusaetzlich die
+# numerisch instabile Nahe-Pol-Zone (gerundete Nachbarwerte wie -243,120000000001).
 POLE_TOLERANCE_C = 1e-9
 
 
@@ -34,7 +35,8 @@ def calculate_dew_point(air_temp_c: float, humidity_pct: float) -> float:
         T_d   = (b * gamma) / (a - gamma)
 
     Args:
-        air_temp_c: Lufttemperatur T_a in °C (endlich, nicht am Magnus-Pol -b).
+        air_temp_c: Lufttemperatur T_a in °C (endlich, > -b = -243,12 °C; am Pol
+            und darunter ist die Magnus-Formel undefiniert).
         humidity_pct: relative Luftfeuchte RH in Prozent, im Bereich (0, 100].
 
     Returns:
@@ -43,13 +45,16 @@ def calculate_dew_point(air_temp_c: float, humidity_pct: float) -> float:
 
     Raises:
         ValueError: wenn humidity_pct nicht in (0, 100] liegt, air_temp_c nicht
-            endlich ist (NaN/inf) oder air_temp_c am Magnus-Pol (-b) liegt.
+            endlich ist (NaN/inf) oder air_temp_c <= -b (-243,12 °C) liegt
+            (Magnus-Pol und darunter).
 
     Hinweis (Fail-safe, NF-01): Diese Funktion ist ein reiner Rechner und liefert
     bewusst KEIN stilles Ersatzergebnis. Der Aufrufer (DTB-60 Poller) MUSS den
     ValueError fangen und den fehlenden Taupunkt als "unbestimmbar" behandeln
     (dew_point_c=None), damit die Bewertung (DTB-38) konservativ >= GELB einstuft
-    und nie faelschlich GRUEN ausgibt.
+    und nie faelschlich GRUEN ausgibt. Physikalische Plausibilitaet/Bereichsgrenzen
+    (realistische Temperaturspanne) prueft die vorgelagerte Validierungsschicht,
+    nicht dieser Rechner.
     """
     if not (MIN_HUMIDITY_PCT < humidity_pct <= MAX_HUMIDITY_PCT):
         raise ValueError(f"humidity_pct muss in (0, 100] liegen, erhalten: {humidity_pct}")
@@ -57,8 +62,11 @@ def calculate_dew_point(air_temp_c: float, humidity_pct: float) -> float:
     if not math.isfinite(air_temp_c):
         raise ValueError(f"air_temp_c muss endlich sein, erhalten: {air_temp_c}")
 
-    if abs(MAGNUS_B + air_temp_c) < POLE_TOLERANCE_C:
-        raise ValueError(f"air_temp_c liegt am Magnus-Pol (-{MAGNUS_B} °C): {air_temp_c}")
+    if air_temp_c <= -MAGNUS_B + POLE_TOLERANCE_C:
+        raise ValueError(
+            f"air_temp_c muss > -{MAGNUS_B} °C sein (am Magnus-Pol oder darunter "
+            f"ist die Formel undefiniert), erhalten: {air_temp_c}"
+        )
 
     gamma = math.log(humidity_pct / PERCENT_DIVISOR) + (MAGNUS_A * air_temp_c) / (
         MAGNUS_B + air_temp_c

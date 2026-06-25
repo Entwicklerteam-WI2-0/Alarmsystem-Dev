@@ -94,9 +94,12 @@ def test_taupunkt_immer_kleiner_gleich_lufttemperatur(air_temp_c: float) -> None
     assert dew_point_c < air_temp_c
 
 
-@pytest.mark.parametrize("invalid_humidity", [0.0, -5.0, 100.1, 150.0, math.nan])
+@pytest.mark.parametrize(
+    "invalid_humidity", [0.0, -5.0, 100.1, 150.0, math.nan, math.inf, -math.inf]
+)
 def test_taupunkt_ungueltige_feuchte_wirft_valueerror(invalid_humidity: float) -> None:
     # Arrange/Act/Assert: RH muss in (0, 100] liegen, sonst ist T_d undefiniert.
+    # inf/-inf duerfen nicht still durchrutschen -> klar fangbarer ValueError (NF-01).
     with pytest.raises(ValueError):
         calculate_dew_point(20.0, invalid_humidity)
 
@@ -124,3 +127,14 @@ def test_taupunkt_nahe_magnus_pol_wirft_valueerror(near_pole_temp: float) -> Non
     # physikalisch unsinniges Riesen-Ergebnis statt eines fangbaren ValueError (Fail-safe).
     with pytest.raises(ValueError):
         calculate_dew_point(near_pole_temp, 60.0)
+
+
+@pytest.mark.parametrize("below_pole_temp", [-243.13, -244.0, -250.0, -32768.0])
+def test_taupunkt_unterhalb_magnus_pol_wirft_valueerror(below_pole_temp: float) -> None:
+    # Arrange/Act/Assert: T_a UNTERHALB des Magnus-Pols (-b) liegt ausserhalb des
+    # Definitionsbereichs. Frueher rutschte das still durch -- (b + T_a) wird negativ,
+    # die Formel liefert ein physikalisch unsinniges Ergebnis OHNE Fehler. Fail-safe
+    # NF-01: muss klar fangbaren ValueError werfen. -32768 simuliert einen korrupten
+    # Sensor-Rohwert (Integer-Underflow), der bis hierher durchschlagen koennte.
+    with pytest.raises(ValueError):
+        calculate_dew_point(below_pole_temp, 70.0)
