@@ -72,6 +72,9 @@ class Assessment(_Base):
     dew_point_c: float | None = None
     delta_t: float | None = None  # T_s - T_d
     humidity_pct: float | None = None
+    # DTB-33 (FA-06/FA-05): 30-min-T_s-Prognose, die diese Bewertung beeinflusst hat.
+    # None = keine Prognose verfuegbar/eingegangen. NICHT Teil des G2->G3-Wire-Contracts.
+    forecast_surface_temp_c: float | None = None
 
 
 class Alarm(_Base):

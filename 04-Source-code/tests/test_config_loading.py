@@ -25,6 +25,10 @@ def test_default_config_laedt_kaskaden_schwellen_aus_schwellenwerte_md():
     assert thresholds.vereisung.delta_t_kondensation_k == 0.0
     assert thresholds.vereisung.delta_t_feucht_k == 1.0
     assert thresholds.prognose.t_s_grenz_c == 0.0
+    # DTB-33 (FA-06): Trendfenster + Horizont + Mindest-Stuetzstellen parametrierbar.
+    assert thresholds.prognose.trend_window_min == 30.0
+    assert thresholds.prognose.horizon_min == 30.0
+    assert thresholds.prognose.min_points == 3
     assert thresholds.datenqualitaet.stale_timeout_s == 120.0
     assert thresholds.datenqualitaet.max_temp_jump_c_per_min == 5.0
     assert thresholds.datenqualitaet.flatline_timeout_min == 15.0
@@ -231,7 +235,12 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "delta_t_kondensation_k": 0.0,
             "delta_t_feucht_k": 1.0,
         },
-        "prognose": {"t_s_grenz_c": 0.0},
+        "prognose": {
+            "t_s_grenz_c": 0.0,
+            "trend_window_min": 30.0,
+            "horizon_min": 30.0,
+            "min_points": 3,
+        },
         "datenqualitaet": {
             "stale_timeout_s": 120,
             "max_temp_jump_c_per_min": 5.0,
@@ -249,3 +258,25 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "max_pressure_hpa": 1100.0,
         },
     }
+
+
+@pytest.mark.parametrize(
+    "feld, wert",
+    [
+        ("trend_window_min", 0.0),  # Fenster muss positiv sein
+        ("trend_window_min", -5.0),
+        ("horizon_min", 0.0),  # Horizont muss positiv sein
+        ("horizon_min", -1.0),
+        ("min_points", 1),  # mind. 2 Stuetzstellen fuer eine Gerade
+        ("min_points", 0),
+    ],
+)
+def test_prognose_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str, wert: float):
+    # Arrange — DTB-33: unplausible Prognose-Parameter wuerden den Trend abschalten (NF-01).
+    daten = _minimal_config()
+    daten["prognose"][feld] = wert
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)

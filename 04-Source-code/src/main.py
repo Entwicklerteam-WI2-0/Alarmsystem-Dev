@@ -37,6 +37,7 @@ from fastapi import FastAPI
 
 from src.assessment import AssessmentService
 from src.config.loader import Thresholds, load_thresholds
+from src.forecast.bridge import compute_forecast_for_cycle
 from src.ingest.poller import Poller
 from src.storage import (
     AssessmentRepository,
@@ -110,7 +111,16 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
             # damit der Event-Loop frei bleibt.
             reading = await asyncio.to_thread(runtime.poller.poll)
             now = datetime.now(UTC)
-            await asyncio.to_thread(runtime.service.assess_reading, reading, now)
+            # DTB-33 (FA-06): 30-min-T_s-Prognose aus der Historie -> GELB-Vorwarnung.
+            # Bruecke liest die Zeitreihe; Fail-safe: None bei fehlendem Reading/DB-Fehler.
+            forecast = await asyncio.to_thread(
+                compute_forecast_for_cycle,
+                reading,
+                runtime.reading_repo,
+                runtime.thresholds.prognose,
+                now,
+            )
+            await asyncio.to_thread(runtime.service.assess_reading, reading, now, forecast)
         except RepositoryError as exc:
             logger.error("Bewertungszyklus fehlgeschlagen (fail-safe, weiter): %s", exc)
         except ValueError:

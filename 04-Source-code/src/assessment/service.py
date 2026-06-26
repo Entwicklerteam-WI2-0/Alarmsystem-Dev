@@ -56,7 +56,12 @@ class AssessmentService:
         self._assessment_repo = assessment_repo
         self._audit_repo = audit_repo
 
-    def assess_reading(self, reading: Reading | None, now: datetime) -> Assessment:
+    def assess_reading(
+        self,
+        reading: Reading | None,
+        now: datetime,
+        forecast_surface_temp_c: float | None = None,
+    ) -> Assessment:
         """Bewertet ein (frisch gepolltes) Reading, persistiert + auditiert das Ergebnis.
 
         NF-01-Enforcement (Reihenfolge bewusst, Fail-safe vor Bewertung):
@@ -112,6 +117,7 @@ class AssessmentService:
                 reading.surface_temp_c,
                 reading.dew_point_c,
                 self._thresholds,
+                forecast_surface_temp_c=forecast_surface_temp_c,
             )
             delta_t = (
                 None
@@ -133,6 +139,7 @@ class AssessmentService:
                 dew_point_c=reading.dew_point_c,
                 delta_t=delta_t,
                 humidity_pct=reading.humidity_pct,
+                forecast_surface_temp_c=forecast_surface_temp_c,
             )
 
         assessment_id = self._assessment_repo.save(assessment)

@@ -65,6 +65,35 @@ def _make_service(thresholds) -> AssessmentService:
 # ---------------------------------------------------------------------------
 
 
+def test_forecast_loest_gelb_aus_und_wird_persistiert(thresholds):
+    # DTB-33 / FA-06: T_s=2.0 + trocken -> ohne Prognose GRUEN; Prognose -1.0 (<= 0)
+    # -> GELB-Vorwarnung. Der Prognosewert muss im Snapshot persistiert werden (FA-05).
+    arepo, audit = InMemoryAssessmentRepository(), InMemoryAuditRepository()
+    service = AssessmentService(thresholds, arepo, audit)
+    now = datetime.now(UTC)
+
+    result = service.assess_reading(
+        _reading(now, surface=2.0, dew=0.0), now, forecast_surface_temp_c=-1.0
+    )
+
+    assert result.risk_level is RiskLevel.YELLOW
+    assert result.forecast_surface_temp_c == pytest.approx(-1.0)
+    persisted = arepo.get_latest()
+    assert persisted is not None
+    assert persisted.forecast_surface_temp_c == pytest.approx(-1.0)
+
+
+def test_ohne_forecast_bleibt_gruen_und_feld_none(thresholds):
+    # Default (kein forecast) haelt das bestehende Verhalten: GRUEN, Feld None.
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+
+    result = service.assess_reading(_reading(now, surface=2.0, dew=0.0), now)
+
+    assert result.risk_level is RiskLevel.GREEN
+    assert result.forecast_surface_temp_c is None
+
+
 def test_healthy_reading_is_assessed_persisted_and_audited(thresholds):
     # Arrange
     arepo, audit = InMemoryAssessmentRepository(), InMemoryAuditRepository()

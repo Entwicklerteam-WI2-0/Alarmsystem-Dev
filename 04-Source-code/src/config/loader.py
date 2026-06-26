@@ -31,6 +31,10 @@ class VereisungsSchwellen:
 @dataclass(frozen=True)
 class PrognoseSchwellen:
     t_s_grenz_c: float
+    # DTB-33 (FA-06): Parameter der 30-min-Trendextrapolation (NF-05, parametrierbar).
+    trend_window_min: float  # Laenge des Trendfensters in Minuten
+    horizon_min: float  # Prognosehorizont in Minuten (FA-06: 30)
+    min_points: int  # Mindestanzahl Stuetzstellen fuer eine Regression (>= 2)
 
 
 @dataclass(frozen=True)
@@ -125,8 +129,25 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
         _validate_datenqualitaet(obj)
     elif cls is PlausibilitaetSchwellen:
         _validate_plausibilitaet(obj)
+    elif cls is PrognoseSchwellen:
+        _validate_prognose(obj)
 
     return obj
+
+
+def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
+    """Prueft die Trendparameter (DTB-33): Fenster/Horizont positiv, min_points >= 2.
+
+    Unplausible Werte wuerden die 30-min-Vorwarnung praktisch abschalten (NF-01):
+    ein nicht-positives Fenster/Horizont oder weniger als zwei Stuetzstellen
+    machen eine lineare Regression unmoeglich -> laut scheitern statt still leer.
+    """
+    _require_positive(schwellen.trend_window_min, "prognose.trend_window_min", upper=1_440)
+    _require_positive(schwellen.horizon_min, "prognose.horizon_min", upper=1_440)
+    if schwellen.min_points < 2:
+        raise ConfigError(
+            "prognose.min_points muss mindestens 2 sein (Regression braucht 2 Punkte)"
+        )
 
 
 def _validate_datenqualitaet(schwellen: DatenqualitaetSchwellen) -> None:

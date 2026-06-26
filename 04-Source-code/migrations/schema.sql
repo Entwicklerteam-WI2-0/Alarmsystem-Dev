@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS assessment (
   dew_point_c      DOUBLE       NULL,
   delta_t          DOUBLE       NULL,
   humidity_pct     DOUBLE       NULL,
+  forecast_surface_temp_c DOUBLE NULL,                 -- DTB-33/FA-06: 30-min-Prognose-T_s (Nachvollziehbarkeit FA-05)
   PRIMARY KEY (id),
   KEY idx_assessment_ts (ts),
   CONSTRAINT chk_assessment_risk CHECK (risk_level IN ('green','yellow','orange','red','unknown')),
