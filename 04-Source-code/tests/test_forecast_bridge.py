@@ -68,3 +68,11 @@ def test_fallender_trend_liefert_prognose_und_liest_richtiges_fenster():
 def test_repository_fehler_ist_failsafe_none():
     repo = _FakeReadingRepo([], raises=True)
     assert compute_forecast_for_cycle(_reading(0, 0.0), repo, _PROGNOSE, _NOW) is None
+
+
+def test_leere_zeitreihe_ist_failsafe_none():
+    # Reading vorhanden, aber noch keine Historie -> DB wird abgefragt, liefert None.
+    repo = _FakeReadingRepo([])
+    result = compute_forecast_for_cycle(_reading(0, 1.0), repo, _PROGNOSE, _NOW)
+    assert result is None
+    assert len(repo.calls) == 1  # DB wurde abgefragt (kein Kurzschluss)
