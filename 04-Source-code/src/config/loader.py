@@ -144,6 +144,10 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
     """
     _require_positive(schwellen.trend_window_min, "prognose.trend_window_min", upper=1_440)
     _require_positive(schwellen.horizon_min, "prognose.horizon_min", upper=1_440)
+    # min_points zaehlt Stuetzstellen -> echte Ganzzahl verlangen (3.0 ist Fehlkonfig).
+    # bool ist int-Subtyp, wird aber bereits in _baue_sektion als Schwellenwert abgelehnt.
+    if not isinstance(schwellen.min_points, int):
+        raise ConfigError("prognose.min_points muss eine Ganzzahl sein")
     if schwellen.min_points < 2:
         raise ConfigError(
             "prognose.min_points muss mindestens 2 sein (Regression braucht 2 Punkte)"
