@@ -34,7 +34,7 @@ from datetime import UTC, datetime
 from fastapi import FastAPI
 
 from src.alarm.hysterese import AlarmHysterese
-from src.alarm.service import AlarmGenerator
+from src.alarm.service import AlarmGenerator, AuditError
 from src.assessment import AssessmentService
 from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
@@ -162,6 +162,15 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                 runtime.alarm_generator,
                 reading,
                 now,
+            )
+        except AuditError as exc:
+            # Alarm IST gespeichert + Engine aktiv (KEIN Re-Arm) — nur der Audit-Eintrag fehlte.
+            # WARNING mit alarm_id, damit Ops das vom verschluckten Alarm (reiner RepositoryError,
+            # bei dem ein Re-Arm stattfand) klar unterscheiden kann.
+            logger.warning(
+                "Alarm %s gespeichert, aber Audit-Eintrag fehlgeschlagen (kein Re-Arm): %s",
+                exc.alarm_id,
+                exc,
             )
         except RepositoryError as exc:
             logger.error("Bewertungszyklus fehlgeschlagen (fail-safe, weiter): %s", exc)

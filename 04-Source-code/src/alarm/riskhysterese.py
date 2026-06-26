@@ -112,9 +112,10 @@ class RiskHysterese:
         höhere Stufe „klebrig": eine Herabstufung verlangt den 0,5-Deadband-Abstand)."""
         d = self._undershoot
         # Alle Schwellen um +d anheben = konservativ in Sicherheitsrichtung: Temperatur-Schwellen
-        # höher (Herabstufung verlangt mehr „Auftauen") UND Delta-Schwellen höher (größeres Delta =
-        # härtere Bedingung, um die niedrigere Stufe freizugeben). In Summe wird die höhere Stufe
-        # „klebrig" — eine Herabstufung muss das Deadband klar unterschreiten.
+        # höher (Herabstufung verlangt mehr „Auftauen"). Delta-Schwellen höher macht `delta_t <=
+        # threshold` (Kaskade in assess_ice_risk) LEICHTER erfüllbar -> ROT/ORANGE wird schneller
+        # klassifiziert -> die höhere Stufe wird „klebrig". In Summe muss eine Herabstufung das
+        # Deadband klar unterschreiten.
         v = replace(
             t.vereisung,
             t_s_gefrierpunkt_c=t.vereisung.t_s_gefrierpunkt_c + d,

@@ -89,8 +89,10 @@ class AlarmHysterese:
         gelten als bestätigte De-Eskalation und SETZEN den On-Delay ZURÜCK. Würde ein
         Verdrahter Stale fälschlich als `YELLOW` liefern (was Schwellenwerte.md §3 dem
         Wortlaut nach zulässt), unterdrückte der GELB-Reset eine reale Eskalation still
-        (Under-Alarm/NF-01-Bruch). Diese Vorbedingung gehört in den Orchestrierungs-/
-        Integrationstest.
+        (Under-Alarm/NF-01-Bruch). Diese Vorbedingung ist an der Verdrahtungs-Naht getestet
+        (test_stale_reading_loest_keinen_alarm_aus: stale-Reading -> assess_reading liefert
+        UNKNOWN -> kein Alarm). Ein Engine-interner Guard ist nicht möglich, da die Engine ein
+        legitimes YELLOW nicht von einem fälschlich als YELLOW gelieferten Stale unterscheiden kann.
 
         Hinweis (bewusst): Der On-Delay misst die Zeit seit der ersten Bestätigung und
         toleriert Lücken bis `max_continuity_gap_s` — er verlangt NICHT strikt
