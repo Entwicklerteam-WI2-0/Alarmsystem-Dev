@@ -3,10 +3,15 @@
 > Stand: 2026-06-25 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
 
 ## Woran wir gerade arbeiten
+- **DTB-13 (Plausibilität + Stale-Erkennung, Andreas/Petzold):** Umgesetzt auf
+  `feat/dtb-13-stale-erkennung`. Stale (>120 s), Sprung (> 5 °C/min), Flatline (>= 15 min)
+  liefern `RiskLevel.UNKNOWN` (NF-01/E-34). Config parametrierbar; Repository-Interface um
+  `get_latest()` erweitert. Commit `8901068`; Quality-Gate grün (121 Tests). **Offen:** PR
+  nach Genehmigung durch Lucas; Jira-Link DTB-43 dependsOn DTB-13.
 - **DTB-54 (schema.sql einspielen, Andi & Leon):** Apply-Schritt + `migrations/grants.sql` (append-only
-  via GRANT statt Trigger, NF-09) dokumentiert; santa-loop-reviewed; Commit `d2aa4bc` lokal auf
-  `feat/dtb-54-schema-apply` (ungepusht). **Offen:** Init-Schritt (CREATE DB/USER) im README + DoD-Apply-Beweis
-  bei Pi-MariaDB-Init. → Status „Wird überprüft".
+  via GRANT statt Trigger, NF-09) dokumentiert; santa-loop-reviewed; Commit `d2aa4bc` auf
+  `feat/dtb-54-schema-apply` gemergt (#60). **Offen:** Init-Schritt (CREATE DB/USER) im README + DoD-Apply-Beweis
+  bei Pi-MariaDB-Init.
 - **G2 Backend (Alarmsystem ANR):** Woche 2. **Projektplan + Jira-Backlog (Projekt DTB)** steht:
   9 Epics / 43 Tasks (DTB-1..DTB-52) + 43 "Blocks"-Abhängigkeitslinks. Begleitdoc:
   `02-Arbeitsdokumente/Projektplan-Jira-Backlog-G2.md`.
@@ -21,11 +26,10 @@
   abzugleichen:** liegt in `04-Source-code/`, DB-Engineer-Artefakte in `04-Source-code/source/`.
 
 ## Als Nächstes (kritischer Pfad)
-1. **P0/Scaffolding** (DTB-1: DTB-2/50/51/52) — `src/`-Struktur + erste Tests, jetzt inkl. MariaDB via
-   Docker-Compose → macht CI grün-fähig.
-2. **Contract-first**: API + Datenmodell (E-02 / DTB-7) + Seam-Sync mit G1+G3 bis Di → M2. **Jetzt MySQL/MariaDB statt SQLite.**
-3. **T0 Vertical Slice** (E-03 / DTB-8): assessment-Kern + beide Vorfall-Tests + Fail-safe (≥80 % Coverage).
-4. Danach: **PR #18 mergen** + Branch-Protection „Require status checks" (Check `test`); **MySQL-DB-Treiber** in requirements/CI ergänzen.
+1. **DTB-13 abschließen:** PR erstellen (nach Genehmigung durch Lucas), Jira-Link DTB-43 dependsOn DTB-13 setzen.
+2. **DTB-28 Persistenz:** PyMySQL-Repository implementieren (`save`, `get_latest`); damit wird DTB-13 operational.
+3. **DTB-38 Bewertungslogik:** Kaskade aus Schwellenwerte.md §2 + Fail-safe-Integration DTB-13 (≥80 % Coverage).
+4. **M2 (Ende Woche 2):** API + Datenmodell final; G1/G3-Seam-Sync.
 
 ## Offene Punkte / Blocker
 - **MySQL-Vorgabe vollständig eingearbeitet (22.06.):** Backend-Konzept §6/§6a, README, Entscheidungslog
@@ -161,6 +165,18 @@
   — G1-Seite: Lucas. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves offen
   (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
 
+## Update [25.06., ~10:53] — DTB-13 Stale + Plausibilität umgesetzt (backend-db/Andreas)
+- **DTB-13 fertig implementiert** (`feat/dtb-13-stale-erkennung`, Commit `8901068`):
+  `src/assessment/failsafe.py` mit `is_stale()`, `check_plausibility()` (Sprung + Flatline) und
+  `build_unknown_assessment()` (RiskLevel.UNKNOWN). Config um `stale_timeout_s`,
+  `max_temp_jump_c_per_min`, `flatline_timeout_min`, `flatline_epsilon_c` erweitert.
+  Repository-Interface um `get_latest()` erweitert. **121 Tests grün, ruff sauber.**
+- **Remote-Setup auf Hauptrepo umgestellt:** `origin` = `Entwicklerteam-WI2-0/Alarmsystem-Dev`;
+  alter Fork als `fork` erhalten; `main` auf `origin/main` (`b88c39e`) aktualisiert;
+  Feature-Branch rebased.
+- **Neu offen:** PR für DTB-13 nach Genehmigung durch Lucas; Jira-Link DTB-43 dependsOn DTB-13;
+  persönliches Entscheidungslog für Config-Schnitt + Plausibilitätsgrenzwerte.
+
 ## Update [23.06., ~22:00] — DTB-11 Test-CI abgeschlossen + Poller-Fail-safe-Fix (Petzold)
 - **DTB-11 (Test-CI) fertig & gemergt (#50):** `.github/workflows/test.yml` gegen das `04-Source-code/`-Layout
   (`pytest --cov` ≥ 80 % + `ruff`); veralteter PR #18/`feat/ci-base` abgelöst & geschlossen.
@@ -272,3 +288,51 @@
   + Error-Envelope `{code,message}` (projektweit offen) mit Lucas. (3) DTB-29: Trigger ja/nein +
   Grant-Abdeckung `audit_log` (DTB-54) + MariaDB-Integrationstest. (4) Fork löschen. (5) Folge: DTB-63 (Auth).
   —backenddev
+
+## Update [26.06., ~12:35] — PR #93 (DTB-58/60) Review-Konvergenz + Admin-Merge (architekt)
+- **PR #93 (Poller-Stale DTB-58 + dew_point DTB-60) nach `main` gemergt** (Admin-Merge `e47edb5`).
+  Vorher Review-Findings eingearbeitet (**3× MEDIUM**: DictCursor-Guard in `ReadingRepository.__init__`,
+  `AttributeError` im `_fetch`-Catch, Rollback-Log in `_insert`; **LOWs**: `is_stale`-Reihenfolge,
+  `_CONTROL_CATEGORIES`→`{Cc}`, Druckgrenze 2000→1100 hPa) — je mit Tests. Suite **351 grün**, ruff clean.
+- **Neuer Skill `uni-review-orchestrator`** (Devteam-vibecodes) installiert + erstmals durchgezogen:
+  `python-review` + `security-review` als Subagents (konvergenz-instruiert) → beide **FREIGABEREIF**.
+- **Lesson Learned:** GitHub-Auto-Review konvergiert an überdefensiven Modulen nicht von selbst (endlose Mikro-LOWs);
+  Lösung = orchestriertes **Einmal-Vollreview** statt Befund-für-Befund. Bewusster Schnitt durch Architekt.
+- **Offen:** Feature-Branch `feat/dtb-58-60-poller-stale-dewpoint` löschen; Jira DTB-58/DTB-60 → „Done".
+
+## Update [26.06., ~13:30] — REAL-STAND nach Architektur-Tiefenaudit (architekt)
+
+> Code-Vollanalyse (read-only, 23 Subagenten) statt Planungs-Optimismus. Voller Report:
+> `erinnerung/architektur-tiefenaudit-2026-06-26.md`. Workflow-Run `wf_53434d4b-97a`.
+
+**GESAMT-VERDIKT: „Motor gebaut, nicht verdrahtet" — Backend läuft NICHT end-to-end.**
+`main` (HEAD `6ca916f`) = hochwertige, getestete Einzelmodule, aber `main.py` ist ein 19-Zeilen-Stub mit nur
+`GET /v1/health`. Kein Scheduler, kein Assessment-Orchestrator, keine Serving-Schicht, kein Alarm-Subsystem.
+**Engpass = Integrationsarbeit DTB-38** (Code-Kommentar belegt es: „bevor is_stale in DTB-38 verdrahtet wird").
+
+**Was real auf `main` steht** (25 Features: ~2 ✅ / ~12 ⚠️ / ~11 ❌ · Findings 11C/23H/23M/22L):
+- ✅ **Reading-Persistenz (F09)** voll verdrahtet + korrekt · **RB-01 (kein Aktor) sauber gewahrt** · Enums vollständig.
+- ⚠️ **Toter Code zur Laufzeit** (gebaut + getestet, aber nie aufgerufen): Poller (kein Scheduler), Kaskade
+  `assess_ice_risk`, Fail-safe `is_stale`/`build_unknown_assessment`/`check_plausibility`, Audit-Repo, `load_thresholds()`.
+- ❌ **Fehlt ganz:** `GET /v1/assessment/current` (Kernprodukt) + `AssessmentCurrent`-Schema · gesamtes
+  **Alarm-Subsystem** (Erzeugung/Repo/Endpoints/SSE/Ack) · Assessment-Persistenz (F10) · 30-min-Prognose (FA-06) ·
+  Hysterese (F08) · Geoposition (F24).
+
+**NF-01 (nie GRÜN bei Stale/Fault):** auf dem Papier korrekt, **zur Laufzeit unenforced** (`silent-failure-hunter`
+= FAIL) — kein Endpoint ruft die Fail-safe-Bausteine. Beim Verdrahten MUSS der Service stale/fault VOR
+`assess_ice_risk` erzwingen (die Funktion hat keinen internen Guard). `fault`-Readings werden zudem verworfen
+statt gespeichert → Serve-Zeit kann `fault` nicht aus der DB ableiten (offene Architekturfrage).
+
+**Contract-Treue:** **1/6** `/v1`-Endpoints existiert (`/v1/health`, ohne 503-Pfad/Pydantic). Die 5 fachlichen fehlen.
+PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separate Naht-Frage (steht offen).
+
+**Bestätigt offene Altfrage:** DTB-58 (Ingest-Stale) vs DTB-13 (failsafe Serve-Stale) — zwei Stale-Ebenen,
+**keine in einen laufenden Assessment-Pfad verdrahtet** → gehört in DTB-38.
+
+**Nächste Schritte (Baureihenfolge; Details + `datei:zeile` im Report):**
+1. **DTB-38 Orchestrierung/DI in `main.py`** (Scheduler + Assessment-Service) — entkoppelt 6 CRITICALs auf einmal.
+2. Serving `GET /v1/assessment/current` + `AssessmentCurrent`-Schema + **NF-01-Enforcement zur Laufzeit**.
+3. **Alarm-Subsystem** (DB-DDL existiert schon in `migrations/schema.sql`).
+4. F10 Assessment-Persistenz · FA-06 Prognose-Producer · F08 Hysterese + `poll_interval`/`on_delay` als Config.
+5. Vorfall-2-Test fixen (`test_vorfall_2`: aktuell ΔT=+0,2 → ORANGE statt ΔT≤0 → ROT; kritischer-Pfad-DoD).
+—architekt

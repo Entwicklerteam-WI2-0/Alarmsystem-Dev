@@ -13,9 +13,13 @@ from .enums import (
 )
 from .schemas import (
     Acknowledgement,
+    AckRequest,
     Alarm,
     Assessment,
+    AssessmentCurrent,
     AuditLogEntry,
+    Error,
+    Health,
     Reading,
     ThresholdSet,
 )
@@ -33,4 +37,9 @@ __all__ = [
     "Acknowledgement",
     "ThresholdSet",
     "AuditLogEntry",
+    # Wire-Schemas der /v1-API (Contract v1):
+    "AssessmentCurrent",
+    "Health",
+    "Error",
+    "AckRequest",
 ]
