@@ -82,6 +82,10 @@ class Repository(ABC):
         Returns:
             Sequenz der Readings, aufsteigend nach measured_at.
             Leere Sequenz, wenn keine vorhanden sind.
+
+        Raises:
+            RepositoryError: Bei Datenbankfehlern.
+            ValueError: Wenn since nicht zeitzonenbewusst ist (UTC).
         """
         ...
 

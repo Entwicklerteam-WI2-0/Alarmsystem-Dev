@@ -287,7 +287,12 @@ def _compute_dew_point(
 
 
 def _parse_iso_utc(value: object) -> datetime:
-    # ISO-8601-String mit UTC-Zeitzone erzwingen (z. B. 2026-06-23T10:00:00Z).
+    # ISO-8601-String mit UTC-Zeitzone erzwingen.
+    # Akzeptiert laut G1-Contract (Backend-Konzept §9.1) ausschliesslich:
+    #   - 2026-06-23T10:00:00Z
+    #   - 2026-06-23T10:00:00+00:00
+    # Andere UTC-Notationen wie -00:00 oder +0000 (ohne Doppelpunkt) werden
+    # bewusst abgelehnt, damit der Contract eng bleibt.
     if not isinstance(value, str):
         raise ValueError(f"measured_at muss ein String sein, erhalten: {type(value)}")
     # Python <3.11 akzeptiert 'Z' nicht direkt; ab 3.11 geht es.
@@ -334,17 +339,11 @@ def _as_float(value: object, field: str) -> float:
 
 
 def _optional_float(value: object, field: str) -> float | None:
-    # Optionale Zahlenfelder: None ist erlaubt, sonst muss der Wert eine JSON-Zahl sein.
+    # Optionale Zahlenfelder: None ist erlaubt, sonst gelten dieselben Regeln wie
+    # fuer Pflicht-Zahlenfelder (keine Code-Duplikation, NF-01).
     if value is None:
         return None
-    if isinstance(value, bool):
-        raise ValueError(f"{field} muss eine Zahl sein, erhalten: bool ({value!r})")
-    if not isinstance(value, int | float):
-        raise ValueError(f"{field} muss eine Zahl sein, erhalten: {type(value)}")
-    result = float(value)
-    if not math.isfinite(result):
-        raise ValueError(f"{field} muss endlich sein, erhalten: {value!r}")
-    return result
+    return _as_float(value, field)
 
 
 def _as_status(value: object) -> SensorStatus:

@@ -36,6 +36,8 @@ def is_stale(reading: Reading | None, now: datetime, timeout_s: float) -> bool:
         return True
     if now.tzinfo is None:
         raise ValueError("now muss zeitzonenbewusst sein (UTC)")
+    if reading.measured_at.tzinfo is None:
+        raise ValueError("reading.measured_at muss zeitzonenbewusst sein (UTC)")
     age = now - reading.measured_at
     return age > timedelta(seconds=timeout_s)
 

@@ -90,9 +90,6 @@ def test_is_stale_with_naive_now_raises(fresh_reading: Reading) -> None:
         is_stale(fresh_reading, naive_now, timeout_s=120)
 
 
-# ---------------------------------------------------------------------------
-# Plausibilitaet - Sprung
-# ---------------------------------------------------------------------------
 def test_check_plausibility_no_previous_returns_none(
     fresh_reading: Reading,
     quality_thresholds: DatenqualitaetSchwellen,
