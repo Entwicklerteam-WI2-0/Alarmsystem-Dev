@@ -121,6 +121,13 @@
 - *Konsequenz/offen:* SSE-Implementierung ist **T2** (FastAPI `StreamingResponse` / `sse-starlette`); `GET /v1/alarms` (Zustand) kann früher stehen. Doku nachgezogen: Backend-Konzept §9.2, README (Datenfluss), Source-README, `API_FROZEN_v1.md`, `Team-Sync-Entscheidungen.md`.
 - *Bezug:* ergänzt **E-36**; FA-Alarmierung; NF-01; RB-01; **DTB-19** (OpenAPI muss `/v1/alarms/stream` + `/v1/alarms` führen), DTB-35.
 
+**E-39 — Audit-Log Repository append-only (DTB-29 / NF-09): Interface + DB-Grants + Fail-safe bei JSON-Serialisierung**
+- *Kontext/Task:* P2.2 · DTB-29 (Audit-Log) · NF-09 (unveränderliches Ereignis-Tagebuch) · E-35 (rohes PyMySQL) · NF-01 (Fail-safe). Auslöser: Implementierung des Audit-Log-Repositories und Review #94.
+- *Entscheidung:* (1) `AuditRepository`-Interface bietet **nur `append`** — kein `update`/`delete`; append-only schon per Schnittellendesign. (2) `MySqlAuditRepository` schreibt per **parametrisiertem INSERT** (rohes PyMySQL, E-35); DB-Seite wird später durch eingeschränkte Grants (kein UPDATE/DELETE, DTB-54) zusätzlich abgesichert. (3) Verbindungs-, Konfigurations- und Query-Fehler werden zu `RepositoryError` heruntergebrochen. (4) **`json.dumps` für `detail` abgesichert**: nicht-serialisierbare Werte führen zu `RepositoryError`, nicht zu einem unbehandelten `TypeError`. (5) `entity_type`/`actor` erhalten `min_length=1`, um leere Strings fachlich abzulehnen.
+- *Begründung:* NF-09 verlangt ein unveränderliches Tagebuch; append-only per Design ist die kleinste, nachvollziehbarste Garantie. Parametrisierte Queries schließen SQL-Injection aus. Der JSON-Schutz ist nötig, weil `detail` ein offenes `dict[str, Any]` ist; ein Crash im Audit-Pfad würde NF-09/NF-01 verletzen.
+- *Alternativen (verworfen):* ORM-basiertes Audit-Log (E-35 sagt rohes PyMySQL); Update/Delete-Methoden im Interface (unterlaufen NF-09); JSON-Fehler nicht abfangen (verletzt NF-01).
+- *Ergebnis/Status:* umgesetzt in `feat/dtb-29-audit-log` (PR #94); Review-Findings eingearbeitet. Querverweis persönliches Log: Eintrag 2026-06-25.
+
 ## C. Vereisungs-Entscheidungslogik & Schwellenwerte
 
 **E-10 — Bewertung über Oberflächentemperatur + Taupunkt-Abstand + Feuchte (+ Niederschlag, am 22.06.2026 gestrichen → E-32); Lufttemperatur nur Kontext**
