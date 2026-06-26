@@ -75,10 +75,16 @@ def test_vorfall_1_kein_fehlalarm_bei_trockener_kalter_oberflaeche(thresholds):
 
 
 def test_vorfall_2_vereisung_erkannt_bei_kalter_oberflaeche(thresholds):
-    """Vorfall 2: Luft +1,2 °C, aber Oberfläche < 0 °C und feucht -> Eis."""
+    """Vorfall 2: Luft +1,2 °C, aber Oberfläche < 0 °C und Reif -> Eis erkannt.
+
+    Reif heißt: Oberfläche unter dem Taupunkt (Schwellenwerte.md §0/§2:
+    ΔT ≤ 0 ⇒ Kondensation/Reif ⇒ ROT). Die frühere Fassung nutzte ΔT=+0,2
+    (Oberfläche ÜBER dem Taupunkt) und prüfte damit gar nicht das
+    dokumentierte Frost-Szenario, sondern nur einen ORANGE-Randfall.
+    """
     t_s = -1.0
-    t_d = -1.2  # ΔT = 0.2 -> feucht, nahe Kondensation -> ORANGE
-    assert assess_ice_risk(t_s, t_d, thresholds) == RiskLevel.ORANGE
+    t_d = -0.5  # Oberfläche unter Taupunkt -> ΔT = -0.5 -> Reif/Kondensation -> ROT
+    assert assess_ice_risk(t_s, t_d, thresholds) == RiskLevel.RED
 
 
 # ---------------------------------------------------------------------------
