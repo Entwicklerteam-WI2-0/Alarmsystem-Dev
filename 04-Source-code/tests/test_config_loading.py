@@ -142,6 +142,25 @@ def test_zu_grosse_zeitkonstante_scheitert_laut(feld):
         HystereseParameter(**werte)
 
 
+def test_zeitkonstante_obergrenze_grenzfall():
+    # Grenze _MAX_ZEIT_S = 86400 s (24 h): exakt erlaubt (`>`-Pruefung), knapp darueber nicht.
+    from src.config.loader import HystereseParameter
+
+    HystereseParameter(  # exakt 86400 -> ok
+        on_delay_s=60.0,
+        max_continuity_gap_s=86_400.0,
+        downgrade_stable_s=86_400.0,
+        downgrade_undershoot_c=0.5,
+    )
+    with pytest.raises(ConfigError):  # 86400.001 -> abgelehnt
+        HystereseParameter(
+            on_delay_s=60.0,
+            max_continuity_gap_s=86_400.0,
+            downgrade_stable_s=86_400.001,
+            downgrade_undershoot_c=0.5,
+        )
+
+
 def test_hysterese_parameter_lehnt_bool_bei_direktkonstruktion_ab():
     # bool ist int-Subtyp -> als Zeit/Marge nicht zulassen (Defense-in-Depth).
     from src.config.loader import HystereseParameter

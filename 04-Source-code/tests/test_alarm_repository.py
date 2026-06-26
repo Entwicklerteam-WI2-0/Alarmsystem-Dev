@@ -73,6 +73,16 @@ def test_inmemory_is_an_alarmrepository():
     assert isinstance(InMemoryAlarmRepository(), AlarmRepository)
 
 
+def test_inmemory_all_gibt_kopien_zurueck():
+    # Lese-Aliasing vermeiden: eine Mutation am zurueckgegebenen Objekt darf den
+    # internen Stand nicht veraendern.
+    repo = InMemoryAlarmRepository()
+    repo.save(_alarm(severity=AlarmSeverity.WARNING))
+    geholt = repo.all()[0]
+    geholt.severity = AlarmSeverity.CRITICAL  # mutiere die zurueckgegebene Kopie
+    assert repo.all()[0].severity is AlarmSeverity.WARNING  # intern unveraendert
+
+
 # --- MySQL-Variante (T2/T3), transaction gemockt ---
 
 

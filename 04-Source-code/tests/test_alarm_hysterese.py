@@ -273,11 +273,13 @@ def test_beenden_waehrend_upgrade_pending_setzt_alles_zurueck():
     engine = _engine()
     _aktiver_warning(engine, _T0)
     engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))  # Upgrade pending
-    engine.beenden()  # Mensch beendet den aktiven Alarm -> kompletter Reset
-    # Frische ROT-Phase muss den vollen On-Delay erneut durchlaufen.
-    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=200))
-    assert engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=230)) is None
-    spaet = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=270))
+    engine.beenden()  # Mensch beendet den aktiven Alarm -> kompletter Reset (auch Pending)
+    # Frische ROT-Phase ab Re-Arm; der On-Delay zaehlt ab HIER. Kontinuierlich (Abstaende
+    # <= max_gap), damit ein NICHT zurueckgesetztes altes Pending(70) sichtbar wuerde:
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=100))  # neues Pending seit 100
+    # 130-100=30 < on_delay -> None; mit altem Pending(70) waere 130-70=60 -> wuerde feuern.
+    assert engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=130)) is None
+    spaet = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=160))  # 160-100=60 >= 60
     assert spaet is not None and spaet.severity is AlarmSeverity.CRITICAL
 
 
@@ -333,9 +335,14 @@ def test_keine_zweite_ausloesung_bei_gehaltener_gleicher_stufe(stufe, erwartet):
     engine.beobachte(stufe, _T0)
     erste = engine.beobachte(stufe, _T0 + timedelta(seconds=60))
     assert erste is not None and erste.severity is erwartet
-    engine.beobachte(stufe, _T0 + timedelta(seconds=70))  # hold
-    # Dieselbe Stufe weit ueber on_delay hinaus -> KEIN zweiter Alarm.
-    assert engine.beobachte(stufe, _T0 + timedelta(seconds=200)) is None
+    # Dieselbe Stufe KONTINUIERLICH halten (Abstaende <= max_gap, Kontinuitaet bleibt
+    # erhalten) und ueber on_delay hinaus -> KEIN zweiter Alarm. Wichtig: die Abstaende
+    # muessen <= max_gap sein, sonst kommt das None faelschlich aus dem Kontinuitaetsbruch
+    # und der Test wuerde die Mutation `>` -> `>=` / das Entfernen von _aktiver_alarm NICHT
+    # fangen (tautologisch gruen).
+    assert engine.beobachte(stufe, _T0 + timedelta(seconds=110)) is None  # gap 50
+    assert engine.beobachte(stufe, _T0 + timedelta(seconds=180)) is None  # mit `>=` wuerde feuern
+    assert engine.beobachte(stufe, _T0 + timedelta(seconds=240)) is None  # weiter gehalten
 
 
 def test_hold_haelt_upgrade_kontinuitaet_ueber_max_gap():
