@@ -74,13 +74,14 @@ def test_inmemory_is_an_alarmrepository():
 
 
 def test_inmemory_all_gibt_kopien_zurueck():
-    # Lese-Aliasing vermeiden: eine Mutation am zurueckgegebenen Objekt darf den
-    # internen Stand nicht veraendern.
+    # Lese-Aliasing vermeiden: all() muss bei jedem Aufruf unabhaengige Kopien liefern, nicht
+    # Referenzen auf den internen Stand. Pruefung ueber distinkte Instanzen statt In-Place-
+    # Mutation -> robust, falls Alarm spaeter frozen=True wird (sonst ValidationError statt
+    # aussagekraeftiger Assertion).
     repo = InMemoryAlarmRepository()
     repo.save(_alarm(severity=AlarmSeverity.WARNING))
-    geholt = repo.all()[0]
-    geholt.severity = AlarmSeverity.CRITICAL  # mutiere die zurueckgegebene Kopie
-    assert repo.all()[0].severity is AlarmSeverity.WARNING  # intern unveraendert
+    assert repo.all()[0] is not repo.all()[0]
+    assert repo.all()[0].severity is AlarmSeverity.WARNING
 
 
 # --- MySQL-Variante (T2/T3), transaction gemockt ---

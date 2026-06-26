@@ -80,6 +80,25 @@ def test_persistenz_fehler_armt_engine_neu_und_propagiert():
     assert gen_ok.verarbeite(RiskLevel.ORANGE, 1, _T0 + timedelta(seconds=180)) is not None
 
 
+def test_unerwarteter_save_fehler_armt_engine_neu():
+    # Auch ein NICHT-RepositoryError (z. B. kuenftige API-Aenderung im Repo) muss die Engine
+    # neu armen (Over-Alarm-Bias) statt sie "aktiv" ohne DB-Alarm zu hinterlassen.
+    class _BuggyAlarmRepo(AlarmRepository):
+        def save(self, alarm: Alarm) -> int:
+            raise TypeError("unerwarteter Bug im Repo")
+
+    engine = _engine()
+    gen = AlarmGenerator(engine, _BuggyAlarmRepo(), InMemoryAuditRepository())
+    gen.verarbeite(RiskLevel.ORANGE, 1, _T0)  # Pending
+    with pytest.raises(TypeError):
+        gen.verarbeite(RiskLevel.ORANGE, 1, _T0 + timedelta(seconds=60))  # feuert; save buggy
+
+    # Engine neu gearmt -> mit funktionierendem Repo feuert die anhaltende Bedingung erneut.
+    gen_ok = AlarmGenerator(engine, InMemoryAlarmRepository(), InMemoryAuditRepository())
+    assert gen_ok.verarbeite(RiskLevel.ORANGE, 1, _T0 + timedelta(seconds=120)) is None
+    assert gen_ok.verarbeite(RiskLevel.ORANGE, 1, _T0 + timedelta(seconds=180)) is not None
+
+
 def test_audit_fehler_als_auditerror_mit_id_ohne_rearm():
     engine = _engine()
     alarm_repo = InMemoryAlarmRepository()
