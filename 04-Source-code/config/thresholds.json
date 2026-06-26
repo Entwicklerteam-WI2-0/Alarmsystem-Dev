@@ -1,7 +1,7 @@
 {
   "_warnung_dummy": "PLATZHALTERWERTE aus 02-Arbeitsdokumente/Schwellenwerte.md (Stand 22.06.2026) - NICHT final. Die messtechnisch validierten Schwellen liefert Gruppe 1 (Sensorik) nach. Alle Werte sind parametrierbar (NF-05) und ohne Code-Aenderung austauschbar - kein Hardcode.",
   "_quelle": "Schwellenwerte.md §2 (priorisierte Kaskade + GELB-Prognoseschwelle)",
-  "_scope": "Vereisungs-/Prognose-Schwellen (DTB-38) + Hysterese-Parameter (DTB-27) + Datenqualitaet/Plausibilitaet (DTB-13/58/60). Taupunkt-Konstanten gehoeren in ihre eigenen Tasks.",
+  "_scope": "Vereisungs-/Prognose-Schwellen (DTB-38) + Hysterese-Parameter (DTB-27) + Datenqualitaet/Plausibilitaet (DTB-13/58/60) + Betrieb/Poll-Kadenz (P0-a). Taupunkt-Konstanten gehoeren in ihre eigenen Tasks.",
   "_quelle_hysterese": "Schwellenwerte.md §2 (Entprellung/Hysterese, ISA-18.2): On-Delay >= 60 s; Rueckstufung 0,5 C unterschritten und >= 5 min (300 s) stabil. DUMMY/parametrierbar (NF-05).",
   "vereisung": {
     "t_s_gefrierpunkt_c": 0.0,
@@ -33,5 +33,8 @@
     "max_humidity_pct": 100.0,
     "min_pressure_hpa": 800.0,
     "max_pressure_hpa": 1100.0
+  },
+  "betrieb": {
+    "poll_interval_s": 30.0
   }
 }

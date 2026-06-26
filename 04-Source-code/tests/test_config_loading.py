@@ -206,6 +206,49 @@ def test_kommentar_key_in_sektion_wird_toleriert(tmp_path):
     assert thresholds.hysterese.on_delay_s == 60.0
 
 
+def test_default_config_laedt_poll_interval():
+    # P0-a: die Poll-Kadenz des Schedulers ist parametrierbar (NF-05), nicht hardcodiert.
+    thresholds = load_thresholds()
+    assert thresholds.betrieb.poll_interval_s == 30.0
+
+
+@pytest.mark.parametrize("ungueltig", [0.0, -1.0, float("nan"), float("inf")])
+def test_ungueltiges_poll_interval_scheitert_laut(tmp_path, ungueltig):
+    # poll_interval_s muss > 0 und endlich sein: 0/negativ wäre ein Dauerpoll bzw. sinnlos,
+    # NaN/inf unterläuft jeden Vergleich. Laut scheitern statt still falsch konfigurieren.
+    daten = _minimal_config()
+    daten["betrieb"]["poll_interval_s"] = ungueltig
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_poll_interval_groesser_als_max_gap_scheitert_laut(tmp_path):
+    # Cross-Section (NF-01): pollt das System langsamer als die Kontinuitäts-Lücke der
+    # Alarm-Hysterese, bricht jeder Poll die Eskalations-Kontinuität -> es feuert nie ein
+    # Alarm (stiller Under-Alarm). Erst mit poll_interval_s in der Config erzwingbar.
+    daten = _minimal_config()
+    daten["betrieb"]["poll_interval_s"] = daten["hysterese"]["max_continuity_gap_s"] + 1.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+@pytest.mark.parametrize("ungueltig", [True, float("nan"), float("inf"), 0.0, -1.0, 86_401.0])
+def test_betrieb_parameter_direktkonstruktion_validiert(ungueltig):
+    # Direktkonstruktion (greift unabhängig vom Loader-Loop): bool/NaN/inf/<=0/zu-groß
+    # werden laut abgelehnt; ein gültiger Wert konstruiert sauber.
+    from src.config.loader import BetriebParameter
+
+    BetriebParameter(poll_interval_s=30.0)  # gültig -> kein Fehler
+    with pytest.raises(ConfigError):
+        BetriebParameter(poll_interval_s=ungueltig)
+
+
 def test_hysterese_parameter_lehnt_bool_bei_direktkonstruktion_ab():
     # bool ist int-Subtyp -> als Zeit/Marge nicht zulassen (Defense-in-Depth).
     from src.config.loader import HystereseParameter
@@ -473,4 +516,5 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "min_pressure_hpa": 800.0,
             "max_pressure_hpa": 1100.0,
         },
+        "betrieb": {"poll_interval_s": 30.0},
     }

@@ -54,9 +54,9 @@ class HystereseParameter:
     Engine umgesetzt. `max_continuity_gap_s` begrenzt, wie lange eine Unsicherheits-
     /Stale-Phase (UNKNOWN) die laufende Eskalation einfrieren darf, ohne die Kontinuität
     zu brechen (Default = Stale-Timeout 120 s); danach ist ein frischer On-Delay nötig.
-    Invariante: `max_continuity_gap_s >= on_delay_s` (erzwungen) UND `>=` dem realen
-    Poll-Intervall (G1 ≤ 30 s; NICHT erzwingbar, da der Loader die Poll-Kadenz nicht kennt)
-    — sonst bricht jeder Poll die Kontinuität und es feuert nie ein Alarm.
+    Invariante: `max_continuity_gap_s >= on_delay_s` (erzwungen) UND
+    `>= betrieb.poll_interval_s` (seit P0-a in der Config -> querschnittlich von `Thresholds`
+    erzwungen) — sonst bricht jeder Poll die Kontinuität und es feuert nie ein Alarm.
     Die Rückstufung (`downgrade_undershoot_c` um 0,5 °C unterschritten UND
     `downgrade_stable_s` stabil) gehört NICHT zum Alarm-On-Delay: sie ist eine
     temperaturgekoppelte **Anzeige-Hysterese** (Stabilisierung der gemeldeten Risikostufe
@@ -143,12 +143,57 @@ class PlausibilitaetSchwellen:
 
 
 @dataclass(frozen=True)
+class BetriebParameter:
+    """Laufzeit-/Betriebsparameter (P0-a): Poll-Kadenz des Schedulers.
+
+    `poll_interval_s` = Intervall, in dem der Scheduler G1 pollt und neu bewertet (Contract:
+    G1 ≤ 30 s). Parametrierbar (NF-05), nicht hardcodiert. Muss > 0 und endlich sein; die
+    Kopplung an die Alarm-Hysterese (poll_interval_s <= max_continuity_gap_s) prüft
+    `Thresholds` querschnittlich.
+    """
+
+    poll_interval_s: float
+
+    def __post_init__(self) -> None:
+        if isinstance(self.poll_interval_s, bool):
+            raise ConfigError("Betriebs-Parameter 'poll_interval_s' darf kein bool sein")
+        if not math.isfinite(self.poll_interval_s):
+            raise ConfigError(
+                f"Betriebs-Parameter 'poll_interval_s' muss endlich sein, "
+                f"ist aber {self.poll_interval_s!r}"
+            )
+        if self.poll_interval_s <= 0:
+            raise ConfigError(
+                f"Betriebs-Parameter 'poll_interval_s' muss > 0 sein, "
+                f"ist aber {self.poll_interval_s!r}"
+            )
+        if self.poll_interval_s > _MAX_ZEIT_S:
+            raise ConfigError(
+                f"Betriebs-Parameter 'poll_interval_s' muss <= {_MAX_ZEIT_S} s sein, "
+                f"ist aber {self.poll_interval_s!r}"
+            )
+
+
+@dataclass(frozen=True)
 class Thresholds:
     vereisung: VereisungsSchwellen
     prognose: PrognoseSchwellen
     hysterese: HystereseParameter
     datenqualitaet: DatenqualitaetSchwellen
     plausibilitaet: PlausibilitaetSchwellen
+    betrieb: BetriebParameter
+
+    def __post_init__(self) -> None:
+        # Cross-Section (NF-01): pollt das System langsamer als die Kontinuitäts-Lücke der
+        # Alarm-Hysterese, bricht jeder Poll die Eskalations-Kontinuität -> es feuert nie ein
+        # Alarm (stiller Under-Alarm). Erst mit poll_interval_s in der Config (P0-a) ist dieser
+        # zuvor unprüfbare Invariant (HystereseParameter-Doc) erzwingbar.
+        if self.betrieb.poll_interval_s > self.hysterese.max_continuity_gap_s:
+            raise ConfigError(
+                "Config-Inkonsistenz: betrieb.poll_interval_s "
+                f"({self.betrieb.poll_interval_s!r}) > hysterese.max_continuity_gap_s "
+                f"({self.hysterese.max_continuity_gap_s!r}) -> Alarm-Kontinuität bricht je Poll"
+            )
 
 
 # Pflicht-Abschnitte der Config und ihr jeweiliger Zieltyp.
@@ -161,6 +206,7 @@ _SECTIONS: dict[str, type[Any]] = {
     "hysterese": HystereseParameter,
     "datenqualitaet": DatenqualitaetSchwellen,
     "plausibilitaet": PlausibilitaetSchwellen,
+    "betrieb": BetriebParameter,
 }
 
 

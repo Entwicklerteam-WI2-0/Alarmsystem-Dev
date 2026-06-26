@@ -18,9 +18,7 @@ Offene TODOs fuer den Ausbau (heute Abend):
   1. GET /v1/assessment/current (DTB-43): liest runtime.assessment_repo.get_latest()
      + runtime.reading_repo.get_latest(sensor_id), 503 wenn keines, sonst
      build_assessment_current(...). Beispiel unten.
-  2. poll_interval_s aus Config laden (neues Feld betrieb.poll_interval_s, P0-a)
-     statt aus Env/Default.
-  3. GET /v1/health auf Pydantic `Health` + 503-Pfad heben (Contract-Treue).
+  2. GET /v1/health auf Pydantic `Health` + 503-Pfad heben (Contract-Treue).
 """
 
 from __future__ import annotations
@@ -53,9 +51,6 @@ from src.storage.alarm_repository import MySqlAlarmRepository
 
 logger = logging.getLogger(__name__)
 
-# TODO DTB-64 / P0-a: poll_interval_s gehoert in die Config (betrieb.poll_interval_s),
-# nicht als Default hier. Bis dahin ueber Env uebersteuerbar.
-_DEFAULT_POLL_INTERVAL_S = 30.0
 # Bewusster Default: http:// im abgeschlossenen Projekt-/Intranet (G1 ist ein
 # Prototyp ohne TLS). Fuer realen Betrieb HTTPS NICHT hier hart erzwingen — ein
 # https://-Default wuerde die Verbindung zu einem HTTP-only-G1 brechen (eingefrorene
@@ -171,11 +166,6 @@ def _scheduler_enabled() -> bool:
     return os.environ.get("G2_ENABLE_SCHEDULER", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _poll_interval_s() -> float:
-    # TODO DTB-64: aus thresholds (betrieb.poll_interval_s) statt Env/Default.
-    return float(os.environ.get("G2_POLL_INTERVAL_S", _DEFAULT_POLL_INTERVAL_S))
-
-
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startet/stoppt den Hintergrund-Scheduler und haengt den Runtime-Graph an app.state."""
@@ -183,7 +173,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.runtime = runtime
     task: asyncio.Task[None] | None = None
     if _scheduler_enabled():
-        task = asyncio.create_task(run_scheduler(runtime, _poll_interval_s()))
+        task = asyncio.create_task(
+            run_scheduler(runtime, runtime.thresholds.betrieb.poll_interval_s)
+        )
     else:
         logger.info(
             "DTB-64: Scheduler deaktiviert (G2_ENABLE_SCHEDULER nicht gesetzt) — "
