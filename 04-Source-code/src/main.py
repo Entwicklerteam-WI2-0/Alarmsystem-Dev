@@ -98,11 +98,16 @@ def build_runtime() -> Runtime:
 
 
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
-    """Periodische Poll-/Bewertungs-Schleife (TODO DTB-64: ausbauen/haerten).
+    """Periodische Poll-/Bewertungs-Schleife.
 
-    Fail-safe: ein Fehler in einem Zyklus beendet die Schleife NICHT; der naechste
-    Zyklus versucht es erneut. Serve-Zeit-NF-01 (build_assessment_current) faengt
+    Poller holt Snapshot von G1, Prognose-Producer liest die T_s-Historie
+    (DTB-33/FA-06), AssessmentService bewertet + persistiert. Fail-safe: ein
+    Fehler in einem Zyklus beendet die Schleife NICHT; der naechste Zyklus
+    versucht es erneut. Serve-Zeit-NF-01 (build_assessment_current) faengt
     derweil veraltete Daten ab (nie GRUEN).
+
+    Offene DTB-64-Ausbauten: GET /v1/assessment/current, poll_interval_s aus
+    Config statt Env, Pydantic-Health-Response.
     """
     logger.info("DTB-64: Scheduler gestartet (Intervall %.0fs).", interval_s)
     while True:
