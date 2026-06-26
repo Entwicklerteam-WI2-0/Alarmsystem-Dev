@@ -1,6 +1,6 @@
 # Aktueller Stand
 
-> Stand: 2026-06-25 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+> Stand: 2026-06-27 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
 
 ## Woran wir gerade arbeiten
 - **DTB-13 (Plausibilität + Stale-Erkennung, Andreas/Petzold):** Umgesetzt auf
@@ -363,3 +363,24 @@ PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separ
 - **PR #109** (`feat/dtb-48-adr-failsafe`, Commits `c0fda7c`/`1f2c533`/`f0661b2`); Jira DTB-48 → „In Arbeit".
 - **Offen:** PR #109 mergen → DTB-48 auf „Erledigt"; optional Fail-safe-Integrationstest je Schicht als **DTB-49**.
 —architekt
+
+## Update [27.06. — DTB-33 30-min-T_s-Prognose-Producer fertig (Leon H.)
+- **DTB-33 (FA-06) umgesetzt** auf `feat/dtb-33-forecast-producer`:
+  - `src/forecast/trend.py`: reine Funktion `forecast_surface_temp()` — lineare Regression auf relative Minuten,
+    Projektion `horizon_min` voraus, fail-safe `None` bei zu wenig Punkten/Null-Varianz/nicht-endlichen Werten.
+  - `src/forecast/bridge.py`: `compute_forecast_for_cycle()` liest Historie via `get_since` und ruft den Producer;
+    `None` bei fehlendem Reading oder `RepositoryError` (NF-01).
+  - Config-Erweiterung `PrognoseSchwellen`: `trend_window_min`, `horizon_min`, `min_points`,
+    `max_readings_limit` (DB-Lastbegrenzung); voll validiert (Ganzzahl, Grenzen, `max >= min`).
+  - Verdrahtung in `AssessmentService.assess_reading()` und `main.py`-Scheduler.
+  - `forecast_surface_temp_c` wird im `Assessment`-Snapshot persistiert (FA-05/NF-09), ohne den G2→G3-Wire
+    (`AssessmentCurrent`) zu berühren.
+  - Schema-Migration `migrations/schema.sql` idempotent mit `ADD COLUMN IF NOT EXISTS` + Kompatibilitätshinweis
+    (MariaDB/MySQL ≥ 8.0.21).
+- **Review-Runden eingearbeitet:** `now` vor dem Poll gesetzt (Audit-Konsistenz), `min_points`-Obergrenze,
+    explizites `limit` bei `get_since`, Testlücke "Reading vorhanden, History leer", Docstring-Update.
+- **Qualität:** 392 passed / 14 skipped, `ruff` sauber, `tools/check_hardcoded_thresholds.py` OK,
+    Coverage assessment/forecast/config **99 %**.
+- **Branch mit `main` synchronisiert** (Merge-Commit `1aa2485`); keine Konflikte.
+- **Entscheidungen:** 3 Einträge im persönlichen `Hartling-Entscheidungslog`.
+- **Offen:** PR erstellen, Reviewer-Freigabe, Merge durch Lucas.
