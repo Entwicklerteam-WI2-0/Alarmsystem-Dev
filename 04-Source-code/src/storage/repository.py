@@ -67,6 +67,9 @@ class Repository(ABC):
         Returns:
             Sequenz der neuesten Readings, absteigend nach measured_at.
             Leere Sequenz, wenn noch keines vorhanden ist.
+
+        Raises:
+            ValueError: Wenn limit nicht positiv ist.
         """
         ...
 
@@ -168,7 +171,10 @@ class ReadingRepository(Repository):
 
         Raises:
             RepositoryError: Bei Datenbankfehlern.
+            ValueError: Wenn limit nicht positiv ist.
         """
+        if limit <= 0:
+            raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
         return self._execute_read(self._LATEST_SQL, (sensor_id, limit))
 
     def get_since(self, sensor_id: str, since: datetime, limit: int = 1000) -> Sequence[Reading]:
@@ -176,10 +182,12 @@ class ReadingRepository(Repository):
 
         Raises:
             RepositoryError: Bei Datenbankfehlern.
-            ValueError: Wenn since nicht zeitzonenbewusst ist.
+            ValueError: Wenn since nicht zeitzonenbewusst ist oder limit nicht positiv ist.
         """
         if since.tzinfo is None:
             raise ValueError("since muss zeitzonenbewusst sein (UTC)")
+        if limit <= 0:
+            raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
         return self._execute_read(self._SINCE_SQL, (sensor_id, since, limit))
 
     def _execute_read(self, sql: str, params: tuple) -> Sequence[Reading]:

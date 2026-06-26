@@ -159,6 +159,23 @@ def sample_reading() -> Reading:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+@pytest.mark.parametrize("bad_limit", [0, -1, -100])
+def test_get_latest_rejects_non_positive_limit(bad_limit: int) -> None:
+    # Keine DB noetig: der Guard greift vor dem Datenbankzugriff.
+    repo = ReadingRepository()
+    with pytest.raises(ValueError, match="limit muss positiv sein"):
+        repo.get_latest("s1", limit=bad_limit)
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1, -100])
+def test_get_since_rejects_non_positive_limit(bad_limit: int) -> None:
+    # Keine DB noetig: der Guard greift vor dem Datenbankzugriff.
+    repo = ReadingRepository()
+    since = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    with pytest.raises(ValueError, match="limit muss positiv sein"):
+        repo.get_since("s1", since=since, limit=bad_limit)
+
+
 def test_save_returns_generated_id(repository: ReadingRepository, sample_reading: Reading) -> None:
     reading_id = repository.save(sample_reading)
 

@@ -90,6 +90,15 @@ def test_is_stale_with_naive_now_raises(fresh_reading: Reading) -> None:
         is_stale(fresh_reading, naive_now, timeout_s=120)
 
 
+@pytest.mark.parametrize("bad_timeout", [0, -1, -0.5])
+def test_is_stale_with_non_positive_timeout_raises(
+    fresh_reading: Reading, bad_timeout: float
+) -> None:
+    now = fresh_reading.measured_at + timedelta(seconds=60)
+    with pytest.raises(ValueError, match="timeout_s muss positiv sein"):
+        is_stale(fresh_reading, now, timeout_s=bad_timeout)
+
+
 def test_check_plausibility_no_previous_returns_none(
     fresh_reading: Reading,
     quality_thresholds: DatenqualitaetSchwellen,
