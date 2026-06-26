@@ -336,3 +336,16 @@ PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separ
 4. F10 Assessment-Persistenz · FA-06 Prognose-Producer · F08 Hysterese + `poll_interval`/`on_delay` als Config.
 5. Vorfall-2-Test fixen (`test_vorfall_2`: aktuell ΔT=+0,2 → ORANGE statt ΔT≤0 → ROT; kritischer-Pfad-DoD).
 —architekt
+
+## Update [26.06., ~22:50] — DTB-64 Scaffold Review-Runde 3 umgesetzt + gepusht (backend-dev)
+- **PR #105 (`feat/dtb-64-scaffold`) aktualisiert:**
+  - `AssessmentService` + `build_assessment_current` mit Assess-/Serve-Zeit-NF-01 (Stale/Fault → `unknown`, nie GRÜN).
+  - `AssessmentRepository` (Interface + InMemory + MySQL), Wire-Schemas (`AssessmentCurrent`, `Health`, `Error`, `AckRequest`).
+  - Runtime/DI in `main.py` (Scheduler, Lifespan, Poller-Verdrahtung).
+  - Runde-3-Fixes: Orphan-Row-Edge-Case in `MySqlAssessmentRepository._insert` + `ReadingRepository._insert` (ID-Check vor `commit()` + Rollback bei fehlender ID).
+  - Neuer Test: negatives `delta_t` (`surface=-0.5, dew=1.0` → ROT), deckt nicht-grünen Service-Pfad ab.
+- **Tests:** 363 passed, 14 skipped (MariaDB-Integration ohne Live-DB), ruff clean.
+- **Neue Fahrplan-Datei:** `erinnerung/fahrplan-dtb-64-dtb-27-stand.md` verknüpft Audit-Befunde mit Stand von #105 und #107 inkl. Checkboxen.
+- **Abhängigkeit DTB-27 (#107):** fachlicher Konsument von DTB-64 (Alarme aus Bewertungen). Merge-Reihenfolge: #105 zuerst, dann #107, danach Verdrahtung Poll-Loop → `AlarmService`.
+- **Nächster Schritt:** DTB-43 `GET /v1/assessment/current` einkommentieren/testen; Health auf Pydantic + 503 heben; PR #105 mergen.
+—backenddev
