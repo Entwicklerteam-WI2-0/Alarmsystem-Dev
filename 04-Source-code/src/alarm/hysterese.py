@@ -52,11 +52,22 @@ class AlarmHysterese:
 
     def __init__(self, params: HystereseParameter) -> None:
         self._on_delay = timedelta(seconds=params.on_delay_s)
+        # Maximal tolerierte Lücke zwischen zwei alarmwürdigen Bestätigungen, bevor die
+        # Kontinuität als gebrochen gilt (z. B. lange UNKNOWN-Phase) -> begrenzt den Freeze.
+        self._max_gap = timedelta(seconds=params.max_continuity_gap_s)
         self._pending_seit: datetime | None = None
         # Höchste Stufe der laufenden Eskalationsphase — damit ein transientes ROT im
         # On-Delay-Fenster nicht zu WARNING „verwässert" (Safety-Bias).
         self._pending_max: AlarmSeverity | None = None
+        # Zeit der letzten alarmwürdigen Bestätigung (zur Kontinuitäts-/Lückenprüfung).
+        self._letzte_alarmwuerdige: datetime | None = None
         self._aktiver_alarm: AlarmSeverity | None = None
+
+    def _reset_pending(self) -> None:
+        """Verwirft eine laufende Eskalation (nicht den aktiven Alarm)."""
+        self._pending_seit = None
+        self._pending_max = None
+        self._letzte_alarmwuerdige = None
 
     def beobachte(self, risk_level: RiskLevel, jetzt: datetime) -> AlarmAusloesung | None:
         """Verarbeitet eine Risikostufe zum Zeitpunkt `jetzt`.
@@ -75,34 +86,51 @@ class AlarmHysterese:
             )
 
         severity = severity_for_risk(risk_level)
+        sev_rang = _rang(severity)
+        aktiv_rang = _rang(self._aktiver_alarm)
 
         # Eskalations-Kandidat: alarmwürdig UND höher als der aktive Alarm — Raise
         # (kein Alarm -> warning/critical) oder Upgrade (warning -> critical).
-        if severity is not None and _rang(severity) > _rang(self._aktiver_alarm):
-            if self._pending_seit is None:
+        if sev_rang > aktiv_rang:
+            # Kontinuität gebrochen (kein Pending, oder die Lücke zur letzten alarmwürdigen
+            # Bestätigung übersteigt max_gap, z. B. nach langem UNKNOWN-Blackout) -> frischer
+            # On-Delay statt aus uraltem Pending sofort zu feuern.
+            if (
+                self._pending_seit is None
+                or self._letzte_alarmwuerdige is None
+                or jetzt - self._letzte_alarmwuerdige > self._max_gap
+            ):
                 self._pending_seit = jetzt
                 self._pending_max = severity
-            elif _rang(severity) > _rang(self._pending_max):
+            elif sev_rang > _rang(self._pending_max):
                 self._pending_max = severity  # höchste Stufe der Phase festhalten
+            self._letzte_alarmwuerdige = jetzt
 
             if jetzt - self._pending_seit >= self._on_delay:
                 ausgeloest = self._pending_max
                 self._aktiver_alarm = ausgeloest
-                self._pending_seit = None
-                self._pending_max = None
-                # _pending_max ist hier nie None (mit _pending_seit gesetzt).
+                self._reset_pending()
+                # _pending_max war hier nie None (mit _pending_seit gesetzt).
                 return AlarmAusloesung(severity=ausgeloest, ausgeloest_am=jetzt)
             return None
 
-        # Kein Eskalations-Kandidat:
+        # Beobachtung auf aktivem Niveau (z. B. ORANGE bei aktivem warning): „hält" eine
+        # laufende Eskalation, ohne auszulösen — zählt als alarmwürdige Bestätigung
+        # (symmetrisch zur Erst-Eskalation), bricht ein laufendes Upgrade also nicht ab.
+        if sev_rang == aktiv_rang and aktiv_rang > 0:
+            if self._pending_seit is not None:
+                self._letzte_alarmwuerdige = jetzt
+            return None
+
+        # Sonst: nicht-alarmwürdig oder Abfall unter den aktiven Alarm.
         #  - UNKNOWN (Unsicherheit/Stale) FRIERT eine laufende Eskalation EIN — kein Reset.
         #    Sonst könnte ein flackernder Sensor (ORANGE<->UNKNOWN, R1/R2) den On-Delay
-        #    endlos zurücksetzen und einen realen Alarm dauerhaft unterdrücken (NF-01/K1).
-        #  - GRÜN/GELB oder Stufe <= aktiv = bestätigte Nicht-/Niedriger-Lage -> Timer-Reset.
-        #    KEIN Auto-Downgrade/Clear eines aktiven Alarms (RB-01/FA-10).
+        #    zurücksetzen und einen realen Alarm unterdrücken (NF-01/K1). Begrenzt durch die
+        #    Kontinuitäts-/Lückenprüfung oben (lange Lücke -> frischer On-Delay).
+        #  - GRÜN/GELB / Abfall = bestätigte De-Eskalation -> Pending-Reset. KEIN
+        #    Auto-Downgrade/Clear eines aktiven Alarms (RB-01/FA-10).
         if risk_level is not RiskLevel.UNKNOWN:
-            self._pending_seit = None
-            self._pending_max = None
+            self._reset_pending()
         return None
 
     def quittiert(self) -> None:
@@ -116,5 +144,4 @@ class AlarmHysterese:
         if self._aktiver_alarm is None:
             return
         self._aktiver_alarm = None
-        self._pending_seit = None
-        self._pending_max = None
+        self._reset_pending()

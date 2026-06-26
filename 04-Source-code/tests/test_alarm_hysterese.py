@@ -16,6 +16,7 @@ from src.model.enums import AlarmSeverity, RiskLevel
 
 _PARAMS = HystereseParameter(
     on_delay_s=60.0,
+    max_continuity_gap_s=120.0,
     downgrade_stable_s=300.0,
     downgrade_undershoot_c=0.5,
 )
@@ -238,16 +239,44 @@ def test_quittiert_ohne_aktiven_alarm_unterbricht_eskalation_nicht():
     assert ausloesung.severity is AlarmSeverity.WARNING
 
 
-def test_upgrade_timer_reset_bei_zwischen_dip():
+def test_upgrade_ueberlebt_orange_dip_und_haelt_max_severity():
+    # Symmetrisch zur Erst-Eskalation: ein ORANGE-Dip auf aktivem (warning-)Niveau
+    # unterbricht ein laufendes critical-Upgrade NICHT — sonst hebt ein ROT<->ORANGE
+    # flackernder Sensor einen aktiven warning-Alarm nie auf critical (Unter-Eskalation).
     engine = _engine()
     _aktiver_warning(engine, _T0)
     engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))  # Upgrade-Timer startet
-    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=90))  # Dip -> Reset
-    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=100))  # neuer Timer
-    # 30 s nach Neustart < On-Delay -> noch kein Upgrade
-    assert engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=130)) is None
-    # 60 s nach Neustart -> Upgrade
-    spaet = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=160))
+    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=100))  # Dip haelt (kein Reset)
+    upgrade = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=130))  # 130-70 >= 60
+    assert upgrade is not None
+    assert upgrade.severity is AlarmSeverity.CRITICAL
+
+
+def test_langer_unknown_blackout_erzwingt_frischen_on_delay():
+    # Begrenzter Freeze: eine UNKNOWN-Phase laenger als max_continuity_gap_s (120 s)
+    # bricht die Kontinuitaet -> das uralte Pending darf NICHT sofort feuern (sonst
+    # umgeht ein einzelner ORANGE-Blip nach Blackout den On-Delay komplett, Over-Alarm).
+    engine = _engine()
+    engine.beobachte(RiskLevel.ORANGE, _T0)
+    engine.beobachte(RiskLevel.UNKNOWN, _T0 + timedelta(seconds=60))
+    engine.beobachte(RiskLevel.UNKNOWN, _T0 + timedelta(seconds=185))  # Luecke > 120 s
+    # Erste ORANGE nach langem Blackout: kein Sofort-Alarm aus uraltem Pending.
+    assert engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=200)) is None
+    # Frischer On-Delay ab Wiederaufnahme -> feuert erst 60 s spaeter.
+    spaet = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=260))
+    assert spaet is not None
+    assert spaet.severity is AlarmSeverity.WARNING
+
+
+def test_quittiert_waehrend_upgrade_pending_setzt_alles_zurueck():
+    engine = _engine()
+    _aktiver_warning(engine, _T0)
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))  # Upgrade pending
+    engine.quittiert()  # Mensch beendet den aktiven Alarm -> kompletter Reset
+    # Frische ROT-Phase muss den vollen On-Delay erneut durchlaufen.
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=200))
+    assert engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=230)) is None
+    spaet = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=270))
     assert spaet is not None and spaet.severity is AlarmSeverity.CRITICAL
 
 

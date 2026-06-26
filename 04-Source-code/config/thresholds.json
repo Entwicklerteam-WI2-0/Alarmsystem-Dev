@@ -14,6 +14,7 @@
   },
   "hysterese": {
     "on_delay_s": 60.0,
+    "max_continuity_gap_s": 120.0,
     "downgrade_stable_s": 300.0,
     "downgrade_undershoot_c": 0.5
   }

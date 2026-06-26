@@ -40,13 +40,17 @@ class HystereseParameter:
 
     Zeitkonstanten in Sekunden, Temperatur-Marge in °C. Gegen Chattering (ISA-18.2):
     Hochstufung (Auslösen) erst nach `on_delay_s` anhaltender Bedingung — von der
-    Engine umgesetzt. Die Rückstufung (`downgrade_undershoot_c` um 0,5 °C unterschritten
-    UND `downgrade_stable_s` stabil) ist **geplant** (DTB-27-Folgeschritt) und braucht
-    eine Temperatur-Kopplung in der Bewertungsschicht; beide Felder sind dafür reserviert
-    und werden von der aktuellen Engine noch NICHT ausgewertet. KEIN Auto-Clear (RB-01).
+    Engine umgesetzt. `max_continuity_gap_s` begrenzt, wie lange eine Unsicherheits-
+    /Stale-Phase (UNKNOWN) die laufende Eskalation einfrieren darf, ohne die Kontinuität
+    zu brechen (Default = Stale-Timeout 120 s); danach ist ein frischer On-Delay nötig.
+    Die Rückstufung (`downgrade_undershoot_c` um 0,5 °C unterschritten UND
+    `downgrade_stable_s` stabil) ist **geplant** (DTB-27-Folgeschritt) und braucht eine
+    Temperatur-Kopplung in der Bewertungsschicht; beide Felder sind dafür reserviert und
+    werden von der aktuellen Engine noch NICHT ausgewertet. KEIN Auto-Clear (RB-01).
     """
 
     on_delay_s: float
+    max_continuity_gap_s: float
     downgrade_stable_s: float  # reserviert: Rückstufungs-Stabilität (noch nicht ausgewertet)
     downgrade_undershoot_c: float  # reserviert: Rückstufungs-Marge (noch nicht ausgewertet)
 
@@ -56,6 +60,7 @@ class HystereseParameter:
         # tückisch: `nan < 0` ist False, also separat über isfinite abfangen.
         for feld, wert in (
             ("on_delay_s", self.on_delay_s),
+            ("max_continuity_gap_s", self.max_continuity_gap_s),
             ("downgrade_stable_s", self.downgrade_stable_s),
             ("downgrade_undershoot_c", self.downgrade_undershoot_c),
         ):
