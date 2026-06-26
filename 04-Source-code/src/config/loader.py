@@ -34,18 +34,35 @@ class PrognoseSchwellen:
 
 
 @dataclass(frozen=True)
+class HystereseParameter:
+    """Entprellung/Hysterese der Alarm-Generierung (DTB-27, Schwellenwerte.md §2).
+
+    Zeitkonstanten in Sekunden, Temperatur-Marge in °C. Gegen Chattering (ISA-18.2):
+    Hochstufung erst nach `on_delay_s` anhaltender Bedingung; Rückstufung erst, wenn
+    die Schwelle um `downgrade_undershoot_c` unterschritten ist UND `downgrade_stable_s`
+    stabil bleibt. Steuert nur das Auslösen/Stabilisieren — KEIN Auto-Clear (RB-01).
+    """
+
+    on_delay_s: float
+    downgrade_stable_s: float
+    downgrade_undershoot_c: float
+
+
+@dataclass(frozen=True)
 class Thresholds:
     vereisung: VereisungsSchwellen
     prognose: PrognoseSchwellen
+    hysterese: HystereseParameter
 
 
 # Pflicht-Abschnitte der Config und ihr jeweiliger Zieltyp.
-# Bewusst auf die echten Vereisungs-Schwellen begrenzt (Enabler für DTB-38).
-# Weitere Parameter (Taupunkt-Konstanten, Hysterese, Datenstatus) gehören in ihre
-# eigenen Tasks und werden dort von den jeweils Zuständigen ergänzt.
+# Vereisungs-/Prognose-Schwellen (DTB-38) + Hysterese-Parameter (DTB-27). Weitere
+# Parameter (Taupunkt-Konstanten, Datenstatus) gehören in ihre eigenen Tasks und
+# werden dort von den jeweils Zuständigen ergänzt.
 _SECTIONS: dict[str, type[Any]] = {
     "vereisung": VereisungsSchwellen,
     "prognose": PrognoseSchwellen,
+    "hysterese": HystereseParameter,
 }
 
 

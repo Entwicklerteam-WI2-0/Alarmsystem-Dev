@@ -27,6 +27,17 @@ def test_default_config_laedt_kaskaden_schwellen_aus_schwellenwerte_md():
     assert thresholds.prognose.t_s_grenz_c == 0.0
 
 
+def test_default_config_laedt_hysterese_parameter_aus_schwellenwerte_md():
+    # Act
+    thresholds = load_thresholds()
+
+    # Assert — Entprellung/Hysterese gem. Schwellenwerte.md §2 (ISA-18.2):
+    # On-Delay >= 60 s; Rueckstufung 0,5 C unterschritten und >= 5 min (300 s) stabil.
+    assert thresholds.hysterese.on_delay_s == 60.0
+    assert thresholds.hysterese.downgrade_stable_s == 300.0
+    assert thresholds.hysterese.downgrade_undershoot_c == 0.5
+
+
 def test_eigener_pfad_ist_parametrierbar(tmp_path):
     # Arrange — NF-05: Schwellen über externe Config austauschbar
     eigene = tmp_path / "thresholds.json"
@@ -135,4 +146,9 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "delta_t_feucht_k": 1.0,
         },
         "prognose": {"t_s_grenz_c": 0.0},
+        "hysterese": {
+            "on_delay_s": 60.0,
+            "downgrade_stable_s": 300.0,
+            "downgrade_undershoot_c": 0.5,
+        },
     }
