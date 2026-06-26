@@ -76,6 +76,12 @@ class HystereseParameter:
             ("downgrade_stable_s", self.downgrade_stable_s),
             ("downgrade_undershoot_c", self.downgrade_undershoot_c),
         ):
+            # bool ist ein int-Subtyp -- als Zeit/Marge nicht zulassen (Defense-in-Depth
+            # zum Loader, der bool ebenfalls ablehnt; greift bei direkter Konstruktion).
+            if isinstance(wert, bool):
+                raise ConfigError(
+                    f"Hysterese-Parameter '{feld}' darf kein bool sein, ist aber {wert!r}"
+                )
             if not math.isfinite(wert):
                 raise ConfigError(
                     f"Hysterese-Parameter '{feld}' muss endlich sein, ist aber {wert!r}"
@@ -146,7 +152,7 @@ def load_thresholds(path: Path | str | None = None) -> Thresholds:
     return Thresholds(**sektionen)
 
 
-def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
+def _baue_sektion[T](name: str, cls: type[T], raw: dict[str, Any]) -> T:
     """Validiert Struktur + numerische Werte eines Abschnitts und baut das Dataclass-Objekt."""
     if name not in raw:
         raise ConfigError(f"Pflicht-Abschnitt fehlt in Konfiguration: '{name}'")

@@ -1,10 +1,10 @@
 """Alarm-Generierung (DTB-27): Schweregrad aus der Risikostufe ableiten.
 
 Reine, zustandslose Funktion. Nur ORANGE/ROT lösen einen Alarm aus
-(API_FROZEN_v1 §2a C, G2-intern): ORANGE -> warning, ROT -> critical.
-GRÜN/GELB/unknown lösen KEINEN Alarm aus (FA-08: nur kritische Zustände;
-`unknown` ist Fail-safe-Anzeige, kein Alarm). Die Severity-Ableitung ist NICHT
-Teil des Wire-Contracts.
+(Quelle: `docs/api/v1/openapi.yaml` AlarmSeverity / Contract §2a C, G2-intern):
+ORANGE -> warning, ROT -> critical. GRÜN/GELB/unknown lösen KEINEN Alarm aus
+(FA-08: nur kritische Zustände; `unknown` ist Fail-safe-Anzeige, kein Alarm). Die
+Severity-Ableitung ist G2-intern, NICHT Teil des Wire-Contracts.
 
 Die Entscheidung, ob aus einem ableitbaren Severity tatsächlich ein Alarm wird
 (Entprellung/On-Delay), liegt in der Hysterese-Engine — diese Funktion bildet
@@ -16,7 +16,9 @@ from __future__ import annotations
 from src.model.enums import AlarmSeverity, RiskLevel
 
 # Risikostufe -> Alarm-Schweregrad. Nicht enthaltene Stufen (GRÜN/GELB/unknown)
-# lösen bewusst keinen Alarm aus.
+# lösen bewusst keinen Alarm aus. Der `.get()`-None-Default ist NUR sicher, weil
+# RiskLevel eingefroren ist — bei einer Erweiterung erzwingt
+# test_severity_mapping_klassifiziert_jede_risikostufe_explizit eine bewusste Einordnung.
 _SEVERITY_BY_RISK: dict[RiskLevel, AlarmSeverity] = {
     RiskLevel.ORANGE: AlarmSeverity.WARNING,
     RiskLevel.RED: AlarmSeverity.CRITICAL,

@@ -142,6 +142,19 @@ def test_zu_grosse_zeitkonstante_scheitert_laut(feld):
         HystereseParameter(**werte)
 
 
+def test_hysterese_parameter_lehnt_bool_bei_direktkonstruktion_ab():
+    # bool ist int-Subtyp -> als Zeit/Marge nicht zulassen (Defense-in-Depth).
+    from src.config.loader import HystereseParameter
+
+    with pytest.raises(ConfigError):
+        HystereseParameter(
+            on_delay_s=True,  # noqa: FBT003
+            max_continuity_gap_s=120.0,
+            downgrade_stable_s=300.0,
+            downgrade_undershoot_c=0.5,
+        )
+
+
 def test_hysterese_parameter_lehnt_nicht_endlich_bei_direktkonstruktion_ab():
     # Defense-in-Depth: auch bei direkter Konstruktion (nicht ueber den Loader) wird
     # NaN/inf abgewiesen -- __post_init__ schuetzt Aufrufer ausserhalb des Config-Pfads.

@@ -108,7 +108,7 @@ def test_quittierung_armt_engine_fuer_neuen_alarm_neu():
     engine = _engine()
     _aktiver_warning(engine, _T0)
     # Mensch beendet den Alarm (manuell, RB-01/FA-10) -> Engine wieder auslösebereit.
-    engine.quittiert()
+    engine.beenden()
     # Neue ORANGE-Phase muss erneut einen Alarm auslösen können.
     engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=600))
     erneut = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=660))
@@ -119,7 +119,7 @@ def test_quittierung_armt_engine_fuer_neuen_alarm_neu():
 def test_quittierung_ohne_aktiven_alarm_ist_unkritisch():
     engine = _engine()
     # Darf nicht crashen und ändert nichts am Normalverhalten.
-    engine.quittiert()
+    engine.beenden()
     engine.beobachte(RiskLevel.ORANGE, _T0)
     ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=60))
     assert ausloesung is not None
@@ -236,7 +236,7 @@ def test_rot_innerhalb_pending_hebt_severity_auf_critical():
 def test_quittiert_ohne_aktiven_alarm_unterbricht_eskalation_nicht():
     engine = _engine()
     engine.beobachte(RiskLevel.ORANGE, _T0)  # Eskalation laeuft, noch kein aktiver Alarm
-    engine.quittiert()  # Fehlbedienung ohne aktiven Alarm -> darf Pending nicht loeschen
+    engine.beenden()  # Fehlbedienung ohne aktiven Alarm -> darf Pending nicht loeschen
     ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=60))
     assert ausloesung is not None
     assert ausloesung.severity is AlarmSeverity.WARNING
@@ -275,7 +275,7 @@ def test_quittiert_waehrend_upgrade_pending_setzt_alles_zurueck():
     engine = _engine()
     _aktiver_warning(engine, _T0)
     engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))  # Upgrade pending
-    engine.quittiert()  # Mensch beendet den aktiven Alarm -> kompletter Reset
+    engine.beenden()  # Mensch beendet den aktiven Alarm -> kompletter Reset
     # Frische ROT-Phase muss den vollen On-Delay erneut durchlaufen.
     engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=200))
     assert engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=230)) is None
@@ -362,6 +362,26 @@ def test_unknown_blackout_im_upgrade_erzwingt_frischen_on_delay():
     assert engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=260)) is None
     up = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=320))
     assert up is not None and up.severity is AlarmSeverity.CRITICAL
+
+
+def test_recovery_nach_persistenz_fehler_via_beenden():
+    # NF-01-Recovery-Naht: beobachte() dreht den Zustand auf 'aktiv', sobald es feuert.
+    # Schlaegt die Persistenz des Aufrufers fehl, muss er beenden() rufen, sonst feuert
+    # die fortbestehende Bedingung NIE erneut. Dieser Test pinnt den Recovery-Vertrag.
+    engine = _engine()
+    engine.beobachte(RiskLevel.ORANGE, _T0)
+    erste = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=60))
+    assert erste is not None  # Aufrufer wuerde persistieren -- nimm an: save() wirft.
+
+    # OHNE Recovery: Bedingung haelt an, aber kein erneuter Alarm (Engine glaubt 'aktiv').
+    assert engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=200)) is None
+
+    # MIT Recovery: beenden() armt neu -> die anhaltende Bedingung feuert wieder.
+    engine.beenden()
+    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=300))
+    erneut = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=360))
+    assert erneut is not None
+    assert erneut.severity is AlarmSeverity.WARNING
 
 
 def test_nicht_utc_zeit_wird_auf_utc_normalisiert():

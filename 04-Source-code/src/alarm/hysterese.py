@@ -121,9 +121,10 @@ class AlarmHysterese:
 
             if jetzt - self._pending_seit >= self._on_delay:
                 ausgeloest = self._pending_max
+                # Invariante exekutierbar machen: _pending_max ist mit _pending_seit gesetzt.
+                assert ausgeloest is not None
                 self._aktiver_alarm = ausgeloest
                 self._reset_pending()
-                # _pending_max war hier nie None (mit _pending_seit gesetzt).
                 return AlarmAusloesung(severity=ausgeloest, ausgeloest_am=jetzt)
             return None
 
@@ -146,13 +147,21 @@ class AlarmHysterese:
             self._reset_pending()
         return None
 
-    def quittiert(self) -> None:
-        """Meldet, dass ein Mensch den aktiven Alarm beendet hat (manuell, RB-01/FA-10).
+    def beenden(self) -> None:
+        """Meldet, dass ein Mensch den aktiven Alarm manuell BEENDET/gecleart hat (RB-01/FA-10).
 
-        Setzt den Alarm-Zustand zurück, sodass eine erneut auftretende Bedingung wieder
-        einen Alarm auslösen kann. Dies ist der EINZIGE Weg, den aktiven Alarm zu beenden —
-        kein automatisches Clearing (RB-01: Mensch = letzte Instanz). Ohne aktiven Alarm ist
-        der Aufruf ein No-Op: eine gerade laufende Eskalation wird NICHT unterbrochen.
+        Der EINZIGE Weg, den aktiven Alarm zu beenden — kein automatisches Clearing
+        (RB-01: Mensch = letzte Instanz). Danach kann eine erneut auftretende Bedingung
+        wieder einen Alarm auslösen (Re-Arm). Ohne aktiven Alarm ist der Aufruf ein No-Op:
+        eine laufende Eskalation wird NICHT unterbrochen.
+
+        Abgrenzung: das ist NICHT die Audit-Quittierung (`ack`, DTB-24). Ein Ack lässt den
+        Alarm AKTIV und darf NICHT re-armen — der Aufrufer mappt `ack` deshalb nicht hierher.
+
+        Recovery-Naht (NF-01): `beobachte()` dreht den Zustand auf 'aktiv', sobald es eine
+        `AlarmAusloesung` liefert. Schlägt die anschliessende Persistenz/G3-Meldung des
+        Aufrufers fehl, MUSS der Aufrufer `beenden()` rufen, um neu zu armen — sonst feuert
+        die fortbestehende Bedingung nie erneut (stiller Under-Alarm).
         """
         if self._aktiver_alarm is None:
             return
