@@ -1,0 +1,91 @@
+"""Persistenz fuer ausgeloeste Alarme (DTB-27).
+
+Speichert einen neu ausgeloesten Alarm (state='active') in MariaDB/MySQL via rohem
+PyMySQL und parametrisiertem INSERT (E-35, Injection-Schutz). Bewusst minimal: nur
+`save`. Lesepfade (DTB-31 GET /v1/alarms) und Zustandswechsel (DTB-24 ack/clear, RB-01
+manuell) sind eigene Tickets und hier NICHT enthalten (kein UPDATE/DELETE-Pfad).
+
+RB-01: Das Repository persistiert nur — es fuehrt keine Aktor-/Steuer-Aktion aus.
+Muster wie src/storage/audit_repository.py.
+"""
+
+from abc import ABC, abstractmethod
+
+import pymysql
+
+from src.model.schemas import Alarm
+from src.storage.database import (
+    DatabaseConfig,
+    DatabaseConfigError,
+    DatabaseConnectionError,
+    transaction,
+)
+from src.storage.repository import RepositoryError
+
+# Spaltenreihenfolge des INSERT -- entspricht migrations/schema.sql (alarm).
+# id ist AUTO_INCREMENT und wird NICHT gesetzt; assessment_id..state parametrisiert.
+_INSERT_SQL = (
+    "INSERT INTO alarm (assessment_id, severity, raised_at, state) VALUES (%s, %s, %s, %s)"
+)
+
+
+class AlarmRepository(ABC):
+    """Abstrakte Persistenz fuer ausgeloeste Alarme. Bewusst minimal: nur `save`."""
+
+    @abstractmethod
+    def save(self, alarm: Alarm) -> int:
+        """Speichert einen ausgeloesten Alarm und gibt die vergebene ID zurueck."""
+        ...
+
+
+class InMemoryAlarmRepository(AlarmRepository):
+    """In-Memory-Double fuer DB-freie Tests/Laeufe. Vergibt IDs ab 1."""
+
+    def __init__(self) -> None:
+        self._alarms: list[Alarm] = []
+
+    def save(self, alarm: Alarm) -> int:
+        new_id = len(self._alarms) + 1
+        # Alarm mit vergebener ID ablegen; das Original bleibt unangetastet.
+        self._alarms.append(alarm.model_copy(update={"id": new_id}))
+        return new_id
+
+    def all(self) -> list[Alarm]:
+        """Liest alle Alarme in Einfuege-Reihenfolge (nur Double; YAGNI-Lesepfad)."""
+        return list(self._alarms)
+
+
+class MySqlAlarmRepository(AlarmRepository):
+    """Alarm-Persistenz auf MariaDB/MySQL via rohem PyMySQL (DTB-27, E-35).
+
+    Schreibt ausschliesslich per parametrisiertem INSERT (Injection-Schutz, nie
+    String-Formatierung). Kein UPDATE-/DELETE-Pfad (Zustandswechsel = DTB-24/manuell).
+    """
+
+    def __init__(self, config: DatabaseConfig | None = None) -> None:
+        # Optionale Config (sonst aus Env via database.py); erleichtert Tests.
+        self._config = config
+
+    def save(self, alarm: Alarm) -> int:
+        params = (
+            alarm.assessment_id,
+            alarm.severity.value,
+            alarm.raised_at,
+            alarm.state.value,
+        )
+        try:
+            with transaction(self._config) as conn, conn.cursor() as cursor:
+                cursor.execute(_INSERT_SQL, params)
+                # AUTO_INCREMENT-ID des gerade eingefuegten Alarms.
+                row_id = cursor.lastrowid
+        except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
+            # Verbindungs-, Config- UND Query-Fehler (z. B. CHECK-/FK-Verletzung,
+            # Broken-Pipe) auf die Domaenen-Exception herunterbrechen, damit der Aufrufer
+            # fail-safe reagieren kann (NF-01) statt mit rohem Treiberfehler zu crashen.
+            # Ein Speicher-Fehler darf den Alarm nicht still verschlucken.
+            raise RepositoryError("Alarm konnte nicht gespeichert werden") from exc
+        if row_id is None:
+            # Kein AUTO_INCREMENT-Wert -> Alarm-ID unbekannt. Fail-safe als Domaenenfehler
+            # statt TypeError aus int(None).
+            raise RepositoryError("Alarm wurde ohne vergebene ID gespeichert")
+        return int(row_id)
