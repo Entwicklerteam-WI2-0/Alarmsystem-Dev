@@ -86,11 +86,12 @@ def _project(points: list[tuple[float, float]], horizon_min: float) -> float | N
     mean_x = sum(x for x, _ in points) / n
     mean_y = sum(y for _, y in points) / n
     sxx = sum((x - mean_x) ** 2 for x, _ in points)
-    if sxx == 0.0:
-        # Alle Stuetzstellen auf demselben Zeitpunkt -> Steigung unbestimmbar.
-        return None
     sxy = sum((x - mean_x) * (y - mean_y) for x, y in points)
-    slope = sxy / sxx
+    try:
+        slope = sxy / sxx
+    except ZeroDivisionError:
+        # Alle Stuetzstellen auf demselben Zeitpunkt (sxx = 0) -> Steigung unbestimmbar.
+        return None
     intercept = mean_y - slope * mean_x  # y bei x = 0 (= now)
     forecast = intercept + slope * horizon_min  # x = +horizon_min (now + horizon)
     if not math.isfinite(forecast):
