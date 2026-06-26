@@ -148,7 +148,9 @@ class AssessmentCurrent(_Base):
 class Health(_Base):
     """Liveness-Response fuer GET /v1/health (Contract v1)."""
 
-    status: str = "ok"
+    # min_length/max_length analog zu Error.code/message (konsistente Wire-Schemas);
+    # der 503-Pfad wird ueber den HTTP-Status signalisiert, nicht ueber status.
+    status: str = Field(default="ok", min_length=1, max_length=16)
 
 
 class Error(_Base):

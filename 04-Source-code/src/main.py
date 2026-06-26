@@ -113,6 +113,16 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
             await asyncio.to_thread(runtime.service.assess_reading, reading, now)
         except RepositoryError as exc:
             logger.error("Bewertungszyklus fehlgeschlagen (fail-safe, weiter): %s", exc)
+        except ValueError:
+            # Invariantenbruch / Programmierfehler (z. B. DTB-28: Reading ohne id auf
+            # dem Gutfall-Pfad) — KEIN transienter Betriebsfehler. CRITICAL, damit Ops
+            # den Unterschied zu erwartbaren Fehlern sieht; der Scheduler laeuft
+            # fail-safe weiter (NF-01), aber das ist ein Bug, kein Datenzustand.
+            logger.critical(
+                "Invariantenbruch im Bewertungszyklus (Bug, nicht transient) — "
+                "Zyklus uebersprungen, bitte pruefen.",
+                exc_info=True,
+            )
         except Exception:  # noqa: BLE001 - Scheduler darf nie sterben (NF-01)
             logger.exception("Unerwarteter Fehler im Scheduler (fail-safe, weiter).")
         await asyncio.sleep(interval_s)
@@ -172,7 +182,7 @@ def health() -> dict[str, str]:
 # from src.assessment import build_assessment_current
 # from src.model.schemas import AssessmentCurrent
 #
-# _SENSOR_ID = "anr-rwy-01"  # TODO: aus Config (F24/Geo), nicht hardcoden
+# _SENSOR_ID = "anr-rwy-01"  # FIXME vor Aktivierung: aus Config laden (F24/Geo) — NICHT hardcoden!
 #
 # @app.get("/v1/assessment/current", response_model=AssessmentCurrent)
 # def assessment_current(request: Request) -> AssessmentCurrent:

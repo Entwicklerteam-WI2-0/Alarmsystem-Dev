@@ -124,6 +124,11 @@ class MySqlAssessmentRepository(AssessmentRepository):
 
     def __init__(self, connection: pymysql.Connection | None = None) -> None:
         if connection is not None:
+            # Fail-closed Attribut-Check (bewusst KEIN Probe-Cursor): wir pruefen
+            # connection.cursorclass statt conn.cursor() zu oeffnen -> __init__ bleibt
+            # seiteneffektfrei und mit leichtgewichtigen Test-Fakes pruefbar. Fehlt das
+            # Attribut, ist isinstance(None, type) False -> der Guard WIRFT (laesst keinen
+            # Nicht-DictCursor still durch), statt lautlos zu passieren (analog ReadingRepository).
             cursorclass = getattr(connection, "cursorclass", None)
             if not (isinstance(cursorclass, type) and issubclass(cursorclass, DictCursor)):
                 raise ValueError(

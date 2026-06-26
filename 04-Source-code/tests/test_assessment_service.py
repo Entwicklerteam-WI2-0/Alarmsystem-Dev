@@ -257,3 +257,14 @@ def test_current_stale_and_fault_names_both_reasons(thresholds):
     assert cur.is_stale is True
     assert cur.sensor_status == SensorStatus.FAULT
     assert cur.explanation == "Fail-safe: stale + sensor fault"
+
+
+def test_current_none_reading_raises(thresholds):
+    # Vertrag: der No-Data-Fall gehoert vom Aufrufer (DTB-43) mit 503 abgefangen,
+    # nicht hierher — der Guard muss laut scheitern statt einen AttributeError zu werfen.
+    assessment = Assessment(ts=datetime.now(UTC), risk_level=RiskLevel.GREEN)
+
+    with pytest.raises(ValueError, match="reading darf nicht None sein"):
+        build_assessment_current(
+            assessment, None, datetime.now(UTC), thresholds.datenqualitaet.stale_timeout_s
+        )

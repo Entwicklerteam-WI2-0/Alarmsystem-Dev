@@ -185,7 +185,19 @@ def build_assessment_current(
 
     Returns:
         Contract-konformer AssessmentCurrent-Response.
+
+    Raises:
+        ValueError: Wenn `reading` None ist — der Aufrufer (DTB-43) muss den
+            No-Data-Fall VOR diesem Aufruf mit HTTP 503 behandeln.
     """
+    if reading is None:
+        # Vertrag explizit absichern: laut scheitern statt spaeter ein AttributeError
+        # tief im Stack (reading.status / reading.measured_at), wenn beim Einkommentieren
+        # des DTB-43-Endpoints der None-Pfad vergessen wird.
+        raise ValueError(
+            "build_assessment_current: reading darf nicht None sein "
+            "(Aufrufer muss den No-Data-Fall mit 503 behandeln)"
+        )
     stale = is_stale(reading, now, stale_timeout_s)
     sensor_status = reading.status
     fault = sensor_status is SensorStatus.FAULT
