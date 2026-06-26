@@ -4,6 +4,7 @@ Die Tests skippen automatisch, wenn die in .env konfigurierte Test-DB nicht
 erreichbar ist. Schema wird idempotent aus migrations/schema.sql aufgebaut.
 """
 
+import logging
 import os
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -159,6 +160,47 @@ def sample_reading() -> Reading:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+@pytest.mark.parametrize("bad_limit", [0, -1, -100])
+def test_get_latest_rejects_non_positive_limit(bad_limit: int) -> None:
+    # Keine DB noetig: der Guard greift vor dem Datenbankzugriff.
+    repo = ReadingRepository()
+    with pytest.raises(ValueError, match="limit muss positiv sein"):
+        repo.get_latest("s1", limit=bad_limit)
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1, -100])
+def test_get_since_rejects_non_positive_limit(bad_limit: int) -> None:
+    # Keine DB noetig: der Guard greift vor dem Datenbankzugriff.
+    repo = ReadingRepository()
+    since = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    with pytest.raises(ValueError, match="limit muss positiv sein"):
+        repo.get_since("s1", since=since, limit=bad_limit)
+
+
+def test_init_rejects_connection_without_dict_cursor() -> None:
+    """Injizierte Verbindung ohne DictCursor wird fail-fast abgelehnt (DTB-93 MEDIUM).
+
+    Ohne DictCursor liefert PyMySQL Tupel statt Dicts, _row_to_reading scheitert bei
+    jedem Read -> sonst still als RepositoryError maskiert. Der Guard greift im
+    Konstruktor, ohne DB.
+    """
+
+    class _TupleCursorConnection:
+        cursorclass = pymysql.cursors.Cursor
+
+    with pytest.raises(ValueError, match="DictCursor"):
+        ReadingRepository(connection=_TupleCursorConnection())
+
+
+def test_init_accepts_connection_with_dict_cursor() -> None:
+    """Verbindung mit DictCursor wird akzeptiert (Guard wirft nicht)."""
+
+    class _DictCursorConnection:
+        cursorclass = pymysql.cursors.DictCursor
+
+    ReadingRepository(connection=_DictCursorConnection())
+
+
 def test_save_returns_generated_id(repository: ReadingRepository, sample_reading: Reading) -> None:
     reading_id = repository.save(sample_reading)
 
@@ -238,6 +280,120 @@ def test_get_since_returns_only_matching_readings(repository: ReadingRepository)
     assert result[1].measured_at == datetime(2026, 6, 23, 10, 5, 0, tzinfo=UTC)
 
 
+def test_get_since_respects_limit(repository: ReadingRepository) -> None:
+    sensor_id = "anr-rwy-04"
+    for minute in range(3):
+        ts = datetime(2026, 6, 23, 10, minute, 0, tzinfo=UTC)
+        repository.save(
+            Reading(
+                sensor_id=sensor_id,
+                measured_at=ts,
+                received_at=ts,
+                surface_temp_c=float(minute),
+                air_temp_c=1.0,
+                humidity_pct=80.0,
+                source=Source.REAL,
+                status=SensorStatus.OK,
+            )
+        )
+
+    since = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    result = repository.get_since(sensor_id=sensor_id, since=since, limit=2)
+
+    assert len(result) == 2
+    assert result[0].surface_temp_c == pytest.approx(0.0)
+    assert result[1].surface_temp_c == pytest.approx(1.0)
+
+
+def test_get_latest_wraps_row_to_reading_value_error_as_repository_error(
+    repository: ReadingRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ValueError aus _row_to_reading muss als RepositoryError fail-safe werden."""
+
+    def _failing_row_to_reading(_row: dict) -> Reading:
+        raise ValueError("ungueltiger Enum-Wert")
+
+    monkeypatch.setattr(ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading))
+    repository.save(
+        Reading(
+            sensor_id="anr-rwy-05",
+            measured_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            received_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            surface_temp_c=0.0,
+            air_temp_c=1.0,
+            humidity_pct=80.0,
+            source=Source.REAL,
+            status=SensorStatus.OK,
+        )
+    )
+
+    with pytest.raises(RepositoryError, match="Reading konnte nicht gelesen werden"):
+        repository.get_latest(sensor_id="anr-rwy-05")
+
+
+def test_get_latest_wraps_key_error_as_repository_error(
+    repository: ReadingRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """KeyError aus _row_to_reading muss als RepositoryError fail-safe werden."""
+
+    def _failing_row_to_reading(_row: dict) -> Reading:
+        raise KeyError("source")
+
+    monkeypatch.setattr(ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading))
+    repository.save(
+        Reading(
+            sensor_id="anr-rwy-key",
+            measured_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            received_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            surface_temp_c=0.0,
+            air_temp_c=1.0,
+            humidity_pct=80.0,
+            source=Source.REAL,
+            status=SensorStatus.OK,
+        )
+    )
+
+    with pytest.raises(RepositoryError, match="Reading konnte nicht gelesen werden"):
+        repository.get_latest(sensor_id="anr-rwy-key")
+
+
+def test_get_latest_wraps_type_error_as_repository_error(
+    repository: ReadingRepository,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TypeError aus _row_to_reading muss als RepositoryError fail-safe werden."""
+
+    def _failing_row_to_reading(_row: dict) -> Reading:
+        raise TypeError("tuple indices must be integers or slices, not str")
+
+    monkeypatch.setattr(ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading))
+    repository.save(
+        Reading(
+            sensor_id="anr-rwy-type",
+            measured_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            received_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+            surface_temp_c=0.0,
+            air_temp_c=1.0,
+            humidity_pct=80.0,
+            source=Source.REAL,
+            status=SensorStatus.OK,
+        )
+    )
+
+    with pytest.raises(RepositoryError, match="Reading konnte nicht gelesen werden"):
+        repository.get_latest(sensor_id="anr-rwy-type")
+
+
+def test_get_since_rejects_naive_datetime(repository: ReadingRepository) -> None:
+    """since muss zeitzonenbewusst sein, sonst ValueError (DTB-93 LOW)."""
+    naive_since = datetime(2026, 6, 23, 10, 0, 0)
+
+    with pytest.raises(ValueError, match="since muss zeitzonenbewusst sein"):
+        repository.get_since(sensor_id="anr-rwy-01", since=naive_since)
+
+
 def test_get_latest_isolated_per_sensor(repository: ReadingRepository) -> None:
     for sensor_id, temp in [("anr-a", 1.0), ("anr-b", 2.0)]:
         repository.save(
@@ -312,3 +468,87 @@ def test_get_since_empty_for_unknown_sensor(repository: ReadingRepository) -> No
     since = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
     result = repository.get_since(sensor_id="nicht-existiert", since=since)
     assert result == ()
+
+
+def test_row_to_reading_makes_naive_datetimes_utc_aware() -> None:
+    """PyMySQL liefert naive datetime-Objekte; _row_to_reading muss tzinfo=UTC setzen.
+
+    Regressionstest fuer den DTB-38-Blocker: is_stale() subtrahiert reading.measured_at
+    von einem UTC-aware now(). Sind die DB-Zeitstempel naive, entsteht TypeError.
+    """
+    row = {
+        "id": 1,
+        "sensor_id": "anr-rwy-01",
+        "measured_at": datetime(2026, 6, 23, 10, 0, 0),
+        "received_at": datetime(2026, 6, 23, 10, 0, 30),
+        "surface_temp_c": -0.4,
+        "air_temp_c": 1.2,
+        "humidity_pct": 96.0,
+        "pressure_hpa": 1013.0,
+        "dew_point_c": 0.63,
+        "source": "real",
+        "status": "ok",
+    }
+
+    reading = ReadingRepository._row_to_reading(row)
+
+    assert reading.measured_at.tzinfo is UTC
+    assert reading.received_at.tzinfo is UTC
+    assert reading.measured_at == datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    # Sicherstellen, dass UTC-aware Zeitstempel subtrahiert werden koennen.
+    now = datetime(2026, 6, 23, 10, 1, 0, tzinfo=UTC)
+    assert (now - reading.measured_at).total_seconds() == 60.0
+
+
+def test_fetch_wraps_attribute_error_as_repository_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AttributeError aus _row_to_reading (z. B. str statt datetime -> .tzinfo) -> RepositoryError.
+
+    DB-frei. Sichert, dass auch dieser Schema-Drift-Fall den RepositoryError-Vertrag
+    wahrt, statt unkontrolliert nach oben zu propagieren (DTB-93 MEDIUM).
+    """
+
+    class _FakeCursor:
+        def __enter__(self) -> "_FakeCursor":
+            return self
+
+        def __exit__(self, *exc_info: object) -> bool:
+            return False
+
+        def execute(self, *args: object) -> None:
+            pass
+
+        def fetchall(self) -> list[dict]:
+            return [{"measured_at": "2026-06-23 10:00:00"}]
+
+    class _FakeConnection:
+        def cursor(self) -> "_FakeCursor":
+            return _FakeCursor()
+
+    def _failing_row_to_reading(_row: dict) -> Reading:
+        raise AttributeError("'str' object has no attribute 'tzinfo'")
+
+    monkeypatch.setattr(ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading))
+
+    with pytest.raises(RepositoryError, match="Reading konnte nicht gelesen werden"):
+        ReadingRepository._fetch(_FakeConnection(), "SELECT 1", ())
+
+
+def test_insert_logs_when_rollback_fails(caplog: pytest.LogCaptureFixture) -> None:
+    """Schlaegt der Rollback nach einem INSERT-Fehler fehl, wird er geloggt (DTB-93 MEDIUM).
+
+    DB-frei. Die urspruengliche Exception muss unveraendert propagieren; der
+    Rollback-Fehler darf nicht spurlos verschwinden (analog database.transaction).
+    """
+
+    class _FailingConnection:
+        def cursor(self) -> object:
+            raise pymysql.Error("INSERT fehlgeschlagen")
+
+        def rollback(self) -> None:
+            raise pymysql.Error("Rollback fehlgeschlagen")
+
+    with caplog.at_level(logging.ERROR, logger="src.storage.repository"):
+        with pytest.raises(pymysql.Error, match="INSERT fehlgeschlagen"):
+            ReadingRepository._insert(_FailingConnection(), ())
+
+    assert any("Rollback" in record.getMessage() for record in caplog.records)
