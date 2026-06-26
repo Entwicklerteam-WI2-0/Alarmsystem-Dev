@@ -38,6 +38,34 @@ def test_default_config_laedt_hysterese_parameter_aus_schwellenwerte_md():
     assert thresholds.hysterese.downgrade_undershoot_c == 0.5
 
 
+@pytest.mark.parametrize(
+    "schluessel", ["on_delay_s", "downgrade_stable_s", "downgrade_undershoot_c"]
+)
+def test_negative_hysterese_konstante_scheitert_laut(tmp_path, schluessel):
+    # Arrange — eine negative Zeit/Marge ist fachlich ungueltig und wuerde den
+    # On-Delay-Debounce aushebeln (Sicherheitsparameter still ignoriert).
+    daten = _minimal_config()
+    daten["hysterese"][schluessel] = -1.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    # Act / Assert — Loader muss laut scheitern (kein stiller Default, NF-01-Geist).
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_on_delay_null_ist_erlaubt(tmp_path):
+    # On-Delay 0 = bewusst kein Debounce (degeneriert, aber gueltig) -> kein Fehler.
+    daten = _minimal_config()
+    daten["hysterese"]["on_delay_s"] = 0.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    thresholds = load_thresholds(datei)
+
+    assert thresholds.hysterese.on_delay_s == 0.0
+
+
 def test_eigener_pfad_ist_parametrierbar(tmp_path):
     # Arrange — NF-05: Schwellen über externe Config austauschbar
     eigene = tmp_path / "thresholds.json"

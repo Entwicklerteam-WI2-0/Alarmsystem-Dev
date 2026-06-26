@@ -47,6 +47,17 @@ class HystereseParameter:
     downgrade_stable_s: float
     downgrade_undershoot_c: float
 
+    def __post_init__(self) -> None:
+        # Negative Zeit/Marge ist fachlich ungültig und würde den Debounce aushebeln
+        # (Sicherheitsparameter still ignoriert) -> laut scheitern statt klaglos laden.
+        for feld, wert in (
+            ("on_delay_s", self.on_delay_s),
+            ("downgrade_stable_s", self.downgrade_stable_s),
+            ("downgrade_undershoot_c", self.downgrade_undershoot_c),
+        ):
+            if wert < 0:
+                raise ConfigError(f"Hysterese-Parameter '{feld}' muss >= 0 sein, ist aber {wert!r}")
+
 
 @dataclass(frozen=True)
 class Thresholds:
