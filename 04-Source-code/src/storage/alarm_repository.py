@@ -65,6 +65,9 @@ class InMemoryAlarmRepository(AlarmRepository):
 
     def save(self, alarm: Alarm) -> int:
         _require_active(alarm)
+        # ID = len()+1 ist nur korrekt, solange ausschließlich angehängt wird. Kämen für
+        # DTB-21-Fixtures Lösch-/Reset-Operationen hinzu, kollidierten IDs still -> dann auf
+        # einen monotonen Zähler umstellen (bis dahin YAGNI).
         new_id = len(self._alarms) + 1
         # Alarm mit vergebener ID ablegen; das Original bleibt unangetastet.
         self._alarms.append(alarm.model_copy(update={"id": new_id}))

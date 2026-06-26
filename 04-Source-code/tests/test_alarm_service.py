@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from src.alarm.hysterese import AlarmHysterese
-from src.alarm.service import AlarmGenerator
+from src.alarm.service import AlarmGenerator, AuditError
 from src.config.loader import load_thresholds
 from src.model.enums import AlarmSeverity, AlarmState, AuditEventType, RiskLevel
 from src.model.schemas import Alarm, AuditLogEntry
@@ -69,8 +69,9 @@ def test_persistenz_fehler_armt_engine_neu_und_propagiert():
     engine = _engine()
     gen = AlarmGenerator(engine, _FailingAlarmRepo(), InMemoryAuditRepository())
     gen.verarbeite(RiskLevel.ORANGE, 1, _T0)  # Pending
-    with pytest.raises(RepositoryError):
+    with pytest.raises(RepositoryError) as excinfo:
         gen.verarbeite(RiskLevel.ORANGE, 1, _T0 + timedelta(seconds=60))  # feuert, save kaputt
+    assert not isinstance(excinfo.value, AuditError)  # Persistenz-Fehler != Audit-Fehler
 
     # Engine wurde neu gearmt (beenden) -> mit funktionierendem Repo feuert die anhaltende
     # Bedingung erneut (sonst stiller Under-Alarm).
@@ -79,14 +80,18 @@ def test_persistenz_fehler_armt_engine_neu_und_propagiert():
     assert gen_ok.verarbeite(RiskLevel.ORANGE, 1, _T0 + timedelta(seconds=180)) is not None
 
 
-def test_audit_fehler_propagiert_ohne_rearm():
+def test_audit_fehler_als_auditerror_mit_id_ohne_rearm():
     engine = _engine()
     alarm_repo = InMemoryAlarmRepository()
     gen = AlarmGenerator(engine, alarm_repo, _FailingAuditRepo())
     gen.verarbeite(RiskLevel.ORANGE, 1, _T0)  # Pending
-    with pytest.raises(RepositoryError):
+    with pytest.raises(AuditError) as excinfo:
         gen.verarbeite(RiskLevel.ORANGE, 1, _T0 + timedelta(seconds=60))  # feuert; audit kaputt
 
+    # AuditError ist vom Persistenz-Fehler unterscheidbar, bleibt aber ein RepositoryError
+    # (rueckwaertskompatibel) und traegt die ID des trotzdem gespeicherten Alarms.
+    assert isinstance(excinfo.value, RepositoryError)
+    assert excinfo.value.alarm_id == 1
     # Alarm wurde trotzdem persistiert ...
     assert len(alarm_repo.all()) == 1
     # ... und die Engine ist NICHT neu gearmt (Alarm bleibt aktiv): gehaltene gleiche Stufe

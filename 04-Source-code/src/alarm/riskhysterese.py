@@ -106,6 +106,10 @@ class RiskHysterese:
         """Schwellen-Set, um `undershoot` in Sicherheitsrichtung verschoben (macht die
         höhere Stufe „klebrig": eine Herabstufung verlangt den 0,5-Deadband-Abstand)."""
         d = self._undershoot
+        # Alle Schwellen um +d anheben = konservativ in Sicherheitsrichtung: Temperatur-Schwellen
+        # höher (Herabstufung verlangt mehr „Auftauen") UND Delta-Schwellen höher (größeres Delta =
+        # härtere Bedingung, um die niedrigere Stufe freizugeben). In Summe wird die höhere Stufe
+        # „klebrig" — eine Herabstufung muss das Deadband klar unterschreiten.
         v = replace(
             t.vereisung,
             t_s_gefrierpunkt_c=t.vereisung.t_s_gefrierpunkt_c + d,

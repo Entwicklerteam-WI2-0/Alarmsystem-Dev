@@ -177,6 +177,13 @@ class AlarmHysterese:
         Abgrenzung: das ist NICHT die Audit-Quittierung (`ack`, DTB-24). Ein Ack lässt den
         Alarm AKTIV und darf NICHT re-armen — der Aufrufer mappt `ack` deshalb nicht hierher.
 
+        Sicherheitsabwägung: Ist ein schwächerer Alarm (warning) aktiv UND läuft gleichzeitig
+        ein critical-Upgrade im On-Delay-Fenster, verwirft `beenden()` auch dieses Pending —
+        die ROT-Eskalation beginnt danach mit frischem On-Delay (bis zu `on_delay_s`, 60 s,
+        Verzögerung). Das ist die gewollte Re-Arm-Semantik (manuelles Clearing setzt den
+        Zustand vollständig zurück), aber das Beenden eines schwächeren Alarms verzögert eine
+        gerade laufende Hochstufung — der Bediener muss sich dessen bewusst sein.
+
         Recovery-Naht (NF-01): `beobachte()` dreht den Zustand auf 'aktiv', sobald es eine
         `AlarmAusloesung` liefert. Schlägt die anschliessende Persistenz/G3-Meldung des
         Aufrufers fehl, MUSS der Aufrufer `beenden()` rufen, um neu zu armen — sonst feuert
