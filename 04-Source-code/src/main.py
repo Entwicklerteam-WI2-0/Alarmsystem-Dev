@@ -35,9 +35,12 @@ from datetime import UTC, datetime
 
 from fastapi import FastAPI
 
+from src.alarm.hysterese import AlarmHysterese
+from src.alarm.service import AlarmGenerator
 from src.assessment import AssessmentService
 from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
+from src.model.schemas import Reading
 from src.storage import (
     AssessmentRepository,
     AuditRepository,
@@ -46,6 +49,7 @@ from src.storage import (
     ReadingRepository,
     RepositoryError,
 )
+from src.storage.alarm_repository import MySqlAlarmRepository
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +75,7 @@ class Runtime:
     audit_repo: AuditRepository
     poller: Poller
     service: AssessmentService
+    alarm_generator: AlarmGenerator
 
 
 def build_runtime() -> Runtime:
@@ -86,6 +91,12 @@ def build_runtime() -> Runtime:
         plausibility_thresholds=thresholds.plausibilitaet,
     )
     service = AssessmentService(thresholds, assessment_repo, audit_repo)
+    # DTB-27: Alarm-Generierung als Konsument der Bewertung. AlarmHysterese ist pro Sensor
+    # zustandsbehaftet (On-Delay) -> gehört in den langlebigen DI-Graph (eine Instanz je
+    # laufende Instanz; aktuell genau ein Sensor). Audit-Log wird mit dem Service geteilt.
+    alarm_generator = AlarmGenerator(
+        AlarmHysterese(thresholds.hysterese), MySqlAlarmRepository(), audit_repo
+    )
     return Runtime(
         thresholds=thresholds,
         reading_repo=reading_repo,
@@ -93,7 +104,29 @@ def build_runtime() -> Runtime:
         audit_repo=audit_repo,
         poller=poller,
         service=service,
+        alarm_generator=alarm_generator,
     )
+
+
+def run_assessment_cycle(
+    service: AssessmentService,
+    alarm_generator: AlarmGenerator,
+    reading: Reading | None,
+    now: datetime,
+) -> None:
+    """Ein vollständiger Zyklus: Bewertung (DTB-64) -> Alarm-Generierung (DTB-27).
+
+    `assess_reading` erzwingt das Laufzeit-NF-01 (stale/fault/keine Daten -> unknown) und
+    liefert das persistierte Assessment; dessen `risk_level` speist die Alarm-Generierung.
+    Bei `unknown` löst der Generator keinen Alarm aus und die On-Delay-Hysterese friert ein —
+    die in DTB-27 dokumentierte Vorbedingung (Stale -> UNKNOWN, nicht GELB) erfüllt DTB-64 hier.
+
+    Bewusst KEIN eigenes try/except: Persistenz-/Audit-Fehler propagieren in die Fail-safe-
+    Schleife des Schedulers (NF-01: ein Zyklus-Fehler beendet den Betrieb nicht).
+    """
+    assessment = service.assess_reading(reading, now)
+    # assessment.id ist nach erfolgreicher Persistenz gesetzt (assess_reading-Invariante).
+    alarm_generator.verarbeite(assessment.risk_level, assessment.id, now)
 
 
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
@@ -110,7 +143,13 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
             # damit der Event-Loop frei bleibt.
             reading = await asyncio.to_thread(runtime.poller.poll)
             now = datetime.now(UTC)
-            await asyncio.to_thread(runtime.service.assess_reading, reading, now)
+            await asyncio.to_thread(
+                run_assessment_cycle,
+                runtime.service,
+                runtime.alarm_generator,
+                reading,
+                now,
+            )
         except RepositoryError as exc:
             logger.error("Bewertungszyklus fehlgeschlagen (fail-safe, weiter): %s", exc)
         except ValueError:
