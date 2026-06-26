@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from src.assessment import AssessmentService, build_assessment_current
@@ -140,16 +140,25 @@ def get_runtime(request: Request) -> Runtime:
     return runtime
 
 
+# Echtzeit-Sicherheitsendpoint: weder Proxies noch Browser duerfen einen Ausfall-
+# (503) ODER Momentan-Zustand (200) cachen — ein gecachtes 503 (G2 laengst wieder da)
+# oder gar ein gecachtes "green" waere ein veraltetes Sicherheitssignal (NF-01).
+# Relevant erst hinter einem kuenftigen Reverse-Proxy/Load-Balancer, aber billig + korrekt.
+_NO_STORE_HEADERS = {"Cache-Control": "no-store"}
+
+
 def _service_unavailable(message: str) -> JSONResponse:
     """Baut die 503-Antwort im Contract-Fehlerformat `Error {code, message}`.
 
     Bewusst NICHT `HTTPException(detail=...)`: das liefert `{"detail": ...}` und
     bricht damit die eingefrorene Naht (Contract verlangt `{code, message}`).
     Die Nachricht bleibt generisch (keine internen Details/Secrets, RB-01/Contract D).
+    `Cache-Control: no-store`, damit kein Proxy einen ueberholten Ausfall cacht.
     """
     return JSONResponse(
         status_code=503,
         content=Error(code=_SERVICE_UNAVAILABLE_CODE, message=message).model_dump(),
+        headers=_NO_STORE_HEADERS,
     )
 
 
@@ -257,6 +266,7 @@ def health() -> dict[str, str]:
 )
 def assessment_current(
     runtime: Annotated[Runtime, Depends(get_runtime)],
+    response: Response,
 ) -> AssessmentCurrent | JSONResponse:
     """Aktuelle Vereisungsbewertung fuer G3 (Contract v1, E-36, DTB-43).
 
@@ -276,6 +286,10 @@ def assessment_current(
     eingefrorene Contract (Source of Truth) bildet einen internen Ausfall auf 503
     ab und gewinnt -> 503 (begruendet im Lucas-Entscheidungslog).
     """
+    # no-store auch auf dem 200-Pfad: ein gecachter Momentan-Zustand (stale/unknown/
+    # green) waere ein veraltetes Sicherheitssignal (NF-01). Die direkt zurueckgegebenen
+    # 503-JSONResponses tragen den Header selbst (_service_unavailable).
+    response.headers.update(_NO_STORE_HEADERS)
     try:
         assessment = runtime.assessment_repo.get_latest()
         readings = runtime.reading_repo.get_latest(_SENSOR_ID, limit=1)

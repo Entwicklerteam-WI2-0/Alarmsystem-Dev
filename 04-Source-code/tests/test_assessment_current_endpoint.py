@@ -133,6 +133,8 @@ def test_current_happy_path_returns_200_with_assessment():
     response = client.get("/v1/assessment/current")
 
     assert response.status_code == 200
+    # Echtzeit-Sicherheitsendpoint: kein Proxy/Browser darf den Momentan-Zustand cachen.
+    assert response.headers["cache-control"] == "no-store"
     body = response.json()
     assert body["risk_level"] == "green"
     assert body["is_stale"] is False
@@ -194,6 +196,8 @@ def _assert_503_error_envelope(response: httpx.Response) -> None:
     GRUEN (NF-01). Separate `not in`-Asserts waeren daher redundant.
     """
     assert response.status_code == 503
+    # 503 darf nicht von Proxies gecacht werden (sonst veralteter Ausfall-Zustand).
+    assert response.headers["cache-control"] == "no-store"
     body = response.json()
     assert set(body.keys()) == {"code", "message"}
     assert body["code"] == "SERVICE_UNAVAILABLE"
