@@ -72,6 +72,14 @@ class HystereseParameter:
                 raise ConfigError(
                     f"Hysterese-Parameter '{feld}' muss >= 0 sein, ist aber {wert!r}"
                 )
+        # Cross-Field: die Kontinuitäts-Lücke muss mindestens den On-Delay abdecken —
+        # sonst bricht jeder Poll die Kontinuität, der On-Delay akkumuliert nie und es
+        # feuert NIE ein Alarm (Under-Alarm). Laut scheitern statt still nie alarmieren.
+        if self.max_continuity_gap_s < self.on_delay_s:
+            raise ConfigError(
+                "Hysterese-Parameter 'max_continuity_gap_s' muss >= 'on_delay_s' sein, ist "
+                f"aber {self.max_continuity_gap_s!r} < {self.on_delay_s!r}"
+            )
 
 
 @dataclass(frozen=True)

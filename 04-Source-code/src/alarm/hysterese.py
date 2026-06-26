@@ -79,6 +79,13 @@ class AlarmHysterese:
         Raises:
             ValueError: wenn `jetzt` nicht zeitzonenbewusst ist (Contract §2a D: UTC).
             Der Aufrufer muss zudem monoton steigende Zeit liefern (Poll-Schicht).
+
+        Hinweis (bewusst): Der On-Delay misst die Zeit seit der ersten Bestätigung und
+        toleriert Lücken bis `max_continuity_gap_s` — er verlangt NICHT strikt
+        ununterbrochene Anwesenheit der höheren Stufe. Ein ROT-Blip, gehaltenes ORANGE
+        und späteres ROT kann daher früher critical auslösen als bei strenger Kontinuität.
+        Das ist die gewollte Anti-Chattering-Lockerung für flackernde Sensoren (R1/R2);
+        Richtung Over-Alarm (K1-konform), nie unter den aktiven Alarm (RB-01).
         """
         if jetzt.tzinfo is None:
             raise ValueError(

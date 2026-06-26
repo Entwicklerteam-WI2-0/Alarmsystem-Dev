@@ -280,6 +280,32 @@ def test_quittiert_waehrend_upgrade_pending_setzt_alles_zurueck():
     assert spaet is not None and spaet.severity is AlarmSeverity.CRITICAL
 
 
+def test_upgrade_on_delay_ist_luecken_tolerant_gewollt():
+    # DOKUMENTIERT/GEWOLLT (K1-Safe, Over-Alarm): Der On-Delay misst die Zeit seit der
+    # ersten Bestaetigung und toleriert Luecken bis max_continuity_gap_s — er verlangt
+    # NICHT strikt ununterbrochenes ROT. Ein ROT-Blip + gehaltenes ORANGE + spaeteres ROT
+    # feuert daher critical, sobald on_delay seit dem ERSTEN ROT verstrichen ist. Bewusste
+    # Anti-Chattering-Lockerung fuer flackernde Sensoren (R1/R2); critical bleibt sticky.
+    engine = _engine()
+    _aktiver_warning(engine, _T0)
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))  # ROT-Blip -> critical pending
+    for s in (80, 90, 100, 110, 120):  # gehaltenes ORANGE (aktives Niveau)
+        engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=s))
+    upgrade = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=130))  # 130-70 >= 60
+    assert upgrade is not None
+    assert upgrade.severity is AlarmSeverity.CRITICAL
+
+
+def test_luecke_genau_max_gap_haelt_kontinuitaet():
+    # Grenzfall: eine Luecke von exakt max_continuity_gap_s (120 s) bricht die
+    # Kontinuitaet NICHT (Pruefung ist strikt `> max_gap`). Inklusiv-/Exklusiv-Wahl pinnen.
+    engine = _engine()
+    engine.beobachte(RiskLevel.ORANGE, _T0)
+    engine.beobachte(RiskLevel.UNKNOWN, _T0 + timedelta(seconds=60))
+    ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=120))
+    assert ausloesung is not None  # Luecke 120 nicht > 120, und 120 s >= on_delay 60
+
+
 def test_rang_deckt_alle_severities_ab():
     # Schutz gegen stille KeyError, falls AlarmSeverity erweitert wird.
     from src.alarm.hysterese import _RANG

@@ -69,6 +69,32 @@ def test_nicht_endliche_hysterese_konstante_scheitert_laut(tmp_path, ungueltig):
         load_thresholds(datei)
 
 
+@pytest.mark.parametrize("gap", [0.0, 30.0, 59.0])
+def test_max_continuity_gap_kleiner_als_on_delay_scheitert_laut(tmp_path, gap):
+    # max_gap < on_delay -> jeder Poll bricht die Kontinuitaet, der On-Delay akkumuliert
+    # nie -> es feuert NIE ein Alarm (Under-Alarm, NF-01-Verstoss). Muss laut scheitern.
+    daten = _minimal_config()
+    daten["hysterese"]["on_delay_s"] = 60.0
+    daten["hysterese"]["max_continuity_gap_s"] = gap
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_max_continuity_gap_gleich_on_delay_ist_erlaubt(tmp_path):
+    daten = _minimal_config()
+    daten["hysterese"]["on_delay_s"] = 60.0
+    daten["hysterese"]["max_continuity_gap_s"] = 60.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    thresholds = load_thresholds(datei)
+
+    assert thresholds.hysterese.max_continuity_gap_s == 60.0
+
+
 def test_on_delay_null_ist_erlaubt(tmp_path):
     # On-Delay 0 = bewusst kein Debounce (degeneriert, aber gueltig) -> kein Fehler.
     daten = _minimal_config()
