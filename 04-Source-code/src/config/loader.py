@@ -181,8 +181,11 @@ def _validate_plausibilitaet(schwellen: PlausibilitaetSchwellen) -> None:
 
     if schwellen.min_pressure_hpa >= schwellen.max_pressure_hpa:
         raise ConfigError("plausibilitaet.min_pressure_hpa muss kleiner als max_pressure_hpa sein")
-    _require_positive(schwellen.min_pressure_hpa, "plausibilitaet.min_pressure_hpa", upper=2000.0)
-    _require_positive(schwellen.max_pressure_hpa, "plausibilitaet.max_pressure_hpa", upper=2000.0)
+    # Obergrenze knapp ueber dem hoechsten je auf Meereshoehe gemessenen Luftdruck
+    # (~1085 hPa, Weltrekord). Hoehere Werte sind physikalisch unsinnig und deuten auf
+    # eine Fehlkonfiguration hin -> laut scheitern statt durchwinken (NF-01, DTB-93 LOW).
+    _require_positive(schwellen.min_pressure_hpa, "plausibilitaet.min_pressure_hpa", upper=1100.0)
+    _require_positive(schwellen.max_pressure_hpa, "plausibilitaet.max_pressure_hpa", upper=1100.0)
 
 
 def _require_positive(value: float, name: str, upper: float) -> None:

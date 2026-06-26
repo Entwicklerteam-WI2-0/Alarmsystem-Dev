@@ -17,8 +17,12 @@ from src.model.schemas import Assessment, Reading
 # Maximale Laenge von Reason-Strings fuer Audit/Log-Ausgaben (NF-09).
 MAX_REASON_LENGTH = 256
 
-# Unicode-Kategorien, die in Audit-/Log-Reasons entfernt werden.
-_CONTROL_CATEGORIES = frozenset({"Cc", "Zl", "Zp"})
+# Unicode-Kategorie, die in Audit-/Log-Reasons ersatzlos entfernt wird: Control
+# Characters (Cc, inkl. U+007F DEL). Die Zeilentrenner U+2028/U+2029 (Zl/Zp) werden
+# NICHT hier entfernt, sondern in _sanitize_reason vorab durch ein Leerzeichen ersetzt
+# (Worttrennung erhalten) -> ein Filter-Eintrag waere wirkungslos und faelschlich
+# "Entfernen statt Leerzeichen" (DTB-93 LOW).
+_CONTROL_CATEGORIES = frozenset({"Cc"})
 
 
 def is_stale(reading: Reading | None, now: datetime, timeout_s: float) -> bool:
@@ -32,10 +36,13 @@ def is_stale(reading: Reading | None, now: datetime, timeout_s: float) -> bool:
     Returns:
         True, wenn das Reading aelter als timeout_s ist oder fehlt.
     """
-    if reading is None:
-        return True
+    # now wird unabhaengig vom reading uebergeben -> Validierung VOR dem None-Check,
+    # damit ein naiver now-Wert auch dann frueh auffaellt, wenn das erste Reading in
+    # einer Multi-Sensor-Schleife (DTB-38) None ist (DTB-93 LOW).
     if now.tzinfo is None:
         raise ValueError("now muss zeitzonenbewusst sein (UTC)")
+    if reading is None:
+        return True
     if reading.measured_at.tzinfo is None:
         raise ValueError("reading.measured_at muss zeitzonenbewusst sein (UTC)")
     if timeout_s <= 0:
@@ -143,8 +150,9 @@ def _sanitize_reason(reason: str) -> str:
         .replace("\u2028", " ")
         .replace("\u2029", " ")
     )
-    # Alle Control Characters entfernen (ASCII 0x00-0x1f und Unicode Cc/Zl/Zp).
-    # U+007F (DEL) ist ueber Unicode-Kategorie "Cc" mit abgedeckt.
+    # Verbleibende Control Characters entfernen (ASCII 0x00-0x1f, Unicode-Kategorie
+    # Cc; U+007F DEL ist darueber mit abgedeckt). U+2028/U+2029 wurden oben bereits
+    # zu Leerzeichen ersetzt und erreichen diesen Filter nicht mehr.
     cleaned = "".join(ch for ch in cleaned if unicodedata.category(ch) not in _CONTROL_CATEGORIES)
     cleaned = cleaned.strip()
     if len(cleaned) > MAX_REASON_LENGTH:

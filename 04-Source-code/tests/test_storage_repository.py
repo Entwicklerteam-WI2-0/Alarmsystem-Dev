@@ -176,6 +176,30 @@ def test_get_since_rejects_non_positive_limit(bad_limit: int) -> None:
         repo.get_since("s1", since=since, limit=bad_limit)
 
 
+def test_init_rejects_connection_without_dict_cursor() -> None:
+    """Injizierte Verbindung ohne DictCursor wird fail-fast abgelehnt (DTB-93 MEDIUM).
+
+    Ohne DictCursor liefert PyMySQL Tupel statt Dicts, _row_to_reading scheitert bei
+    jedem Read -> sonst still als RepositoryError maskiert. Der Guard greift im
+    Konstruktor, ohne DB.
+    """
+
+    class _TupleCursorConnection:
+        cursorclass = pymysql.cursors.Cursor
+
+    with pytest.raises(ValueError, match="DictCursor"):
+        ReadingRepository(connection=_TupleCursorConnection())
+
+
+def test_init_accepts_connection_with_dict_cursor() -> None:
+    """Verbindung mit DictCursor wird akzeptiert (Guard wirft nicht)."""
+
+    class _DictCursorConnection:
+        cursorclass = pymysql.cursors.DictCursor
+
+    ReadingRepository(connection=_DictCursorConnection())
+
+
 def test_save_returns_generated_id(repository: ReadingRepository, sample_reading: Reading) -> None:
     reading_id = repository.save(sample_reading)
 

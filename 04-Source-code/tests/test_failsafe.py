@@ -90,6 +90,15 @@ def test_is_stale_with_naive_now_raises(fresh_reading: Reading) -> None:
         is_stale(fresh_reading, naive_now, timeout_s=120)
 
 
+def test_is_stale_with_none_reading_and_naive_now_raises() -> None:
+    # now wird VOR dem reading-None-Check validiert: ein naiver now-Wert faellt auch
+    # dann auf, wenn (noch) kein Reading vorliegt -> in einer Multi-Sensor-Schleife
+    # bleibt der Fehler nicht bis zum naechsten Sensor verborgen (DTB-93 LOW).
+    naive_now = datetime(2026, 6, 23, 10, 2, 0)
+    with pytest.raises(ValueError, match="zeitzonenbewusst"):
+        is_stale(None, naive_now, timeout_s=120)
+
+
 @pytest.mark.parametrize("bad_timeout", [0, -1, -0.5])
 def test_is_stale_with_non_positive_timeout_raises(
     fresh_reading: Reading, bad_timeout: float
@@ -248,6 +257,17 @@ def test_build_unknown_assessment_sanitizes_unicode_line_separators() -> None:
     # Unicode-Zeilentrenner werden wie \n/\r durch Leerzeichen ersetzt, damit
     # Worte nicht zusammenwachsen (DTB-93 LOW).
     assert "foo bar baz" in assessment.explanation
+
+
+def test_build_unknown_assessment_removes_control_characters() -> None:
+    ts = datetime.now(UTC)
+    # Control Characters (Unicode-Kategorie Cc, z. B. BEL \x07 und DEL \x7f) werden
+    # ersatzlos entfernt (kein Leerzeichen) -> sichert frozenset({"Cc"}) nach DTB-93 LOW ab.
+    assessment = build_unknown_assessment(reason="foo\x07bar\x7fbaz", ts=ts)
+
+    assert "\x07" not in assessment.explanation
+    assert "\x7f" not in assessment.explanation
+    assert "foobarbaz" in assessment.explanation
 
 
 def test_build_unknown_assessment_truncates_long_reason() -> None:

@@ -182,9 +182,14 @@ def test_datenqualitaet_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str
         ("max_humidity_pct", 100.1),
         ("min_pressure_hpa", 0),
         ("min_pressure_hpa", -1),
+        ("min_pressure_hpa", 1800),
         ("min_pressure_hpa", 2000.1),
         ("max_pressure_hpa", 0),
         ("max_pressure_hpa", -1),
+        # 1100.1/1800 liegen unter der frueheren 2000er-Grenze und waeren still
+        # akzeptiert worden -> Regressionsnachweis fuer die 1100er-Grenze (DTB-93 LOW).
+        ("max_pressure_hpa", 1100.1),
+        ("max_pressure_hpa", 1800),
         ("max_pressure_hpa", 2000.1),
     ],
 )

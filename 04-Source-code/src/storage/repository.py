@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pymysql
+from pymysql.cursors import DictCursor
 
 from src.model.enums import SensorStatus, Source
 from src.model.schemas import Reading
@@ -102,7 +103,10 @@ class ReadingRepository(Repository):
     Args:
         connection: Optional bestehende PyMySQL-Verbindung (z. B. fuer Tests).
             Wird keine uebergeben, oeffnet jede Operation per get_connection()
-            eine kurzlebige Verbindung aus den Umgebungsvariablen.
+            eine kurzlebige Verbindung aus den Umgebungsvariablen. Eine
+            uebergebene Verbindung MUSS einen DictCursor verwenden
+            (cursorclass=pymysql.cursors.DictCursor), sonst liefert PyMySQL
+            Tupel statt Dicts und _row_to_reading scheitert.
     """
 
     _INSERT_SQL = """
@@ -138,6 +142,18 @@ class ReadingRepository(Repository):
     """
 
     def __init__(self, connection: pymysql.Connection | None = None) -> None:
+        # Fail-fast statt stillem Contract-Bruch: eine injizierte Verbindung ohne
+        # DictCursor wuerde Tupel liefern, woraufhin _row_to_reading bei jedem Read
+        # scheitert und das als RepositoryError maskiert wird (DTB-93 MEDIUM). Lieber
+        # hier laut scheitern als spaeter verschleiert. get_connection() (Default-Pfad)
+        # erzwingt DictCursor bereits.
+        if connection is not None:
+            cursorclass = getattr(connection, "cursorclass", None)
+            if not (isinstance(cursorclass, type) and issubclass(cursorclass, DictCursor)):
+                raise ValueError(
+                    "ReadingRepository benoetigt eine Verbindung mit DictCursor "
+                    "(cursorclass=pymysql.cursors.DictCursor)."
+                )
         self._connection = connection
 
     def save(self, reading: Reading) -> int:
