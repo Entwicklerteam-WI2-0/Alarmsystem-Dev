@@ -336,3 +336,23 @@ PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separ
 4. F10 Assessment-Persistenz · FA-06 Prognose-Producer · F08 Hysterese + `poll_interval`/`on_delay` als Config.
 5. Vorfall-2-Test fixen (`test_vorfall_2`: aktuell ΔT=+0,2 → ORANGE statt ΔT≤0 → ROT; kritischer-Pfad-DoD).
 —architekt
+
+## Update [27.06., ~00:05] — DTB-43 `GET /v1/assessment/current` umgesetzt → PR #108 (architekt)
+- **DTB-43 (P2.5, Serving) fertig** auf `feat/dtb-43-assessment-current` (Commits `e1f3f87` feat + `24db9c1` docs,
+  **gepusht**). Verdrahtet die DTB-64-Bausteine (`build_assessment_current`, Assessment-/Reading-Repos) an der
+  Lese-Grenze in `src/main.py`: `get_runtime`-Dependency (testbar via `dependency_overrides`) + Endpoint.
+- **Fail-safe NF-01 (zwei contract-konforme Klassen):** Stale ODER Sensor `fault` → **200** `risk_level=unknown`
+  (Messwerte genullt, nie GRÜN); keine Daten / DB-Ausfall / interner Aufbereitungsfehler → **503**
+  `Error {code,message}` (NICHT FastAPIs `{detail}`).
+- **⚠️ Bewusste Abweichung vom Jira-DoD-Wortlaut (b):** DoD nennt für DB-Ausfall `risk_level=unknown`; umgesetzt
+  ist **503**, weil der eingefrorene Contract (SoT) internen Ausfall auf 503 abbildet und `measured_at` auf 200
+  Pflichtfeld ist (bei DB-Lesefehler nicht vorhanden) → 200/unknown nicht darstellbar. NF-01 gewahrt (503 ≠ GRÜN).
+  Begründung + Alternativen im **Lucas-Entscheidungslog (2026-06-26)**; Jira-Kommentar an DTB-43 gesetzt.
+- **Selbst-Review (`fastapi-reviewer`):** 3× MEDIUM gefunden + **alle eingearbeitet** (build_assessment_current in
+  try/except → kein rohes 500; `Assessment.driving_factor/explanation` `max_length` analog Wire-Modell; Fault-Test
+  nullt jetzt Messwerte). Keine CRITICAL/HIGH.
+- **Status:** 10 Endpoint-Tests; volle Suite **373 grün / 14 skip / 89 % Coverage**, ruff sauber; OpenAPI 200→
+  `AssessmentCurrent`, 503→`Error`. **CI grün** (`test 3.12/3.14`, `lint-config`). Jira DTB-43 → **Wird überprüft**.
+- **Offen:** Reviewer-Freigabe + Merge (Architekt-Einzelfreigabe, Governance); Live-Test gegen MariaDB im Zuge
+  **DTB-41** (Integrationstest, hängt an DTB-43); `_SENSOR_ID` später aus `config/` (F24/Geo, Multi-Sensor).
+—architekt
