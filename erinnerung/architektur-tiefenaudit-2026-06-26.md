@@ -18,6 +18,12 @@ Assessment-Orchestrator, keine Serving-Schicht, kein Alarm-Subsystem**. Die zent
 **(DTB-38 „Verdrahtung")** ist nicht gelandet — der `is_stale`-Kommentar im Code sagt es wörtlich:
 *„bevor is_stale in DTB-38 verdrahtet wird"* (`tests/test_storage_repository.py`).
 
+> **🔗 DTB-38 ↔ DTB-64 (Label-Klarstellung):** Wo dieser Report „DTB-38" für die *Verdrahtung* schreibt (hier +
+> Lücken-Liste Punkt 1), ist **DTB-64** gemeint. **DTB-38 (Jira „Done") = nur die reine 4-Stufen-Funktion
+> `assess_ice_risk`, fertig + korrekt** (s. Matrix F06: vorhanden, korrekt, nur unverdrahtet/toter Code). Die
+> *Laufzeit-Verdrahtung* hatte kein eigenes Ticket → dafür **DTB-64**; der Code-Kommentar „verdrahtet in DTB-38"
+> benutzt die Nummer nur lose.
+
 Das ist ein **stimmiger, erklärbarer Zustand**, kein Chaos: bottom-up gebaut, top-down noch nicht integriert.
 Aber als **lauffähiges Endprodukt durchläuft heute nichts** end-to-end.
 
