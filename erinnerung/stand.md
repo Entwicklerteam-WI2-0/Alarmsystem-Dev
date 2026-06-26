@@ -299,3 +299,40 @@
 - **Lesson Learned:** GitHub-Auto-Review konvergiert an überdefensiven Modulen nicht von selbst (endlose Mikro-LOWs);
   Lösung = orchestriertes **Einmal-Vollreview** statt Befund-für-Befund. Bewusster Schnitt durch Architekt.
 - **Offen:** Feature-Branch `feat/dtb-58-60-poller-stale-dewpoint` löschen; Jira DTB-58/DTB-60 → „Done".
+
+## Update [26.06., ~13:30] — REAL-STAND nach Architektur-Tiefenaudit (architekt)
+
+> Code-Vollanalyse (read-only, 23 Subagenten) statt Planungs-Optimismus. Voller Report:
+> `erinnerung/architektur-tiefenaudit-2026-06-26.md`. Workflow-Run `wf_53434d4b-97a`.
+
+**GESAMT-VERDIKT: „Motor gebaut, nicht verdrahtet" — Backend läuft NICHT end-to-end.**
+`main` (HEAD `6ca916f`) = hochwertige, getestete Einzelmodule, aber `main.py` ist ein 19-Zeilen-Stub mit nur
+`GET /v1/health`. Kein Scheduler, kein Assessment-Orchestrator, keine Serving-Schicht, kein Alarm-Subsystem.
+**Engpass = Integrationsarbeit DTB-38** (Code-Kommentar belegt es: „bevor is_stale in DTB-38 verdrahtet wird").
+
+**Was real auf `main` steht** (25 Features: ~2 ✅ / ~12 ⚠️ / ~11 ❌ · Findings 11C/23H/23M/22L):
+- ✅ **Reading-Persistenz (F09)** voll verdrahtet + korrekt · **RB-01 (kein Aktor) sauber gewahrt** · Enums vollständig.
+- ⚠️ **Toter Code zur Laufzeit** (gebaut + getestet, aber nie aufgerufen): Poller (kein Scheduler), Kaskade
+  `assess_ice_risk`, Fail-safe `is_stale`/`build_unknown_assessment`/`check_plausibility`, Audit-Repo, `load_thresholds()`.
+- ❌ **Fehlt ganz:** `GET /v1/assessment/current` (Kernprodukt) + `AssessmentCurrent`-Schema · gesamtes
+  **Alarm-Subsystem** (Erzeugung/Repo/Endpoints/SSE/Ack) · Assessment-Persistenz (F10) · 30-min-Prognose (FA-06) ·
+  Hysterese (F08) · Geoposition (F24).
+
+**NF-01 (nie GRÜN bei Stale/Fault):** auf dem Papier korrekt, **zur Laufzeit unenforced** (`silent-failure-hunter`
+= FAIL) — kein Endpoint ruft die Fail-safe-Bausteine. Beim Verdrahten MUSS der Service stale/fault VOR
+`assess_ice_risk` erzwingen (die Funktion hat keinen internen Guard). `fault`-Readings werden zudem verworfen
+statt gespeichert → Serve-Zeit kann `fault` nicht aus der DB ableiten (offene Architekturfrage).
+
+**Contract-Treue:** **1/6** `/v1`-Endpoints existiert (`/v1/health`, ohne 503-Pfad/Pydantic). Die 5 fachlichen fehlen.
+PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separate Naht-Frage (steht offen).
+
+**Bestätigt offene Altfrage:** DTB-58 (Ingest-Stale) vs DTB-13 (failsafe Serve-Stale) — zwei Stale-Ebenen,
+**keine in einen laufenden Assessment-Pfad verdrahtet** → gehört in DTB-38.
+
+**Nächste Schritte (Baureihenfolge; Details + `datei:zeile` im Report):**
+1. **DTB-38 Orchestrierung/DI in `main.py`** (Scheduler + Assessment-Service) — entkoppelt 6 CRITICALs auf einmal.
+2. Serving `GET /v1/assessment/current` + `AssessmentCurrent`-Schema + **NF-01-Enforcement zur Laufzeit**.
+3. **Alarm-Subsystem** (DB-DDL existiert schon in `migrations/schema.sql`).
+4. F10 Assessment-Persistenz · FA-06 Prognose-Producer · F08 Hysterese + `poll_interval`/`on_delay` als Config.
+5. Vorfall-2-Test fixen (`test_vorfall_2`: aktuell ΔT=+0,2 → ORANGE statt ΔT≤0 → ROT; kritischer-Pfad-DoD).
+—architekt
