@@ -55,16 +55,14 @@ class HystereseParameter:
     Die Rückstufung (`downgrade_undershoot_c` um 0,5 °C unterschritten UND
     `downgrade_stable_s` stabil) gehört NICHT zum Alarm-On-Delay: sie ist eine
     temperaturgekoppelte **Anzeige-Hysterese** (Stabilisierung der gemeldeten Risikostufe
-    für die Ampel, Konsument DTB-43) und in ein eigenes Folge-Ticket ausgelagert. Beide
-    Felder sind dafür reserviert und werden von der Alarm-Engine NICHT ausgewertet; sie
-    ziehen mit dem Anzeige-Hysterese-Ticket in dessen eigene Config-Sektion um. KEIN
-    Auto-Clear (RB-01).
+    für die Ampel) — umgesetzt in `src/alarm/riskhysterese.py` (`RiskHysterese`, Konsument
+    DTB-43). Damit hat JEDE Hysterese-Zeitkonstante genau einen Wohnort. KEIN Auto-Clear (RB-01).
     """
 
     on_delay_s: float
     max_continuity_gap_s: float
-    downgrade_stable_s: float  # reserviert: Anzeige-Rückstufung (DTB-43-Folge), hier ungenutzt
-    downgrade_undershoot_c: float  # reserviert: Anzeige-Rückstufung (DTB-43-Folge), hier ungenutzt
+    downgrade_stable_s: float  # Rückstufungs-Stabilität -> RiskHysterese (Anzeige)
+    downgrade_undershoot_c: float  # Rückstufungs-Deadband -> RiskHysterese (Anzeige)
 
     def __post_init__(self) -> None:
         # Ungültige Werte würden den Debounce aushebeln (Sicherheitsparameter still
