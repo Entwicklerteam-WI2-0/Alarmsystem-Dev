@@ -53,7 +53,12 @@ class AlarmRepository(ABC):
 
 
 class InMemoryAlarmRepository(AlarmRepository):
-    """In-Memory-Double fuer DB-freie Tests/Laeufe. Vergibt IDs ab 1."""
+    """In-Memory-Double fuer DB-freie Tests/Laeufe. Vergibt IDs ab 1.
+
+    Bildet bewusst KEINE referenzielle Integritaet nach: eine nicht existierende
+    `assessment_id` wird hier akzeptiert (das MySQL-Repository wuerde sie per FK ablehnen).
+    Das Double ist daher kein Vollersatz fuer FK-/CHECK-Semantik (-> DTB-21-Integration).
+    """
 
     def __init__(self) -> None:
         self._alarms: list[Alarm] = []

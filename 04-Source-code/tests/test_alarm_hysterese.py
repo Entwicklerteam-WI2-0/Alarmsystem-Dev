@@ -10,6 +10,8 @@ beendet KEINEN aktiven Alarm automatisch (Clearing manuell, FA-10).
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from src.alarm.hysterese import AlarmHysterese
 from src.config.loader import HystereseParameter
 from src.model.enums import AlarmSeverity, RiskLevel
@@ -320,6 +322,60 @@ def test_on_delay_null_feuert_auf_erster_alarmwuerdiger_beobachtung():
     ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0)
     assert ausloesung is not None
     assert ausloesung.severity is AlarmSeverity.WARNING
+
+
+@pytest.mark.parametrize(
+    "stufe,erwartet",
+    [(RiskLevel.ORANGE, AlarmSeverity.WARNING), (RiskLevel.RED, AlarmSeverity.CRITICAL)],
+)
+def test_keine_zweite_ausloesung_bei_gehaltener_gleicher_stufe(stufe, erwartet):
+    # Nach dem Erst-Alarm darf dieselbe gehaltene Stufe auch ueber on_delay hinaus keinen
+    # zweiten Alarm feuern (pinnt den Hold-Zweig gegen Mutation `>` -> `>=` in der Eskalation).
+    engine = _engine()
+    engine.beobachte(stufe, _T0)
+    erste = engine.beobachte(stufe, _T0 + timedelta(seconds=60))
+    assert erste is not None and erste.severity is erwartet
+    engine.beobachte(stufe, _T0 + timedelta(seconds=70))  # hold
+    # Dieselbe Stufe weit ueber on_delay hinaus -> KEIN zweiter Alarm.
+    assert engine.beobachte(stufe, _T0 + timedelta(seconds=200)) is None
+
+
+def test_hold_haelt_upgrade_kontinuitaet_ueber_max_gap():
+    # Gehaltene ORANGE-Bestaetigungen halten ein RED-Upgrade auch ueber eine Spanne
+    # > max_continuity_gap_s seit dem letzten RED am Leben (pinnt das Hold-letzte-Update).
+    engine = _engine()
+    _aktiver_warning(engine, _T0)
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))  # Upgrade-Pending
+    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=150))  # Hold -> letzte=150
+    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=185))  # Hold -> letzte=185
+    up = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=200))  # 200-70>=60, Gap 15<120
+    assert up is not None and up.severity is AlarmSeverity.CRITICAL
+
+
+def test_unknown_blackout_im_upgrade_erzwingt_frischen_on_delay():
+    engine = _engine()
+    _aktiver_warning(engine, _T0)
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))  # Upgrade-Pending
+    engine.beobachte(RiskLevel.UNKNOWN, _T0 + timedelta(seconds=130))
+    engine.beobachte(RiskLevel.UNKNOWN, _T0 + timedelta(seconds=250))  # Luecke > 120 s seit RED@70
+    # Erste RED nach langem Blackout: frischer On-Delay, noch kein Upgrade.
+    assert engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=260)) is None
+    up = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=320))
+    assert up is not None and up.severity is AlarmSeverity.CRITICAL
+
+
+def test_nicht_utc_zeit_wird_auf_utc_normalisiert():
+    # Contract §2a D: Zeitstempel sind UTC. Ein tz-aware-aber-Nicht-UTC `jetzt` (z. B.
+    # +05:00) wird intern auf UTC normalisiert -> ausgeloest_am traegt keinen Fremd-Offset.
+    from datetime import timezone
+
+    plus5 = timezone(timedelta(hours=5))
+    engine = _engine()
+    t0 = datetime(2026, 6, 26, 12, 0, 0, tzinfo=plus5)
+    engine.beobachte(RiskLevel.ORANGE, t0)
+    ausloesung = engine.beobachte(RiskLevel.ORANGE, t0 + timedelta(seconds=60))
+    assert ausloesung is not None
+    assert ausloesung.ausgeloest_am.utcoffset() == timedelta(0)
 
 
 def test_rang_deckt_alle_severities_ab():

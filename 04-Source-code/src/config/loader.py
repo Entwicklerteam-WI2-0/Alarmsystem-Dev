@@ -21,6 +21,12 @@ class ConfigError(Exception):
     """Konfiguration fehlt oder ist ungültig — bewusst lautes Scheitern statt stiller Defaults."""
 
 
+# Obergrenze für Hysterese-Zeitkonstanten (Sekunden). Ein absurd großer Wert würde sonst
+# entweder `timedelta` sprengen (OverflowError beim Engine-Bau) oder den Alarm faktisch nie
+# auslösen (stiller Under-Alarm). 24 h ist für jede Vereisungs-Entprellung mehr als genug.
+_MAX_ZEIT_S = 86_400.0
+
+
 @dataclass(frozen=True)
 class VereisungsSchwellen:
     t_s_gefrierpunkt_c: float
@@ -77,6 +83,17 @@ class HystereseParameter:
             if wert < 0:
                 raise ConfigError(
                     f"Hysterese-Parameter '{feld}' muss >= 0 sein, ist aber {wert!r}"
+                )
+        # Obergrenze nur für die Zeitkonstanten (Sekunden), nicht für die °C-Marge.
+        for feld, wert in (
+            ("on_delay_s", self.on_delay_s),
+            ("max_continuity_gap_s", self.max_continuity_gap_s),
+            ("downgrade_stable_s", self.downgrade_stable_s),
+        ):
+            if wert > _MAX_ZEIT_S:
+                raise ConfigError(
+                    f"Hysterese-Parameter '{feld}' muss <= {_MAX_ZEIT_S} s (24 h) sein, "
+                    f"ist aber {wert!r}"
                 )
         # Cross-Field: die Kontinuitäts-Lücke muss mindestens den On-Delay abdecken —
         # sonst bricht jeder Poll die Kontinuität, der On-Delay akkumuliert nie und es

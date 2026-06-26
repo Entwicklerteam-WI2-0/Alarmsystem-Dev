@@ -121,6 +121,27 @@ def test_nicht_endliche_vereisungs_schwelle_scheitert_laut(tmp_path, ungueltig):
         load_thresholds(datei)
 
 
+@pytest.mark.parametrize("feld", ["on_delay_s", "max_continuity_gap_s", "downgrade_stable_s"])
+def test_zu_grosse_zeitkonstante_scheitert_laut(feld):
+    # Ein absurd grosser Wert wuerde entweder timedelta sprengen (OverflowError beim
+    # Engine-Bau) oder den Alarm faktisch nie ausloesen (stiller Under-Alarm). Obergrenze
+    # 24 h -> laut ConfigError statt verschleppter Crash / stiller Deaktivierung.
+    from src.config.loader import HystereseParameter
+
+    werte = {
+        "on_delay_s": 60.0,
+        "max_continuity_gap_s": 120.0,
+        "downgrade_stable_s": 300.0,
+        "downgrade_undershoot_c": 0.5,
+    }
+    werte[feld] = 1e18
+    # max_gap muss >= on_delay bleiben, damit der Cross-Field-Check nicht zuerst greift.
+    if feld == "on_delay_s":
+        werte["max_continuity_gap_s"] = 1e18
+    with pytest.raises(ConfigError):
+        HystereseParameter(**werte)
+
+
 def test_hysterese_parameter_lehnt_nicht_endlich_bei_direktkonstruktion_ab():
     # Defense-in-Depth: auch bei direkter Konstruktion (nicht ueber den Loader) wird
     # NaN/inf abgewiesen -- __post_init__ schuetzt Aufrufer ausserhalb des Config-Pfads.

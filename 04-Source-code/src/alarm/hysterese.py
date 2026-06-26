@@ -17,7 +17,7 @@ nie ein stiller Auto-Clear.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from src.alarm.generation import severity_for_risk
 from src.config.loader import HystereseParameter
@@ -94,6 +94,9 @@ class AlarmHysterese:
             raise ValueError(
                 "jetzt muss zeitzonenbewusst (UTC) sein — naive datetime nicht erlaubt."
             )
+        # Auf UTC normalisieren (Contract §2a D): ein tz-aware-aber-Nicht-UTC `jetzt` würde
+        # sonst seinen Fremd-Offset in `ausgeloest_am` tragen. Die Differenz bleibt korrekt.
+        jetzt = jetzt.astimezone(UTC)
 
         severity = severity_for_risk(risk_level)
         sev_rang = _rang(severity)

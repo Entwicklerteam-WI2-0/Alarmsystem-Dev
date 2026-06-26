@@ -78,16 +78,19 @@ def test_inmemory_is_an_alarmrepository():
 
 def test_mysql_save_uses_parametrized_insert():
     tx, cursor = _mock_transaction()
-    with patch("src.storage.alarm_repository.transaction", return_value=tx):
+    with patch("src.storage.alarm_repository.transaction", return_value=tx) as mock_tx:
         new_id = MySqlAlarmRepository().save(_alarm(severity=AlarmSeverity.CRITICAL))
     assert new_id == 1
+    # commit-tragender Helper wirklich genutzt (nicht versehentlich get_connection ohne Commit)
+    mock_tx.assert_called_once_with(None)
     cursor.execute.assert_called_once()
     sql, params = cursor.execute.call_args[0]
     assert sql.strip().upper().startswith("INSERT INTO ALARM")
     # parametrisiert: Werte in params, NICHT im SQL-String (SQL-Injection-Schutz, V2)
-    assert "%s" in sql
+    assert sql.count("%s") == 4
     assert "critical" not in sql
-    assert "critical" in params  # severity-Enum als .value uebergeben (V5)
+    # exakte Spalte<->Wert-Zuordnung -- faengt einen severity/state-Swap oder Spalten-Reorder (V5)
+    assert params == (1, "critical", UTC_NOW, "active")
 
 
 def test_mysql_save_returns_lastrowid():
@@ -99,10 +102,11 @@ def test_mysql_save_returns_lastrowid():
 
 @pytest.mark.parametrize("startup_error", [DatabaseConnectionError, DatabaseConfigError])
 def test_mysql_save_wraps_startup_error_failsafe(startup_error):
-    with patch(
-        "src.storage.alarm_repository.transaction",
-        side_effect=startup_error("Startup-Fehler"),
-    ):
+    # Real wirft der Verbindungsaufbau erst beim __enter__ des transaction-Kontexts
+    # (get_connection) -> genau diesen Eintrittspunkt nachbilden, nicht den Aufruf.
+    tx, _cursor = _mock_transaction()
+    tx.__enter__.side_effect = startup_error("Startup-Fehler")
+    with patch("src.storage.alarm_repository.transaction", return_value=tx):
         with pytest.raises(RepositoryError):  # V4: nie roher Fehler, Alarm nicht still verloren
             MySqlAlarmRepository().save(_alarm())
 
@@ -110,10 +114,13 @@ def test_mysql_save_wraps_startup_error_failsafe(startup_error):
 def test_mysql_save_wraps_query_error_failsafe():
     # CHECK-/FK-Verletzung kommt als pymysql.Error aus cursor.execute (V9).
     tx, cursor = _mock_transaction()
-    cursor.execute.side_effect = pymysql.Error("CHECK/FK verletzt")
+    treiberfehler = pymysql.Error("CHECK/FK verletzt")
+    cursor.execute.side_effect = treiberfehler
     with patch("src.storage.alarm_repository.transaction", return_value=tx):
-        with pytest.raises(RepositoryError):
+        with pytest.raises(RepositoryError) as excinfo:
             MySqlAlarmRepository().save(_alarm())
+    # Ursache bleibt erhalten (raise ... from exc) -- wichtig fuer Fail-safe-Diagnose.
+    assert excinfo.value.__cause__ is treiberfehler
 
 
 @pytest.mark.parametrize("kein_id", [None, 0])
