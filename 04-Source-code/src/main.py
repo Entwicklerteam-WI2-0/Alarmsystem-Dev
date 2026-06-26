@@ -32,23 +32,21 @@ import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from src.api.exceptions import RuntimeNotReadyError
 from src.api.responses import NO_STORE_HEADERS, service_unavailable
-from src.api.v1 import ThresholdsUnavailableError
+from src.api.runtime import Runtime, get_runtime
 from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
-from src.config.loader import Thresholds, load_thresholds
+from src.config.loader import load_thresholds
 from src.ingest.poller import Poller
 from src.model.schemas import AssessmentCurrent, Error
 from src.storage import (
-    AssessmentRepository,
-    AuditRepository,
     MySqlAssessmentRepository,
     MySqlAuditRepository,
     ReadingRepository,
@@ -75,18 +73,6 @@ _DEFAULT_G1_BASE_URL = "http://g1-sensorik.local"
 _SENSOR_ID = "anr-rwy-01"
 
 
-@dataclass
-class Runtime:
-    """Zusammengebauter Dependency-Graph einer laufenden Instanz (DI)."""
-
-    thresholds: Thresholds
-    reading_repo: ReadingRepository
-    assessment_repo: AssessmentRepository
-    audit_repo: AuditRepository
-    poller: Poller
-    service: AssessmentService
-
-
 def build_runtime() -> Runtime:
     """Baut den DI-Graph (ohne DB/G1 zu kontaktieren — Repos verbinden erst pro Query)."""
     thresholds = load_thresholds()
@@ -108,36 +94,6 @@ def build_runtime() -> Runtime:
         poller=poller,
         service=service,
     )
-
-
-class RuntimeNotReadyError(RuntimeError):
-    """`app.state.runtime` fehlt — lifespan hat den DI-Graph (noch) nicht gesetzt.
-
-    Eigene Exception statt rohem AttributeError: faengt `build_runtime()` im lifespan
-    vor dem yield eine unbehandelte Exception (oder ist `runtime` aus anderem Grund
-    nicht gesetzt), wuerde ein direkter `app.state.runtime`-Zugriff als FastAPI-
-    Standard-500 mit `{detail}` durchschlagen und den Fehler-Contract brechen. Der
-    registrierte Exception-Handler bildet diese Exception contract-konform auf
-    503 `{code, message}` ab (NF-01: nie GRUEN, auch nicht bei Startup-Fehlern).
-    """
-
-
-def get_runtime(request: Request) -> Runtime:
-    """DI-Zugriff auf den in `lifespan` zusammengebauten Runtime-Graph.
-
-    Eigene Dependency (kein direkter `app.state`-Zugriff im Endpoint), damit Tests
-    sie via `app.dependency_overrides` durch In-Memory-Fakes ersetzen koennen —
-    ohne DB, Lifespan oder Scheduler.
-
-    Raises:
-        RuntimeNotReadyError: Wenn `app.state.runtime` fehlt (lifespan nicht oder nur
-            teilweise durchlaufen). Der Exception-Handler liefert daraufhin 503
-            (`Error {code, message}`) statt eines rohen 500/`{detail}`.
-    """
-    runtime = getattr(request.app.state, "runtime", None)
-    if runtime is None:
-        raise RuntimeNotReadyError("Runtime nicht initialisiert (lifespan unvollstaendig).")
-    return runtime
 
 
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
@@ -218,21 +174,6 @@ async def _runtime_not_ready_handler(_request: Request, exc: RuntimeNotReadyErro
     """Fehlt der Runtime-Graph, contract-konform als 503 melden (nie rohes 500/{detail})."""
     logger.error("Runtime nicht verfuegbar: %s", exc)
     return service_unavailable("G2 momentan nicht lieferfaehig.")
-
-
-@app.exception_handler(ThresholdsUnavailableError)
-async def _thresholds_unavailable_handler(
-    _request: Request, exc: ThresholdsUnavailableError
-) -> JSONResponse:
-    """Schwellenwert-Config nicht ladbar -> contract-konform als 503 (nie rohes {detail}).
-
-    Spiegelt `_runtime_not_ready_handler`: eine in der `get_thresholds`-Dependency
-    geworfene `ThresholdsUnavailableError` wird hier auf `Error {code, message}` + no-store
-    abgebildet. `exc` (ggf. mit internem Pfad) geht nur ins Server-Log, die Response bleibt
-    generisch (kein Leak, NF-01-Geist).
-    """
-    logger.error("Schwellenwerte nicht verfuegbar: %s", exc)
-    return service_unavailable("Schwellenwert-Konfiguration nicht verfuegbar.")
 
 
 @app.get("/v1/health")

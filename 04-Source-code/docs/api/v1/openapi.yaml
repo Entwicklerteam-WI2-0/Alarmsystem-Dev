@@ -135,14 +135,16 @@ paths:
                   min_pressure_hpa: 800.0
                   max_pressure_hpa: 1100.0
         "503":
-          description: Schwellenwert-Konfiguration nicht verfuegbar (Fehlkonfiguration).
+          description: >-
+            G2 (noch) nicht lieferfaehig — Runtime nicht bereit (z. B. Schwellen-Config
+            beim Start nicht ladbar). Generische Meldung, keine internen Details (Contract D).
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
               example:
                 code: SERVICE_UNAVAILABLE
-                message: "Schwellenwert-Konfiguration nicht verfuegbar."
+                message: "G2 momentan nicht lieferfaehig."
 
   /v1/assessment/current:
     get:

@@ -6,46 +6,31 @@ Alle Endpoints hier sind **rein lesend** (RB-01-neutral): kein Aktor, keine
 Runway-Steuerung.
 """
 
-import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
 
 from src.api.responses import NO_STORE_HEADERS
-from src.config.loader import ConfigError, Thresholds, load_thresholds
+from src.api.runtime import Runtime, get_runtime
+from src.config.loader import Thresholds
 from src.model.schemas import Error
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["v1"])
 
 
-class ThresholdsUnavailableError(RuntimeError):
-    """Schwellenwert-Config nicht ladbar -> fail-safe 503 (Contract `Error {code,message}`).
+def get_thresholds(runtime: Annotated[Runtime, Depends(get_runtime)]) -> Thresholds:
+    """Aktive Schwellenwerte = die zur Laufzeit geladenen (`runtime.thresholds`).
 
-    Eigene Exception statt `HTTPException(detail=...)`: ein per `detail` formatierter 503
-    wuerde `{"detail": ...}` liefern und damit die eingefrorene Naht brechen (Contract
-    verlangt `{code, message}`). Der in `main.py` registrierte Exception-Handler bildet
-    diese Exception contract-konform auf 503 ab — analog zu `RuntimeNotReadyError`. So
-    bleibt `get_thresholds` eine ueberschreibbare Dependency (Testbarkeit) UND der
-    Fehler-Contract gewahrt. Die Exception-Nachricht (ggf. mit internem Pfad) landet nur
-    im Server-Log, nie im Response (kein Leak).
+    Bewusst KEIN Disk-Read pro Request: der Endpoint spiegelt exakt die Schwellen, die
+    die Bewertungslogik gerade verwendet (eine Quelle der Wahrheit, Konsistenz mit
+    assessment/current) — statt einer Datei, die von der laufenden Bewertung abweichen
+    koennte. Geladen wird genau einmal beim Start (`build_runtime` -> `load_thresholds`);
+    eine geaenderte Config greift nach einem kontrollierten Neustart/Reload (NF-07).
+    Eigene Dependency, damit Tests sie via `app.dependency_overrides` ersetzen koennen
+    und der Endpoint nie hardcodiert. Bei nicht bereitem Runtime (z. B. Config beim Start
+    nicht ladbar) meldet `get_runtime` fail-safe `RuntimeNotReadyError` -> 503.
     """
-
-
-def get_thresholds() -> Thresholds:
-    """Laedt die aktuellen Schwellenwerte (DTB-15).
-
-    Als eigene Dependency ausgelegt, damit Tests sie ueberschreiben koennen und der
-    Endpoint die Werte nie hardcodiert. Bei Fehlkonfiguration wird fail-safe ein `503`
-    gemeldet (ueber `ThresholdsUnavailableError` -> Handler in main.py) — ohne interne
-    Pfade/Details zu leaken (NF-01-Geist).
-    """
-    try:
-        return load_thresholds()
-    except (ConfigError, OSError) as exc:
-        logger.error("Schwellenwert-Config nicht ladbar: %s", exc)
-        raise ThresholdsUnavailableError(str(exc)) from exc
+    return runtime.thresholds
 
 
 @router.get(
@@ -55,7 +40,7 @@ def get_thresholds() -> Thresholds:
     responses={
         503: {
             "model": Error,
-            "description": "Schwellenwert-Konfiguration nicht verfuegbar (Fehlkonfiguration).",
+            "description": "G2 (noch) nicht lieferfaehig (Runtime nicht bereit).",
         }
     },
 )
@@ -65,13 +50,13 @@ def read_thresholds(
 ) -> Thresholds:
     """Liefert die aktuell konfigurierten Schwellenwerte (NF-05) fuer G3.
 
-    Rein lesend (RB-01-neutral). Werte kommen ausschliesslich aus dem Loader (DTB-15);
-    Aendern erfolgt spaeter ueber einen separaten, Auth-geschuetzten Endpoint (NF-07).
+    Rein lesend (RB-01-neutral). Werte kommen aus dem zur Laufzeit geladenen
+    Runtime-Graph (DTB-15); Aendern erfolgt spaeter ueber einen separaten,
+    Auth-geschuetzten Endpoint (NF-07).
 
     `Cache-Control: no-store`: Schwellen sind die Kalibrierung eines Fail-safe-Systems.
     Ein Proxy/Browser, der ueberholte Schwellen ausliefert, wuerde G3 einen falschen
-    Betriebspunkt anzeigen (NF-01-Geist). Eine Quelle/Konvention mit `assessment/current`
-    (kurzlebiger `max-age` waere ebenfalls vertretbar, da Schwellen sich selten aendern).
+    Betriebspunkt anzeigen (NF-01-Geist). Eine Konvention mit `assessment/current`.
     """
     response.headers.update(NO_STORE_HEADERS)
     return thresholds
