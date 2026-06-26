@@ -64,6 +64,9 @@ class AlarmGenerator:
 
         # Audit alarm_raised (FA-12/NF-09). Alarm ist bereits persistiert + Engine aktiv;
         # ein Audit-Fehler wird gemeldet, kehrt den Alarm aber NICHT zurück (kein Re-Arm).
+        # Hinweis (kein Bug): `severity` ist der PHASEN-PEAK (Safety-Bias, `pending_max`),
+        # `risk_level`/`assessment_id` die AUSLÖSENDE Beobachtung — sie können legitim
+        # divergieren (ROT-Blip im On-Delay-Fenster, danach ORANGE-Auslösung -> critical@orange).
         self._audit_repo.append(
             AuditLogEntry(
                 ts=ausloesung.ausgeloest_am,

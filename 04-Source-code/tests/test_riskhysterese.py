@@ -101,6 +101,26 @@ def test_delta_t_deadband_rot_haelt_dann_orange():
     assert _bewerte(engine, -1.0, -1.6, _T0 + timedelta(seconds=340)) is RiskLevel.ORANGE
 
 
+def test_mehrstufiger_abstieg_landet_auf_konservativer_stufe():
+    # Mehrstufiger Abstieg darf die Anzeige nicht eine Stufe zu sicher springen lassen:
+    # current ROT, Messung T_s=0.3/T_d=-1.0 -> roh GELB, aber gegen das verschobene Set
+    # (gefrierpunkt 0.5, feucht 1.5) noch ORANGE. Nach Stabilitaet -> ORANGE (nicht GELB),
+    # weil die konservative Lesung erst eine Stufe tiefer erlaubt (NF-01-Geist).
+    engine = _engine()
+    _bewerte(engine, -1.0, -1.0, _T0)  # ROT
+    _bewerte(engine, 0.3, -1.0, _T0 + timedelta(seconds=10))  # Deadband frei -> Timer
+    assert _bewerte(engine, 0.3, -1.0, _T0 + timedelta(seconds=310)) is RiskLevel.ORANGE
+
+
+def test_dauerhaft_im_deadband_haelt_ueber_stabilitaetsdauer():
+    # T_s=1.3 liegt dauerhaft im Deadband (roh GRÜN, streng == current GELB). Auch ueber
+    # downgrade_stable_s hinaus muss GELB gehalten werden (pinnt `streng >= current`).
+    engine = _engine()
+    _bewerte(engine, 0.5, -5.0, _T0)  # GELB
+    _bewerte(engine, 1.3, -5.0, _T0 + timedelta(seconds=10))
+    assert _bewerte(engine, 1.3, -5.0, _T0 + timedelta(seconds=400)) is RiskLevel.YELLOW
+
+
 def test_naive_datetime_wird_abgewiesen():
     engine = _engine()
     with pytest.raises(ValueError):

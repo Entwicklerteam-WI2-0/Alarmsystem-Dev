@@ -93,7 +93,11 @@ class RiskHysterese:
             self._downgrade_seit = jetzt
             return self._current
         if jetzt - self._downgrade_seit >= self._downgrade_stable:
-            self._current = roh
+            # Auf die KONSERVATIVE (verschobene) Stufe absteigen, nicht auf `roh`. Bei einem
+            # Mehrstufen-Abstieg liegt `streng` zwischen `roh` und `current`; so springt die
+            # Anzeige nie unter die eigene Sicherheitsmarge — die nächste Stufe wird erst
+            # übernommen, wenn auch das verschobene Set sie freigibt (jeder Deadband zählt).
+            self._current = streng
             self._downgrade_seit = None
             return self._current
         return self._current
