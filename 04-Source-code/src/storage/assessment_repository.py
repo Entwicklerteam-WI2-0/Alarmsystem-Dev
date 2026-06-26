@@ -52,6 +52,12 @@ class AssessmentRepository(ABC):
 
         Wird fuer GET /v1/assessment/current (DTB-43) verwendet.
 
+        Scope-Hinweis (Single-Sensor): liefert das GLOBAL neueste Assessment,
+        nicht pro Sensor. Im aktuellen Single-Sensor-Betrieb (anr-rwy-01) korrekt.
+        Bei der DTB-43-Haertung auf Multi-Sensor MUSS nach sensor_id/reading_id
+        gefiltert werden, sonst kann ein Assessment von Sensor B mit dem Reading
+        von Sensor A gepaart und ein inkonsistenter Snapshot ausgeliefert werden.
+
         Raises:
             RepositoryError: Bei Datenbankfehlern.
         """
@@ -104,6 +110,8 @@ class MySqlAssessmentRepository(AssessmentRepository):
         )
     """
 
+    # Scope: global neuestes Assessment (nicht pro Sensor) — Single-Sensor-OK.
+    # DTB-43-Haertung fuer Multi-Sensor: WHERE sensor_id/reading_id ergaenzen.
     _LATEST_SQL = """
         SELECT
             id, ts, reading_id, threshold_set_id, risk_level,

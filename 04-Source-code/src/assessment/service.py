@@ -103,6 +103,11 @@ class AssessmentService:
                 ts=now,
                 reading_id=reading.id,
                 risk_level=risk,
+                # threshold_set_id bleibt bewusst None: der aktuelle Loader (DTB-15)
+                # traegt keine Schwellensatz-Referenz (nur Sektionen), der geltende
+                # Satz ist strukturell noch nicht belegbar. Die DB-Spalte (FK auf
+                # threshold_set) + INSERT/SELECT sind vorbereitet; die audit-feste
+                # Traceability bei Schwellen-Aenderungen (NF-05) zieht DTB-65 nach.
                 # driving_factor/explanation: optionale Klartext-Felder; reichern
                 # DTB-27 (Alarm-Begruendung) bzw. ein Folge-Task an. TODO DTB-64+.
                 surface_temp_c=reading.surface_temp_c,
