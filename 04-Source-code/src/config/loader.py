@@ -47,15 +47,18 @@ class HystereseParameter:
     Poll-Intervall (G1 ≤ 30 s; NICHT erzwingbar, da der Loader die Poll-Kadenz nicht kennt)
     — sonst bricht jeder Poll die Kontinuität und es feuert nie ein Alarm.
     Die Rückstufung (`downgrade_undershoot_c` um 0,5 °C unterschritten UND
-    `downgrade_stable_s` stabil) ist **geplant** (DTB-27-Folgeschritt) und braucht eine
-    Temperatur-Kopplung in der Bewertungsschicht; beide Felder sind dafür reserviert und
-    werden von der aktuellen Engine noch NICHT ausgewertet. KEIN Auto-Clear (RB-01).
+    `downgrade_stable_s` stabil) gehört NICHT zum Alarm-On-Delay: sie ist eine
+    temperaturgekoppelte **Anzeige-Hysterese** (Stabilisierung der gemeldeten Risikostufe
+    für die Ampel, Konsument DTB-43) und in ein eigenes Folge-Ticket ausgelagert. Beide
+    Felder sind dafür reserviert und werden von der Alarm-Engine NICHT ausgewertet; sie
+    ziehen mit dem Anzeige-Hysterese-Ticket in dessen eigene Config-Sektion um. KEIN
+    Auto-Clear (RB-01).
     """
 
     on_delay_s: float
     max_continuity_gap_s: float
-    downgrade_stable_s: float  # reserviert: Rückstufungs-Stabilität (noch nicht ausgewertet)
-    downgrade_undershoot_c: float  # reserviert: Rückstufungs-Marge (noch nicht ausgewertet)
+    downgrade_stable_s: float  # reserviert: Anzeige-Rückstufung (DTB-43-Folge), hier ungenutzt
+    downgrade_undershoot_c: float  # reserviert: Anzeige-Rückstufung (DTB-43-Folge), hier ungenutzt
 
     def __post_init__(self) -> None:
         # Ungültige Werte würden den Debounce aushebeln (Sicherheitsparameter still
@@ -139,6 +142,12 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
     fehlend = erwartet - daten.keys()
     if fehlend:
         raise ConfigError(f"Abschnitt '{name}': fehlende Pflicht-Schlüssel {sorted(fehlend)}")
+    # Unbekannte/vertippte Schlüssel laut ablehnen (NF-05: eine Safety-Config darf einen
+    # vertippten Key nicht still verwerfen -> Operator glaubt sonst, eine Schwelle geändert
+    # zu haben, der Default bleibt aktiv). Spiegelt extra='forbid' der Pydantic-Modelle.
+    unerwartet = daten.keys() - erwartet
+    if unerwartet:
+        raise ConfigError(f"Abschnitt '{name}': unbekannte Schlüssel {sorted(unerwartet)}")
     werte = {feld: daten[feld] for feld in erwartet}
     for feld, wert in werte.items():
         # bool ist in Python ein int-Subtyp, soll aber keine gültige Schwelle sein.
@@ -146,5 +155,12 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
             raise ConfigError(
                 f"Abschnitt '{name}', Schlüssel '{feld}': Schwellwert muss eine Zahl sein, "
                 f"ist aber {type(wert).__name__} ({wert!r})"
+            )
+        # NaN/inf unterlaufen jeden Vergleich (NaN < x ist immer False -> fail-open in der
+        # Bewertung) -> für ALLE Schwellen-Sektionen ablehnen, nicht nur Hysterese.
+        if not math.isfinite(wert):
+            raise ConfigError(
+                f"Abschnitt '{name}', Schlüssel '{feld}': Schwellwert muss endlich sein, "
+                f"ist aber {wert!r}"
             )
     return cls(**werte)

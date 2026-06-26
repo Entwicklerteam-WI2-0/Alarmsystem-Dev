@@ -100,8 +100,9 @@ class MySqlAlarmRepository(AlarmRepository):
             # fail-safe reagieren kann (NF-01) statt mit rohem Treiberfehler zu crashen.
             # Ein Speicher-Fehler darf den Alarm nicht still verschlucken.
             raise RepositoryError("Alarm konnte nicht gespeichert werden") from exc
-        if row_id is None:
-            # Kein AUTO_INCREMENT-Wert -> Alarm-ID unbekannt. Fail-safe als Domaenenfehler
-            # statt TypeError aus int(None).
-            raise RepositoryError("Alarm wurde ohne vergebene ID gespeichert")
+        if not row_id:
+            # Keine gueltige AUTO_INCREMENT-ID: None ODER 0 (AUTO_INCREMENT beginnt bei 1,
+            # eine 0 signalisiert einen anomalen Schreibpfad). Fail-safe als Domaenenfehler
+            # statt eine ungueltige ID als Erfolg zurueckzugeben.
+            raise RepositoryError("Alarm wurde ohne gueltige ID gespeichert")
         return int(row_id)

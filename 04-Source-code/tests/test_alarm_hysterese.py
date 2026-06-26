@@ -198,6 +198,7 @@ def test_oszillation_orange_unknown_loest_trotzdem_aus():
     engine.beobachte(RiskLevel.UNKNOWN, _T0 + timedelta(seconds=55))
     ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=65))
     assert ausloesung is not None
+    assert ausloesung.severity is AlarmSeverity.WARNING
 
 
 def test_unknown_allein_loest_keinen_alarm_aus():
@@ -304,6 +305,21 @@ def test_luecke_genau_max_gap_haelt_kontinuitaet():
     engine.beobachte(RiskLevel.UNKNOWN, _T0 + timedelta(seconds=60))
     ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=120))
     assert ausloesung is not None  # Luecke 120 nicht > 120, und 120 s >= on_delay 60
+
+
+def test_on_delay_null_feuert_auf_erster_alarmwuerdiger_beobachtung():
+    # on_delay_s=0 ist als degenerierter Betriebspunkt erlaubt (kein Debounce) ->
+    # die erste alarmwuerdige Beobachtung muss sofort feuern (jetzt - pending = 0 >= 0).
+    params = HystereseParameter(
+        on_delay_s=0.0,
+        max_continuity_gap_s=120.0,
+        downgrade_stable_s=300.0,
+        downgrade_undershoot_c=0.5,
+    )
+    engine = AlarmHysterese(params)
+    ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0)
+    assert ausloesung is not None
+    assert ausloesung.severity is AlarmSeverity.WARNING
 
 
 def test_rang_deckt_alle_severities_ab():

@@ -95,6 +95,46 @@ def test_max_continuity_gap_gleich_on_delay_ist_erlaubt(tmp_path):
     assert thresholds.hysterese.max_continuity_gap_s == 60.0
 
 
+def test_unbekannter_schluessel_in_sektion_scheitert_laut(tmp_path):
+    # NF-05: eine Safety-Config darf einen vertippten Key (z. B. 'off_delay_s' statt
+    # 'on_delay_s') nicht still verwerfen -> der Operator glaubt sonst, eine Schwelle
+    # geaendert zu haben, der Default bleibt aber aktiv. Spiegelt extra='forbid'.
+    daten = _minimal_config()
+    daten["hysterese"]["off_delay_s"] = 30.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+@pytest.mark.parametrize("ungueltig", [float("nan"), float("inf")])
+def test_nicht_endliche_vereisungs_schwelle_scheitert_laut(tmp_path, ungueltig):
+    # NaN/inf in einer Vereisungs-Schwelle wuerde in der Bewertung (DTB-38) alle
+    # Vergleiche unterlaufen (NaN < x ist immer False -> fail-open). Muss laut scheitern.
+    daten = _minimal_config()
+    daten["vereisung"]["t_s_gefrierpunkt_c"] = ungueltig
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_hysterese_parameter_lehnt_nicht_endlich_bei_direktkonstruktion_ab():
+    # Defense-in-Depth: auch bei direkter Konstruktion (nicht ueber den Loader) wird
+    # NaN/inf abgewiesen -- __post_init__ schuetzt Aufrufer ausserhalb des Config-Pfads.
+    from src.config.loader import HystereseParameter
+
+    with pytest.raises(ConfigError):
+        HystereseParameter(
+            on_delay_s=float("nan"),
+            max_continuity_gap_s=120.0,
+            downgrade_stable_s=300.0,
+            downgrade_undershoot_c=0.5,
+        )
+
+
 def test_on_delay_null_ist_erlaubt(tmp_path):
     # On-Delay 0 = bewusst kein Debounce (degeneriert, aber gueltig) -> kein Fehler.
     daten = _minimal_config()

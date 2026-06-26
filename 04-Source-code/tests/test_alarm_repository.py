@@ -116,12 +116,23 @@ def test_mysql_save_wraps_query_error_failsafe():
             MySqlAlarmRepository().save(_alarm())
 
 
-def test_mysql_save_missing_lastrowid_failsafe():
+@pytest.mark.parametrize("kein_id", [None, 0])
+def test_mysql_save_missing_or_zero_lastrowid_failsafe(kein_id):
+    # V6: keine gueltige AUTO_INCREMENT-ID (None ODER 0 -- AUTO_INCREMENT beginnt bei 1)
+    # -> RepositoryError statt eine anomale ID 0 als "Erfolg" zurueckzugeben.
     tx, cursor = _mock_transaction()
-    cursor.lastrowid = None
+    cursor.lastrowid = kein_id
     with patch("src.storage.alarm_repository.transaction", return_value=tx):
-        with pytest.raises(RepositoryError):  # V6: kein int(None)
+        with pytest.raises(RepositoryError):
             MySqlAlarmRepository().save(_alarm())
+
+
+def test_alarmrepository_has_no_mutation_path_rb01():
+    # V3/V11 (RB-01): Das Interface ist save-only -- kein update/delete/clear/acknowledge
+    # (kein Aktor, kein Auto-Zustandswechsel). Strukturell erzwungen.
+    for verboten in ("update", "delete", "clear", "acknowledge", "remove"):
+        assert not hasattr(AlarmRepository, verboten)
+    assert AlarmRepository.__abstractmethods__ == frozenset({"save"})
 
 
 # --- V7 wird am Modell-Rand erzwungen (Alarm-Konstruktion), nicht im Repo ---
