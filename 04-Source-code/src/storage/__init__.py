@@ -15,10 +15,16 @@ from src.storage.audit_repository import (
     MySqlAuditRepository,
 )
 from src.storage.database import get_connection
-from src.storage.repository import ReadingRepository, Repository, RepositoryError
+from src.storage.repository import (
+    InMemoryReadingRepository,
+    ReadingRepository,
+    Repository,
+    RepositoryError,
+)
 
 __all__ = [
     "get_connection",
+    "InMemoryReadingRepository",
     "ReadingRepository",
     "Repository",
     "RepositoryError",
