@@ -104,10 +104,11 @@ class AlarmGenerator:
                     detail={"severity": ausloesung.severity.value, "risk_level": risk_level.value},
                 )
             )
-        except RepositoryError as exc:
-            # Alarm ist bereits persistiert + Engine aktiv -> KEIN Re-Arm. Als AuditError
-            # signalisieren (mit alarm_id), damit die Orchestrierung den Zustand kennt:
-            # Alarm live, nicht erneut beenden().
+        except Exception as exc:  # noqa: BLE001 - JEDER Audit-Fehler -> AuditError (Contract)
+            # Alarm ist bereits persistiert + Engine aktiv -> KEIN Re-Arm. JEDE Audit-Exception
+            # (nicht nur RepositoryError; auch ein unerwarteter RuntimeError/TypeError) als
+            # AuditError mit alarm_id signalisieren — sonst bricht der AuditError-Vertrag und der
+            # Scheduler verliert im generischen except-Zweig die alarm_id.
             raise AuditError(
                 "Alarm gespeichert, aber Audit-Eintrag fehlgeschlagen", alarm_id=alarm_id
             ) from exc

@@ -118,3 +118,21 @@ def test_audit_fehler_als_auditerror_mit_id_ohne_rearm():
     gen2 = AlarmGenerator(engine, alarm_repo, InMemoryAuditRepository())
     assert gen2.verarbeite(RiskLevel.ORANGE, 1, _T0 + timedelta(seconds=110)) is None
     assert gen2.verarbeite(RiskLevel.ORANGE, 1, _T0 + timedelta(seconds=180)) is None
+
+
+def test_unerwarteter_audit_fehler_wird_auditerror():
+    # Auch ein NICHT-RepositoryError aus dem Audit-Repo muss als AuditError (mit alarm_id)
+    # aufschlagen -> sonst bricht der AuditError-Vertrag und der Scheduler verliert die alarm_id.
+    class _BuggyAuditRepo(AuditRepository):
+        def append(self, entry: AuditLogEntry) -> int:
+            raise RuntimeError("unerwarteter Bug im Audit-Repo")
+
+    engine = _engine()
+    alarm_repo = InMemoryAlarmRepository()
+    gen = AlarmGenerator(engine, alarm_repo, _BuggyAuditRepo())
+    gen.verarbeite(RiskLevel.ORANGE, 1, _T0)  # Pending
+    with pytest.raises(AuditError) as excinfo:
+        gen.verarbeite(RiskLevel.ORANGE, 1, _T0 + timedelta(seconds=60))  # feuert; audit buggy
+
+    assert excinfo.value.alarm_id == 1
+    assert len(alarm_repo.all()) == 1  # Alarm trotz unerwartetem Audit-Fehler persistiert
