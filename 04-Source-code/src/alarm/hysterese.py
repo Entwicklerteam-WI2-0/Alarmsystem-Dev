@@ -45,9 +45,12 @@ class AlarmHysterese:
     """Entprellt die Alarm-Generierung per On-Delay (DTB-27).
 
     Ein Alarm wird erst ausgelöst, wenn eine alarmwürdige Stufe (ORANGE/ROT)
-    mindestens `on_delay_s` Sekunden ununterbrochen anliegt. Fällt die Bedingung
-    vorher weg, startet der Timer neu. Solange ein Alarm aktiv ist, löst die Engine
-    keinen weiteren aus (RB-01: kein Auto-Clear; Beenden ist manuell, FA-10).
+    mindestens `on_delay_s` Sekunden anliegt — gemessen ab der ersten Bestätigung und
+    lücken-tolerant bis `max_continuity_gap_s` (Details siehe `beobachte`). Fällt die
+    Bedingung bestätigt weg (GRÜN/GELB), startet der Timer neu. Solange ein Alarm aktiv
+    ist, löst die Engine keinen weiteren *gleicher oder niedrigerer* Stufe aus; eine
+    Hochstufung (warning -> critical) ist möglich. Kein Auto-Clear/-Downgrade — der aktive
+    Alarm wird nur manuell über `quittiert()` beendet (RB-01, FA-10).
     """
 
     def __init__(self, params: HystereseParameter) -> None:

@@ -43,6 +43,9 @@ class HystereseParameter:
     Engine umgesetzt. `max_continuity_gap_s` begrenzt, wie lange eine Unsicherheits-
     /Stale-Phase (UNKNOWN) die laufende Eskalation einfrieren darf, ohne die Kontinuität
     zu brechen (Default = Stale-Timeout 120 s); danach ist ein frischer On-Delay nötig.
+    Invariante: `max_continuity_gap_s >= on_delay_s` (erzwungen) UND `>=` dem realen
+    Poll-Intervall (G1 ≤ 30 s; NICHT erzwingbar, da der Loader die Poll-Kadenz nicht kennt)
+    — sonst bricht jeder Poll die Kontinuität und es feuert nie ein Alarm.
     Die Rückstufung (`downgrade_undershoot_c` um 0,5 °C unterschritten UND
     `downgrade_stable_s` stabil) ist **geplant** (DTB-27-Folgeschritt) und braucht eine
     Temperatur-Kopplung in der Bewertungsschicht; beide Felder sind dafür reserviert und
