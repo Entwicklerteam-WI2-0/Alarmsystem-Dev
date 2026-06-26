@@ -194,6 +194,16 @@ class Thresholds:
                 f"({self.betrieb.poll_interval_s!r}) > hysterese.max_continuity_gap_s "
                 f"({self.hysterese.max_continuity_gap_s!r}) -> Alarm-Kontinuität bricht je Poll"
             )
+        # Cross-Section (NF-01): eine einzelne Stale-Phase (Dauer bis stale_timeout_s) darf die
+        # Alarm-Kontinuität NICHT brechen -> max_continuity_gap_s muss sie abdecken. Sonst setzt
+        # ein stale-flackernder Sensor während realer Vereisung den On-Delay perpetuell zurück
+        # (stiller Under-Alarm), während die Anzeige UNKNOWN bleibt.
+        if self.hysterese.max_continuity_gap_s < self.datenqualitaet.stale_timeout_s:
+            raise ConfigError(
+                "Config-Inkonsistenz: hysterese.max_continuity_gap_s "
+                f"({self.hysterese.max_continuity_gap_s!r}) < datenqualitaet.stale_timeout_s "
+                f"({self.datenqualitaet.stale_timeout_s!r}) -> Stale-Phase bricht Alarm-Kontinuität"
+            )
 
 
 # Pflicht-Abschnitte der Config und ihr jeweiliger Zieltyp.

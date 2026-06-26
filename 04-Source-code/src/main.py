@@ -120,7 +120,13 @@ def run_assessment_cycle(
     Schleife des Schedulers (NF-01: ein Zyklus-Fehler beendet den Betrieb nicht).
     """
     assessment = service.assess_reading(reading, now)
-    # assessment.id ist nach erfolgreicher Persistenz gesetzt (assess_reading-Invariante).
+    if assessment.id is None:  # pragma: no cover - defensiver Invarianten-Guard
+        # assess_reading garantiert eine persistierte id; fehlt sie, ist die Invariante
+        # verletzt -> laut scheitern (kein assert, -O-fest), statt stumm einen Alarm ohne
+        # Assessment-Bezug zu erzeugen. Der Scheduler protokolliert das als Bug (CRITICAL).
+        raise ValueError(
+            "assessment.id ist None trotz Persistenz (assess_reading-Invariante verletzt)"
+        )
     alarm_generator.verarbeite(assessment.risk_level, assessment.id, now)
 
 
@@ -132,12 +138,19 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
     derweil veraltete Daten ab (nie GRUEN).
     """
     logger.info("DTB-64: Scheduler gestartet (Intervall %.0fs).", interval_s)
+    last_now: datetime | None = None
     while True:
         try:
             # poller.poll() ist blockierend (httpx.get) -> in einen Thread auslagern,
             # damit der Event-Loop frei bleibt.
             reading = await asyncio.to_thread(runtime.poller.poll)
             now = datetime.now(UTC)
+            # Monotonie erzwingen (Hysterese-Vorbedingung): eine NTP-Rueckwaertskorrektur der
+            # Wall-Clock darf die On-Delay-Akkumulation nicht zuruecksetzen (sonst einmaliger
+            # Under-Alarm). Nicht-fallende Zeit an die Engines weiterreichen.
+            if last_now is not None and now < last_now:
+                now = last_now
+            last_now = now
             await asyncio.to_thread(
                 run_assessment_cycle,
                 runtime.service,

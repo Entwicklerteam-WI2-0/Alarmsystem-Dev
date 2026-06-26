@@ -79,6 +79,10 @@ class AlarmGenerator:
         except RepositoryError:
             # NF-01-Recovery: Persistenz fehlgeschlagen -> Engine neu armen, sonst feuert die
             # fortbestehende Bedingung nie erneut (stiller Under-Alarm).
+            # Bewusste Over-Alarm-Abwaegung (K1): War bereits ein schwaecherer Alarm aktiv und
+            # scheitert die Persistenz eines Upgrades, vergisst der Re-Arm den noch in der DB
+            # lebenden Alarm -> bei anhaltender Lage kann ein zweiter (schwaecherer) Alarm
+            # entstehen. Richtung Over-Alarm (sicher); Dedup aktiver Alarme im Lesepfad = DTB-31.
             self._engine.beenden()
             raise
 

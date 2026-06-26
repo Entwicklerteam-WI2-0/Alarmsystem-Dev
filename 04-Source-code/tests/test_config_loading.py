@@ -99,6 +99,8 @@ def test_max_continuity_gap_gleich_on_delay_ist_erlaubt(tmp_path):
     daten = _minimal_config()
     daten["hysterese"]["on_delay_s"] = 60.0
     daten["hysterese"]["max_continuity_gap_s"] = 60.0
+    # stale_timeout an die kleinere Gap angleichen (Cross-Check: max_gap >= stale_timeout).
+    daten["datenqualitaet"]["stale_timeout_s"] = 60.0
     datei = tmp_path / "thresholds.json"
     datei.write_text(json.dumps(daten), encoding="utf-8")
 
@@ -231,6 +233,20 @@ def test_poll_interval_groesser_als_max_gap_scheitert_laut(tmp_path):
     # Alarm (stiller Under-Alarm). Erst mit poll_interval_s in der Config erzwingbar.
     daten = _minimal_config()
     daten["betrieb"]["poll_interval_s"] = daten["hysterese"]["max_continuity_gap_s"] + 1.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_max_gap_kleiner_als_stale_timeout_scheitert_laut(tmp_path):
+    # Cross-Section (NF-01): eine einzelne Stale-Phase (bis stale_timeout_s) darf die
+    # Alarm-Kontinuität nicht brechen -> max_continuity_gap_s muss sie abdecken. Sonst setzt
+    # ein stale-flackernder Sensor während realer Vereisung den On-Delay perpetuell zurück.
+    daten = _minimal_config()
+    # max_gap < stale_timeout, aber >= on_delay (sonst greift der andere Check zuerst).
+    daten["hysterese"]["max_continuity_gap_s"] = daten["datenqualitaet"]["stale_timeout_s"] - 1
     datei = tmp_path / "thresholds.json"
     datei.write_text(json.dumps(daten), encoding="utf-8")
 
