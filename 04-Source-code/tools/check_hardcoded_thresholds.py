@@ -87,6 +87,12 @@ _VERGLEICHS_FUNKTIONEN = frozenset(
     {("operator", name) for name in ("gt", "ge", "lt", "le", "eq", "ne")} | {("math", "isclose")}
 )
 
+# Nicht-fachliche Operanden, die niemals Vereisungsschwellen darstellen
+# (technische Guards: Timeout, Limit, Alter). Der linke Operand eines
+# Compare-Knotens wird hier geprüft; rechte Literale bei vertauschten
+# Vergleichen (`0 < timeout_s`) bleiben weiterhin sichtbar.
+_TECHNIKE_GUARD_OPERANDEN = frozenset({"timeout_s", "limit", "age"})
+
 
 @dataclass(frozen=True)
 class Verstoss:
@@ -187,6 +193,8 @@ def _noqa_zeilen(quelltext: str, dateiname: str) -> set[int]:
 def _ist_schwellen_treffer(knoten: ast.AST) -> bool:
     """True, wenn der Knoten ein Vergleich gegen ein Zahl-Literal ist (direkt oder indirekt)."""
     if isinstance(knoten, ast.Compare):
+        if isinstance(knoten.left, ast.Name) and knoten.left.id in _TECHNIKE_GUARD_OPERANDEN:
+            return False
         return any(_ist_zahl_literal(op) for op in [knoten.left, *knoten.comparators])
     return _ist_vergleichs_call(knoten)
 

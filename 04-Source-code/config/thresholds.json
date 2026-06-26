@@ -10,5 +10,21 @@
   },
   "prognose": {
     "t_s_grenz_c": 0.0
+  },
+  "datenqualitaet": {
+    "stale_timeout_s": 120,
+    "max_temp_jump_c_per_min": 5.0,
+    "flatline_timeout_min": 15.0,
+    "flatline_epsilon_c": 0.01,
+    "max_clock_skew_s": 5.0,
+    "min_plausible_dew_point_c": -50.0
+  },
+  "plausibilitaet": {
+    "min_temp_c": -50.0,
+    "max_temp_c": 50.0,
+    "min_humidity_pct": 0.0,
+    "max_humidity_pct": 100.0,
+    "min_pressure_hpa": 800.0,
+    "max_pressure_hpa": 1100.0
   }
 }
