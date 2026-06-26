@@ -89,6 +89,45 @@ paths:
                 code: SERVICE_UNAVAILABLE
                 message: "G2 noch nicht bereit."
 
+  /v1/thresholds:
+    get:
+      tags: [Thresholds]
+      operationId: getThresholds
+      summary: Aktuelle Schwellenwerte lesen (DTB-62)
+      description: |
+        Liefert die aktuell konfigurierten Vereisungs-Schwellenwerte (aus
+        `config/thresholds.json` via Loader DTB-15) fuer das G3-Schwellenwert-Menue.
+        Werte sind parametrierbar (NF-05); aktuell DUMMY (G1-Finalwerte folgen).
+
+        **RB-01-neutral:** rein lesend, kein Aktor. **Aendern** der Schwellen erfolgt
+        spaeter ueber einen separaten, Auth-geschuetzten Endpoint (NF-07).
+
+        > Nach dem v1.0-Freeze ergaenzt (DTB-62) — Naht-Review durch Architekt.
+      responses:
+        "200":
+          description: Aktuelle Schwellenwerte.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Thresholds"
+              example:
+                vereisung:
+                  t_s_gefrierpunkt_c: 0.0
+                  t_s_gelb_auffang_c: 1.0
+                  delta_t_kondensation_k: 0.0
+                  delta_t_feucht_k: 1.0
+                prognose:
+                  t_s_grenz_c: 0.0
+        "503":
+          description: Schwellenwert-Konfiguration nicht verfuegbar (Fehlkonfiguration).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: SERVICE_UNAVAILABLE
+                message: "Schwellenwert-Konfiguration nicht verfuegbar"
+
   /v1/assessment/current:
     get:
       tags: [Assessment]
@@ -453,6 +492,40 @@ components:
           type: string
           enum: [ok]
           example: ok
+
+    # --- Schwellenwerte (G2 -> G3), DTB-62 ---
+    Thresholds:
+      type: object
+      description: |
+        Aktuell konfigurierte Vereisungs-Schwellenwerte (Spiegel von
+        config/thresholds.json via Loader DTB-15). Werte sind parametrierbar
+        (NF-05); aktuell DUMMY (G1-Finalwerte folgen).
+      required: [vereisung, prognose]
+      properties:
+        vereisung:
+          type: object
+          required:
+            [t_s_gefrierpunkt_c, t_s_gelb_auffang_c, delta_t_kondensation_k, delta_t_feucht_k]
+          properties:
+            t_s_gefrierpunkt_c:
+              type: number
+              description: Oberflaechentemp-Gefrierpunkt (°C).
+            t_s_gelb_auffang_c:
+              type: number
+              description: Obere GELB-Auffang-Grenze fuer T_s (°C).
+            delta_t_kondensation_k:
+              type: number
+              description: ΔT-Schwelle Kondensation (K).
+            delta_t_feucht_k:
+              type: number
+              description: ΔT-Schwelle "Feuchte vorhanden" (K).
+        prognose:
+          type: object
+          required: [t_s_grenz_c]
+          properties:
+            t_s_grenz_c:
+              type: number
+              description: T_s-Grenze fuer die GELB-Prognoseschwelle (°C).
 
     # --- Aktuelle Bewertung (G2 -> G3), flach (E-36) ---
     AssessmentCurrent:
