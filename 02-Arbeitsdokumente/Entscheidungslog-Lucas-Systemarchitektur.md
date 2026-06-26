@@ -164,6 +164,11 @@
 - *Ergebnis/Status:* umgesetzt in `Schwellenwerte.md §2` (22.06.2026). Stufengrenzen bleiben parametrierbare Dummies (G1-Finalwerte ausstehend, NF-05); **am realen Datensatz validieren** — insbesondere die Vorfall-1-Auflösung hängt knapp an `ΔT > 1,0` (Sensortoleranzen `T_s ±0,3 °C`, `RH ±3 %` beachten).
 - *Bezug:* präzisiert E-11/E-32/E-33; NF-01; K1; `Schwellenwerte.md §2`; DTB-38.
 
+**E-40 — Fail-safe als Multi-Layer-Architektur (NF-01): jede Schicht erzwingt eigenständig `unknown` (oder mind. ORANGE/GELB, nie GRÜN), inkl. DB-Ausfall**
+- *Status:* Akzeptiert (DTB-48). **Volltext als eigenständiges ADR-Dokument:** [`ADR-E40-Failsafe-Multi-Layer.md`](ADR-E40-Failsafe-Multi-Layer.md) — Schichten 1–6, Begründung, Alternativen, Konsequenzen.
+- *Kurz:* NF-01 ist mehrschichtig garantiert — Ingest/Stale · Sensor-Fault · Plausibilität · Storage/DB-Ausfall (→ 503/`unknown`) · Assessment-Kaskade (→ ORANGE/GELB, E-34) · Serve-Zeit-Re-Check; GRÜN nur, wenn ALLE Schichten ok. ID **E-40** statt geplantem „E-39" (E-39 inzwischen = Audit-Log/DTB-29).
+- *Bezug:* NF-01; E-34; E-35; E-31; E-36; DTB-13/DTB-43/DTB-64; blockt DTB-20. Querverweis persönliches Log: DTB-64-Eintrag (2026-06-26).
+
 **E-11 — 4-Stufen-Risikomodell (🟢🟡🟠🔴) mit konkreten Schwellen + Hysterese/Entprellung**
 - *Begründung:* Klare, parametrierbare Kategorien statt eines unscharfen Einzelwerts; Hysterese verhindert Alarm-Flattern (ISA-18.2). Beide Vorfälle werden korrekt aufgelöst.
 

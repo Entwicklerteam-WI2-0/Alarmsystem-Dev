@@ -65,8 +65,12 @@ class Assessment(_Base):
     reading_id: int | None = None
     threshold_set_id: int | None = None
     risk_level: RiskLevel
-    driving_factor: str | None = None
-    explanation: str | None = None
+    # max_length analog zu AssessmentCurrent (Wire-Modell): build_assessment_current
+    # reicht diese Felder 1:1 an die Naht weiter -> Speicher- und Wire-Invariante
+    # konsistent halten, sonst kann ein zu langer Text erst beim Serven (DTB-43) als
+    # ValidationError auffallen (DTB-64+ befuellt explanation/driving_factor).
+    driving_factor: str | None = Field(default=None, max_length=64)
+    explanation: str | None = Field(default=None, max_length=512)
     # Entscheidungs-Snapshot:
     surface_temp_c: float | None = None
     dew_point_c: float | None = None
