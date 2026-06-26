@@ -273,3 +273,18 @@
 - **Entscheidungslog:** 11 DTB-22-Einträge + Save-Session auf `docs/dtb-22-entscheidungslog` **gepusht**.
 - **Team-OS:** `/update` gelaufen (`claude-sync.md` +89 Z., 53 uni-Skills, v1.6.0).
 - **Status: ✅ DTB-22 vollständig abgeschlossen** (Code auf `main`, Doku gepusht).
+
+## Update [26.06., ~04:48] — DTB-29 Audit-Log (#89) + DTB-62 /v1/thresholds (#99) (backend-dev/Arash)
+- **DTB-29 (Audit-Log, append-only, NF-09) → PR #89:** `AuditRepository` (nur `append`),
+  `InMemoryAuditRepository`, `MySqlAuditRepository` (rohes PyMySQL auf `database.py`/DTB-55, nur
+  parametrisiertes INSERT, DB-Fehler → `RepositoryError` fail-safe), `audit_log`-Index `(ts, event_type)`.
+  6 Unit-Tests. append-only = **App + Grants ohne Trigger** (Team-Weg; Trigger-Frage offen → Lucas).
+- **DTB-62 (`GET /v1/thresholds`, NF-07-Lesen) → PR #99:** erster fachlicher `/v1`-Endpoint (neuer Router
+  `src/api/v1.py` + `include_router`). Werte aus Loader (DTB-15) via Dependency (nicht hardcodiert);
+  `ConfigError` → `503` ohne Leak; OpenAPI + `Thresholds`-Schema ergänzt (**nach v1.0-Freeze → Naht-Review
+  Lucas**). 3 Tests, `src/api` 100 % Coverage, **live verifiziert** (200; `POST` → 405). Suite 255 grün.
+- Beide ins **Team-Repo** gepusht (`origin` von Fork auf Team-Repo umgestellt + `gh auth login`).
+- **Neu offen:** (1) PRs #89/#99 Reviewer + Jira-Status „Wird überprüft". (2) DTB-62: Contract-Erweiterung
+  + Error-Envelope `{code,message}` (projektweit offen) mit Lucas. (3) DTB-29: Trigger ja/nein +
+  Grant-Abdeckung `audit_log` (DTB-54) + MariaDB-Integrationstest. (4) Fork löschen. (5) Folge: DTB-63 (Auth).
+  —backenddev
