@@ -26,7 +26,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.config.loader import load_thresholds
-from src.main import app, get_runtime
+from src.main import RuntimeNotReadyError, app, get_runtime
 from src.model.enums import RiskLevel, SensorStatus
 from src.model.schemas import Assessment, Reading
 from src.storage.repository import RepositoryError
@@ -94,7 +94,10 @@ class _FakeReadingRepo:
         self._readings = readings
         self._error = error
 
-    def get_latest(self, sensor_id: str, limit: int = 1):  # noqa: ARG002 - Signatur des Interface
+    def get_latest(self, sensor_id: str, limit: int = 1):
+        # Beweist, dass der Endpoint _SENSOR_ID korrekt durchreicht — ein Tippfehler
+        # in der Konstante wuerde hier auffallen (statt still ein leeres Ergebnis).
+        assert sensor_id == "anr-rwy-01", f"unerwartete sensor_id: {sensor_id!r}"
         if self._error:
             raise RepositoryError("reading-DB nicht erreichbar")
         return self._readings[:limit]
@@ -270,3 +273,21 @@ def test_get_runtime_reads_app_state():
     request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(runtime=sentinel)))
 
     assert get_runtime(request) is sentinel
+
+
+def test_get_runtime_raises_when_runtime_missing():
+    # Fehlt app.state.runtime (lifespan nicht/teilweise durchlaufen), muss get_runtime
+    # eine fangbare RuntimeNotReadyError werfen statt eines rohen AttributeError.
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
+
+    with pytest.raises(RuntimeNotReadyError):
+        get_runtime(request)
+
+
+def test_current_runtime_not_initialized_returns_503():
+    # Kein dependency_override und keine Lifespan (der module-level TestClient laeuft ohne
+    # Context-Manager) -> app.state.runtime ist NICHT gesetzt. get_runtime-Guard +
+    # Exception-Handler muessen das contract-konform als 503 melden, nie als rohes 500.
+    response = client.get("/v1/assessment/current")
+
+    _assert_503_error_envelope(response)

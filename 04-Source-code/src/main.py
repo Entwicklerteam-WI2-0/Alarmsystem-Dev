@@ -110,14 +110,34 @@ def build_runtime() -> Runtime:
     )
 
 
+class RuntimeNotReadyError(RuntimeError):
+    """`app.state.runtime` fehlt — lifespan hat den DI-Graph (noch) nicht gesetzt.
+
+    Eigene Exception statt rohem AttributeError: faengt `build_runtime()` im lifespan
+    vor dem yield eine unbehandelte Exception (oder ist `runtime` aus anderem Grund
+    nicht gesetzt), wuerde ein direkter `app.state.runtime`-Zugriff als FastAPI-
+    Standard-500 mit `{detail}` durchschlagen und den Fehler-Contract brechen. Der
+    registrierte Exception-Handler bildet diese Exception contract-konform auf
+    503 `{code, message}` ab (NF-01: nie GRUEN, auch nicht bei Startup-Fehlern).
+    """
+
+
 def get_runtime(request: Request) -> Runtime:
     """DI-Zugriff auf den in `lifespan` zusammengebauten Runtime-Graph.
 
     Eigene Dependency (kein direkter `app.state`-Zugriff im Endpoint), damit Tests
     sie via `app.dependency_overrides` durch In-Memory-Fakes ersetzen koennen —
     ohne DB, Lifespan oder Scheduler.
+
+    Raises:
+        RuntimeNotReadyError: Wenn `app.state.runtime` fehlt (lifespan nicht oder nur
+            teilweise durchlaufen). Der Exception-Handler liefert daraufhin 503
+            (`Error {code, message}`) statt eines rohen 500/`{detail}`.
     """
-    return request.app.state.runtime
+    runtime = getattr(request.app.state, "runtime", None)
+    if runtime is None:
+        raise RuntimeNotReadyError("Runtime nicht initialisiert (lifespan unvollstaendig).")
+    return runtime
 
 
 def _service_unavailable(message: str) -> JSONResponse:
@@ -201,6 +221,15 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
+@app.exception_handler(RuntimeNotReadyError)
+async def _runtime_not_ready_handler(
+    _request: Request, exc: RuntimeNotReadyError
+) -> JSONResponse:
+    """Fehlt der Runtime-Graph, contract-konform als 503 melden (nie rohes 500/{detail})."""
+    logger.error("Runtime nicht verfuegbar: %s", exc)
+    return _service_unavailable("G2 momentan nicht lieferfaehig.")
 
 
 @app.get("/v1/health")
