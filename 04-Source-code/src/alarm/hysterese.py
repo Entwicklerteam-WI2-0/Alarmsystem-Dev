@@ -32,6 +32,15 @@ class AlarmAusloesung:
     ausgeloest_am: datetime
 
 
+# Rangordnung der Schweregrade für die Hochstufungs-Logik: kein Alarm < warning < critical.
+_RANG: dict[AlarmSeverity, int] = {AlarmSeverity.WARNING: 1, AlarmSeverity.CRITICAL: 2}
+
+
+def _rang(severity: AlarmSeverity | None) -> int:
+    """Numerischer Rang einer (optionalen) Severity; None = kein Alarm = 0."""
+    return _RANG[severity] if severity is not None else 0
+
+
 class AlarmHysterese:
     """Entprellt die Alarm-Generierung per On-Delay (DTB-27).
 
@@ -55,17 +64,16 @@ class AlarmHysterese:
         """
         severity = severity_for_risk(risk_level)
 
-        # Nicht alarmwürdig (GRÜN/GELB/unknown): On-Delay-Timer zurücksetzen. Ein
-        # bereits aktiver Alarm bleibt bestehen — kein Auto-Clear (RB-01/FA-10).
-        if severity is None:
+        # Nur eine Hochstufung (höhere Stufe als der aktive Alarm) ist On-Delay-relevant:
+        # Raise (kein Alarm -> warning/critical) oder Upgrade (warning -> critical). Stufen
+        # <= aktiv (auch nicht-alarmwürdige GRÜN/GELB/unknown) setzen den Eskalations-Timer
+        # zurück und lösen nichts aus — KEIN automatisches Downgrade/Clear (RB-01/FA-10);
+        # der aktive Alarm bleibt bestehen, bis ihn ein Mensch über `quittiert()` beendet.
+        if _rang(severity) <= _rang(self._aktiver_alarm):
             self._pending_seit = None
             return None
 
-        # Bereits ein Alarm aktiv: im Kern keine erneute Auslösung.
-        if self._aktiver_alarm is not None:
-            return None
-
-        # Alarmwürdige Bedingung — On-Delay-Timer starten bzw. Ablauf prüfen.
+        # severity ist hier alarmwürdig (Rang > 0) und höher als der aktive Alarm.
         if self._pending_seit is None:
             self._pending_seit = jetzt
             return None
@@ -76,3 +84,13 @@ class AlarmHysterese:
             return AlarmAusloesung(severity=severity, ausgeloest_am=jetzt)
 
         return None
+
+    def quittiert(self) -> None:
+        """Meldet, dass ein Mensch den aktiven Alarm beendet hat (manuell, RB-01/FA-10).
+
+        Setzt den internen Zustand zurück, sodass eine erneut auftretende Bedingung wieder
+        einen Alarm auslösen kann. Dies ist der EINZIGE Weg, den aktiven Alarm zu beenden —
+        es gibt bewusst kein automatisches Clearing (RB-01: Mensch = letzte Instanz).
+        """
+        self._aktiver_alarm = None
+        self._pending_seit = None

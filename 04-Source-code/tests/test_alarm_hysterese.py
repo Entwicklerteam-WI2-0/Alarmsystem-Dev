@@ -89,3 +89,75 @@ def test_gelb_ist_nicht_alarmwuerdig_und_startet_keinen_timer():
     # 120 s GELB -> kein Alarm (GELB ist Vorwarnung, kein Alarm).
     ausloesung = engine.beobachte(RiskLevel.YELLOW, _T0 + timedelta(seconds=120))
     assert ausloesung is None
+
+
+# --- Schritt 4: Quittierung (Re-Arming, RB-01) + Severity-Upgrade ---
+
+
+def _aktiver_warning(engine: AlarmHysterese, start: datetime) -> None:
+    """Hilfsroutine: bringt die Engine in den Zustand 'aktiver warning-Alarm'."""
+    engine.beobachte(RiskLevel.ORANGE, start)
+    ausloesung = engine.beobachte(RiskLevel.ORANGE, start + timedelta(seconds=60))
+    assert ausloesung is not None and ausloesung.severity is AlarmSeverity.WARNING
+
+
+def test_quittierung_armt_engine_fuer_neuen_alarm_neu():
+    engine = _engine()
+    _aktiver_warning(engine, _T0)
+    # Mensch beendet den Alarm (manuell, RB-01/FA-10) -> Engine wieder auslösebereit.
+    engine.quittiert()
+    # Neue ORANGE-Phase muss erneut einen Alarm auslösen können.
+    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=600))
+    erneut = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=660))
+    assert erneut is not None
+    assert erneut.severity is AlarmSeverity.WARNING
+
+
+def test_quittierung_ohne_aktiven_alarm_ist_unkritisch():
+    engine = _engine()
+    # Darf nicht crashen und ändert nichts am Normalverhalten.
+    engine.quittiert()
+    engine.beobachte(RiskLevel.ORANGE, _T0)
+    ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=60))
+    assert ausloesung is not None
+
+
+def test_upgrade_warning_zu_critical_nach_on_delay():
+    engine = _engine()
+    _aktiver_warning(engine, _T0)
+    # ROT liegt nun an: Upgrade ist eine Hochstufung -> ebenfalls On-Delay.
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))
+    upgrade = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=130))
+    assert upgrade is not None
+    assert upgrade.severity is AlarmSeverity.CRITICAL
+
+
+def test_upgrade_unter_on_delay_loest_nicht_aus():
+    engine = _engine()
+    _aktiver_warning(engine, _T0)
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))
+    # 30 s ROT < On-Delay -> noch kein Upgrade.
+    upgrade = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=100))
+    assert upgrade is None
+
+
+def test_kein_zweiter_critical_nach_upgrade():
+    engine = _engine()
+    _aktiver_warning(engine, _T0)
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))
+    erstes = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=130))
+    assert erstes is not None
+    # Weiter ROT -> kein erneutes critical-Event (bereits auf höchster Stufe).
+    weiteres = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=300))
+    assert weiteres is None
+
+
+def test_kein_auto_downgrade_critical_bleibt_sticky():
+    engine = _engine()
+    # critical aktiv machen
+    engine.beobachte(RiskLevel.RED, _T0)
+    aktiv = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=60))
+    assert aktiv is not None and aktiv.severity is AlarmSeverity.CRITICAL
+    # Risiko sinkt: KEIN automatisches Downgrade/Clear (RB-01) -> keine Events.
+    assert engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=400)) is None
+    assert engine.beobachte(RiskLevel.GREEN, _T0 + timedelta(seconds=800)) is None
