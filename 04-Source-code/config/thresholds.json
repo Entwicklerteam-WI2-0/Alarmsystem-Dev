@@ -12,7 +12,8 @@
     "t_s_grenz_c": 0.0,
     "trend_window_min": 30.0,
     "horizon_min": 30.0,
-    "min_points": 3
+    "min_points": 3,
+    "max_readings_limit": 1000
   },
   "datenqualitaet": {
     "stale_timeout_s": 120,

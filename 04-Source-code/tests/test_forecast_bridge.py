@@ -60,9 +60,10 @@ def test_fallender_trend_liefert_prognose_und_liest_richtiges_fenster():
     forecast = compute_forecast_for_cycle(series[-1], repo, _PROGNOSE, _NOW)
 
     assert forecast == pytest.approx(-3.0)
-    sensor_id, since, _ = repo.calls[0]
+    sensor_id, since, limit = repo.calls[0]
     assert sensor_id == "anr-rwy-01"
     assert since == _NOW - timedelta(minutes=_PROGNOSE.trend_window_min)
+    assert limit == _PROGNOSE.max_readings_limit
 
 
 def test_repository_fehler_ist_failsafe_none():

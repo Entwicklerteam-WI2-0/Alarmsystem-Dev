@@ -35,6 +35,7 @@ class PrognoseSchwellen:
     trend_window_min: float  # Laenge des Trendfensters in Minuten
     horizon_min: float  # Prognosehorizont in Minuten (FA-06: 30)
     min_points: int  # Mindestanzahl Stuetzstellen fuer eine Regression (>= 2)
+    max_readings_limit: int  # Obergrenze fuer gelesene Historien-Readings (DB-Last)
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,19 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
         raise ConfigError(
             "prognose.min_points darf nicht groesser als 100 sein "
             "(sonst wird die Prognose praktisch abgeschaltet, NF-01)"
+        )
+    # max_readings_limit begrenzt die DB-Last bei get_since; sie muss ausreichend gross
+    # sein, um min_points Stuetzstellen zu liefern, sonst wird die Prognose still abgeschaltet.
+    if not isinstance(schwellen.max_readings_limit, int):
+        raise ConfigError("prognose.max_readings_limit muss eine Ganzzahl sein")
+    if schwellen.max_readings_limit < schwellen.min_points:
+        raise ConfigError(
+            "prognose.max_readings_limit muss mindestens so gross wie min_points sein"
+        )
+    if schwellen.max_readings_limit > 10_000:
+        raise ConfigError(
+            "prognose.max_readings_limit darf nicht groesser als 10000 sein "
+            "(DB-Lastbegrenzung, NF-01)"
         )
 
 

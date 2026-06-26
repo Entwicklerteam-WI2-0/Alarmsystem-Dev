@@ -52,7 +52,9 @@ def compute_forecast_for_cycle(
 
     since = now - timedelta(minutes=prognose.trend_window_min)
     try:
-        readings = reading_repo.get_since(reading.sensor_id, since)
+        readings = reading_repo.get_since(
+            reading.sensor_id, since, limit=prognose.max_readings_limit
+        )
     except RepositoryError as exc:
         logger.error("Prognose: Zeitreihe nicht lesbar (fail-safe, keine Prognose): %s", exc)
         return None

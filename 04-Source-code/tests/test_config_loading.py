@@ -29,6 +29,7 @@ def test_default_config_laedt_kaskaden_schwellen_aus_schwellenwerte_md():
     assert thresholds.prognose.trend_window_min == 30.0
     assert thresholds.prognose.horizon_min == 30.0
     assert thresholds.prognose.min_points == 3
+    assert thresholds.prognose.max_readings_limit == 1000
     assert thresholds.datenqualitaet.stale_timeout_s == 120.0
     assert thresholds.datenqualitaet.max_temp_jump_c_per_min == 5.0
     assert thresholds.datenqualitaet.flatline_timeout_min == 15.0
@@ -251,6 +252,7 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "trend_window_min": 30.0,
             "horizon_min": 30.0,
             "min_points": 3,
+            "max_readings_limit": 1000,
         },
         "datenqualitaet": {
             "stale_timeout_s": 120,
@@ -282,6 +284,9 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
         ("min_points", 0),
         ("min_points", 3.0),  # keine Ganzzahl -> Fehlkonfiguration (NF-05)
         ("min_points", 101),  # Obergrenze -> Prognose wuerde still abschalten (NF-01)
+        ("max_readings_limit", 2),  # kleiner als min_points -> stiller Ausfall (NF-01)
+        ("max_readings_limit", 10001),  # zu viele Readings -> DB-Last
+        ("max_readings_limit", 1000.0),  # keine Ganzzahl
     ],
 )
 def test_prognose_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str, wert: float):
