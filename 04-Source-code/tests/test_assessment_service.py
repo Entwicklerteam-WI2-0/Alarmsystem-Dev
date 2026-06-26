@@ -83,6 +83,29 @@ def test_healthy_reading_is_assessed_persisted_and_audited(thresholds):
     assert audit.all()[0].event_type == AuditEventType.ASSESSMENT_MADE
 
 
+def test_negative_delta_t_assesses_ice_risk_not_green(thresholds):
+    # Arrange — Taupunkt (1.0) UEBER Oberflaechentemp (-0.5): delta_t = -1.5
+    # (T_d > T_s) ist ein klares Eisrisiko und muss sicherheitskritisch bewertet
+    # werden, nicht GRUEN. Deckt den Service-Pfad fuer einen nicht-gruenen,
+    # persistierten Risk-Level ab (assess_ice_risk-Kern, Schwellenwerte.md §2:
+    # T_s<=Gefrierpunkt UND delta_t<=Kondensation -> ROT).
+    arepo, audit = InMemoryAssessmentRepository(), InMemoryAuditRepository()
+    service = AssessmentService(thresholds, arepo, audit)
+    now = datetime.now(UTC)
+
+    # Act — T_s=-0.5 (<=Gefrierpunkt 0.0) UND delta_t=-1.5 (<=Kondensation 0.0) -> ROT
+    result = service.assess_reading(_reading(now, surface=-0.5, dew=1.0), now)
+
+    # Assert — hoechste Risikostufe ROT, korrekt persistiert + auditiert; nie GRUEN.
+    assert result.risk_level == RiskLevel.RED
+    assert result.risk_level != RiskLevel.GREEN
+    assert result.delta_t == pytest.approx(-1.5)
+    assert result.id == 1
+    assert arepo.get_latest().id == 1
+    assert len(audit.all()) == 1
+    assert audit.all()[0].event_type == AuditEventType.ASSESSMENT_MADE
+
+
 def test_none_reading_is_unknown(thresholds):
     service = _make_service(thresholds)
     now = datetime.now(UTC)
