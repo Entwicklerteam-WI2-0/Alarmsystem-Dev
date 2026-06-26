@@ -113,6 +113,11 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
     fehlend = erwartet - daten.keys()
     if fehlend:
         raise ConfigError(f"Abschnitt '{name}': fehlende Pflicht-Schlüssel {sorted(fehlend)}")
+    # Ueberzaehlige Keys (z. B. Tippfehler 'min_poitns') wuerden sonst still wirkungslos
+    # bleiben -> laut scheitern, damit eine falsch geschriebene Schwelle auffaellt (NF-05).
+    unbekannt = daten.keys() - erwartet
+    if unbekannt:
+        raise ConfigError(f"Abschnitt '{name}': unbekannte Schlüssel {sorted(unbekannt)}")
     werte = {feld: daten[feld] for feld in erwartet}
     for feld, wert in werte.items():
         # bool ist in Python ein int-Subtyp, soll aber keine gültige Schwelle sein.

@@ -100,3 +100,11 @@ CREATE TABLE IF NOT EXISTS audit_log (
 ALTER TABLE audit_log
   DROP INDEX IF EXISTS idx_audit_ts,
   ADD INDEX IF NOT EXISTS idx_audit_ts_event (ts, event_type);
+
+-- Idempotente Spalten-Migration fuer bestehende assessment-Tabellen (DTB-33/FA-06).
+-- CREATE TABLE IF NOT EXISTS oben legt die Spalte nur bei Neuinstallation an; fuer bereits
+-- existierende DBs wird forecast_surface_temp_c hier nachgezogen, sonst schlaegt der INSERT
+-- von MySqlAssessmentRepository mit "Unknown column" fehl (-> RepositoryError, NF-01).
+ALTER TABLE assessment
+  ADD COLUMN IF NOT EXISTS forecast_surface_temp_c DOUBLE NULL
+    COMMENT 'DTB-33/FA-06: 30-min-Prognose-T_s (Nachvollziehbarkeit FA-05)';

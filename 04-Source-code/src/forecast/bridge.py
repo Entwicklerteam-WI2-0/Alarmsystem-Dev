@@ -40,6 +40,12 @@ def compute_forecast_for_cycle(
 
     Returns:
         Die extrapolierte Oberflaechentemperatur oder None (keine belastbare Prognose).
+
+    Raises:
+        ValueError: Wenn `now` naiv (nicht zeitzonenbewusst) ist. Bewusst NICHT
+            abgefangen: ein naives `now` ist ein Programmierfehler, kein transienter
+            Datenlayer-Fehler — der Scheduler soll ihn sichtbar machen, statt ihn
+            als "keine Prognose" zu maskieren. Nur `RepositoryError` ist fail-safe.
     """
     if reading is None:
         return None

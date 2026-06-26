@@ -141,6 +141,17 @@ def test_boolescher_schwellwert_scheitert_laut(tmp_path):
         load_thresholds(datei)
 
 
+def test_unbekannter_schluessel_scheitert_laut(tmp_path):
+    # Arrange — Tippfehler/ueberzaehliger Key bliebe sonst still wirkungslos (NF-05)
+    daten = _minimal_config()
+    daten["prognose"]["min_poitns"] = 3  # Tippfehler statt min_points
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
 @pytest.mark.parametrize(
     "feld, wert",
     [
