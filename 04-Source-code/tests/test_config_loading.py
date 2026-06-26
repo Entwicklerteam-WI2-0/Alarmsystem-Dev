@@ -46,7 +46,7 @@ def test_default_config_laedt_hysterese_parameter_aus_schwellenwerte_md():
     # Assert — Entprellung/Hysterese gem. Schwellenwerte.md §2 (ISA-18.2):
     # On-Delay >= 60 s; Rueckstufung 0,5 C unterschritten und >= 5 min (300 s) stabil.
     assert thresholds.hysterese.on_delay_s == 60.0
-    assert thresholds.hysterese.max_continuity_gap_s == 120.0
+    assert thresholds.hysterese.max_continuity_gap_s == 150.0  # = stale_timeout(120) + poll(30)
     assert thresholds.hysterese.downgrade_stable_s == 300.0
     assert thresholds.hysterese.downgrade_undershoot_c == 0.5
 

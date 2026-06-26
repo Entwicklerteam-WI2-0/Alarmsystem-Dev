@@ -20,17 +20,18 @@ from src.model.enums import AuditEventType, RiskLevel
 from src.model.schemas import Alarm, AuditLogEntry
 from src.storage.alarm_repository import AlarmRepository
 from src.storage.audit_repository import AuditRepository
-from src.storage.repository import RepositoryError
 
 
-class AuditError(RepositoryError):
+class AuditError(Exception):
     """Audit-Fehler NACH erfolgreicher Persistenz (DTB-27): Alarm gespeichert + Engine aktiv.
 
-    Eigene Unterklasse von `RepositoryError`, damit die Orchestrierung den Audit-Fehler vom
-    Persistenz-Fehler unterscheiden kann: Bei `AuditError` ist der Alarm DB-seitig vorhanden
-    (`alarm_id`) UND die Engine bleibt 'aktiv' (KEIN Re-Arm) — der Aufrufer darf NICHT erneut
-    `beenden()` rufen. Ein reiner Persistenz-Fehler bleibt ein nacktes `RepositoryError`
-    (Alarm NICHT gespeichert, Engine bereits neu gearmt).
+    EIGENSTAENDIGE Exception (bewusst NICHT von `RepositoryError` abgeleitet): so faengt ein
+    `except RepositoryError` in einem kuenftigen Aufrufer (DTB-31, G3-Naht) den AuditError
+    NICHT versehentlich mit und verliert die `alarm_id` — der Aufrufer MUSS ihn explizit
+    behandeln (kein Reihenfolge-Footgun). Semantik: Der Alarm ist DB-seitig vorhanden
+    (`alarm_id`) UND die Engine bleibt 'aktiv' (KEIN Re-Arm) — NICHT erneut `beenden()` rufen.
+    Ein reiner Persistenz-Fehler ist dagegen ein `RepositoryError` (Alarm NICHT gespeichert,
+    Engine bereits neu gearmt).
     """
 
     def __init__(self, message: str, alarm_id: int) -> None:

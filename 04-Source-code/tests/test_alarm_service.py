@@ -107,9 +107,9 @@ def test_audit_fehler_als_auditerror_mit_id_ohne_rearm():
     with pytest.raises(AuditError) as excinfo:
         gen.verarbeite(RiskLevel.ORANGE, 1, _T0 + timedelta(seconds=60))  # feuert; audit kaputt
 
-    # AuditError ist vom Persistenz-Fehler unterscheidbar, bleibt aber ein RepositoryError
-    # (rueckwaertskompatibel) und traegt die ID des trotzdem gespeicherten Alarms.
-    assert isinstance(excinfo.value, RepositoryError)
+    # AuditError ist EIGENSTAENDIG (NICHT RepositoryError) -> ein except RepositoryError faengt
+    # ihn nicht versehentlich mit (kein Ordering-Footgun); traegt die ID des gespeicherten Alarms.
+    assert not isinstance(excinfo.value, RepositoryError)
     assert excinfo.value.alarm_id == 1
     # Alarm wurde trotzdem persistiert ...
     assert len(alarm_repo.all()) == 1
