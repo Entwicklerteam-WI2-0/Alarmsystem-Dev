@@ -5,6 +5,7 @@ dagegen. Die konkrete MySQL-Implementierung nutzt rohes PyMySQL mit ausschliessl
 parametrisierten Queries (Injection-Schutz).
 """
 
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -20,6 +21,8 @@ from src.storage.database import (
     DatabaseConnectionError,
     get_connection,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class RepositoryError(Exception):
@@ -232,8 +235,11 @@ class ReadingRepository(Repository):
         except pymysql.Error:
             try:
                 conn.rollback()
-            except pymysql.Error:
-                pass
+            except pymysql.Error as rollback_exc:
+                # Rollback-Fehler nicht still schlucken: fuer den Betrieb sichtbar machen
+                # (analog database.transaction). Die urspruengliche Exception wird
+                # unveraendert weitergeworfen (DTB-93 MEDIUM).
+                logger.error("DB-Rollback nach INSERT-Fehler fehlgeschlagen: %s", rollback_exc)
             raise
 
     @staticmethod
@@ -249,10 +255,14 @@ class ReadingRepository(Repository):
             rows = cursor.fetchall()
         try:
             return tuple(ReadingRepository._row_to_reading(row) for row in rows)
-        except (ValueError, KeyError, TypeError) as exc:
-            # ValueError: ungueltiger Enum-Wert nach DB-Korruption/Migration.
-            # KeyError/TypeError: Schema-Drift oder falscher Cursor-Typ (z. B. Tupel
-            # statt Dict) -> immer als RepositoryError fail-safe behandeln.
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            # Vollstaendige Menge der erwartbaren Mapping-Fehler bei Schema-Drift/
+            # DB-Korruption -> alle fail-safe als RepositoryError (Interface-Vertrag):
+            # - ValueError: ungueltiger Enum-Wert (auch Pydantic ValidationError erbt davon).
+            # - KeyError: fehlende Spalte.
+            # - TypeError: falscher Cursor-Typ (Tupel statt Dict).
+            # - AttributeError: Spaltenwert mit falschem Typ, z. B. str statt datetime,
+            #   sodass row["measured_at"].tzinfo fehlschlaegt (DTB-93 MEDIUM).
             raise RepositoryError(f"Reading konnte nicht gelesen werden: {exc}") from exc
 
     @staticmethod

@@ -4,6 +4,7 @@ Die Tests skippen automatisch, wenn die in .env konfigurierte Test-DB nicht
 erreichbar ist. Schema wird idempotent aus migrations/schema.sql aufgebaut.
 """
 
+import logging
 import os
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -497,3 +498,57 @@ def test_row_to_reading_makes_naive_datetimes_utc_aware() -> None:
     # Sicherstellen, dass UTC-aware Zeitstempel subtrahiert werden koennen.
     now = datetime(2026, 6, 23, 10, 1, 0, tzinfo=UTC)
     assert (now - reading.measured_at).total_seconds() == 60.0
+
+
+def test_fetch_wraps_attribute_error_as_repository_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AttributeError aus _row_to_reading (z. B. str statt datetime -> .tzinfo) -> RepositoryError.
+
+    DB-frei. Sichert, dass auch dieser Schema-Drift-Fall den RepositoryError-Vertrag
+    wahrt, statt unkontrolliert nach oben zu propagieren (DTB-93 MEDIUM).
+    """
+
+    class _FakeCursor:
+        def __enter__(self) -> "_FakeCursor":
+            return self
+
+        def __exit__(self, *exc_info: object) -> bool:
+            return False
+
+        def execute(self, *args: object) -> None:
+            pass
+
+        def fetchall(self) -> list[dict]:
+            return [{"measured_at": "2026-06-23 10:00:00"}]
+
+    class _FakeConnection:
+        def cursor(self) -> "_FakeCursor":
+            return _FakeCursor()
+
+    def _failing_row_to_reading(_row: dict) -> Reading:
+        raise AttributeError("'str' object has no attribute 'tzinfo'")
+
+    monkeypatch.setattr(ReadingRepository, "_row_to_reading", staticmethod(_failing_row_to_reading))
+
+    with pytest.raises(RepositoryError, match="Reading konnte nicht gelesen werden"):
+        ReadingRepository._fetch(_FakeConnection(), "SELECT 1", ())
+
+
+def test_insert_logs_when_rollback_fails(caplog: pytest.LogCaptureFixture) -> None:
+    """Schlaegt der Rollback nach einem INSERT-Fehler fehl, wird er geloggt (DTB-93 MEDIUM).
+
+    DB-frei. Die urspruengliche Exception muss unveraendert propagieren; der
+    Rollback-Fehler darf nicht spurlos verschwinden (analog database.transaction).
+    """
+
+    class _FailingConnection:
+        def cursor(self) -> object:
+            raise pymysql.Error("INSERT fehlgeschlagen")
+
+        def rollback(self) -> None:
+            raise pymysql.Error("Rollback fehlgeschlagen")
+
+    with caplog.at_level(logging.ERROR, logger="src.storage.repository"):
+        with pytest.raises(pymysql.Error, match="INSERT fehlgeschlagen"):
+            ReadingRepository._insert(_FailingConnection(), ())
+
+    assert any("Rollback" in record.getMessage() for record in caplog.records)
