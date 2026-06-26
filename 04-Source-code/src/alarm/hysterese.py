@@ -145,8 +145,11 @@ class AlarmHysterese:
             return None
 
         # Beobachtung auf aktivem Niveau (z. B. ORANGE bei aktivem warning): „hält" eine
-        # laufende Eskalation, ohne auszulösen — zählt als alarmwürdige Bestätigung
-        # (symmetrisch zur Erst-Eskalation), bricht ein laufendes Upgrade also nicht ab.
+        # laufende Eskalation, ohne auszulösen. NUR wenn gerade ein Upgrade pending ist, zählt
+        # der Hold als alarmwürdige Bestätigung (symmetrisch zur Erst-Eskalation) und bricht das
+        # Upgrade nicht ab. Läuft KEIN Upgrade-Pending, wird der Kontinuitäts-Timer bewusst NICHT
+        # aufgewärmt — ein ORANGE-Dauerzustand soll keine künftige ROT-Eskalation vorzeitig reif
+        # machen.
         if sev_rang == aktiv_rang and aktiv_rang > 0:
             if self._pending_seit is not None:
                 self._letzte_alarmwuerdige = jetzt

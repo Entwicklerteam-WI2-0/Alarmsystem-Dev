@@ -125,3 +125,11 @@ def test_naive_datetime_wird_abgewiesen():
     engine = _engine()
     with pytest.raises(ValueError):
         engine.bewerten(0.5, -5.0, _THR, datetime(2026, 6, 26, 12, 0, 0))  # noqa: DTZ001
+
+
+def test_risk_rang_deckt_alle_nicht_unknown_stufen_ab():
+    # Schutz gegen stille KeyError, falls RiskLevel erweitert wird. UNKNOWN ist orthogonal
+    # (Unsicherheit) und bewusst NICHT in der Rangordnung -> separat ausgenommen.
+    from src.alarm.riskhysterese import _RISK_RANG
+
+    assert set(_RISK_RANG) == set(RiskLevel) - {RiskLevel.UNKNOWN}

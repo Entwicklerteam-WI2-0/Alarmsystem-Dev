@@ -42,6 +42,8 @@ class AlarmGenerator:
             Die vergebene Alarm-ID, wenn ein Alarm ausgelöst und gespeichert wurde; sonst `None`.
 
         Raises:
+            ValueError: wenn `jetzt` kein zeitzonenbewusstes Datetime ist (Contract §2a D;
+            in `AlarmHysterese.beobachte` validiert und hier durchgereicht).
             RepositoryError: bei Persistenz- oder Audit-Fehler (Persistenz-Fehler armt zuvor
             die Engine neu, damit die Bedingung erneut auslösen kann).
         """
