@@ -57,6 +57,22 @@ def _rot_reading(measured_at: datetime, rid: int) -> Reading:
     )
 
 
+def _vorfall1_reading(measured_at: datetime, rid: int) -> Reading:
+    # Vorfall 1 (trockene Kälte): surface -2,1 <= Gefrierpunkt, aber sehr trocken (ΔT = 17,9
+    # >> delta_t_feucht) -> weder ROT noch ORANGE, nur GELB -> KEIN Alarm.
+    return Reading(
+        id=rid,
+        sensor_id="anr-rwy-01",
+        measured_at=measured_at,
+        surface_temp_c=-2.1,
+        air_temp_c=-2.0,
+        humidity_pct=40.0,
+        received_at=measured_at,
+        dew_point_c=-20.0,
+        status=SensorStatus.OK,
+    )
+
+
 def _wiring() -> tuple[
     AssessmentService,
     AlarmGenerator,
@@ -132,6 +148,37 @@ def test_stale_reading_loest_keinen_alarm_aus():
     run_assessment_cycle(
         service, generator, _orange_reading(t60 - timedelta(seconds=121), rid=2), t60
     )
+    assert alarm_repo.all() == []
+
+
+def test_orange_dann_rot_upgrade_persistiert_zwei_alarme():
+    service, generator, alarm_repo, _ = _wiring()
+
+    # ORANGE bis On-Delay -> warning (Alarm 1).
+    run_assessment_cycle(service, generator, _orange_reading(_T0, rid=1), _T0)
+    t60 = _T0 + timedelta(seconds=60)
+    run_assessment_cycle(service, generator, _orange_reading(t60, rid=2), t60)
+    # Lage verschärft sich auf ROT -> Upgrade-On-Delay -> critical (Alarm 2) durch die Naht.
+    t90 = _T0 + timedelta(seconds=90)
+    run_assessment_cycle(service, generator, _rot_reading(t90, rid=3), t90)
+    t150 = _T0 + timedelta(seconds=150)
+    run_assessment_cycle(service, generator, _rot_reading(t150, rid=4), t150)
+
+    severities = [a.severity for a in alarm_repo.all()]
+    assert severities == [AlarmSeverity.WARNING, AlarmSeverity.CRITICAL]
+
+
+def test_vorfall_1_trockene_kaelte_loest_keinen_alarm_aus():
+    service, generator, alarm_repo, assessment_repo = _wiring()
+
+    # Vorfall 1 (Fehlalarm-Falle): trockene Kälte -> GELB, KEIN Alarm. Symmetrie zum
+    # ROT-Wiring-Test; auch anhaltend kein Alarm (GELB erreicht den Alarmpfad nie).
+    run_assessment_cycle(service, generator, _vorfall1_reading(_T0, rid=1), _T0)
+    aktuell = assessment_repo.get_latest()
+    assert aktuell is not None
+    assert aktuell.risk_level is RiskLevel.YELLOW
+    t60 = _T0 + timedelta(seconds=60)
+    run_assessment_cycle(service, generator, _vorfall1_reading(t60, rid=2), t60)
     assert alarm_repo.all() == []
 
 

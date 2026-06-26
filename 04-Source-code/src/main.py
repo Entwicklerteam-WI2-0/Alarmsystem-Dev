@@ -147,8 +147,13 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
             now = datetime.now(UTC)
             # Monotonie erzwingen (Hysterese-Vorbedingung): eine NTP-Rueckwaertskorrektur der
             # Wall-Clock darf die On-Delay-Akkumulation nicht zuruecksetzen (sonst einmaliger
-            # Under-Alarm). Nicht-fallende Zeit an die Engines weiterreichen.
+            # Under-Alarm). Nicht-fallende Zeit an die Engines weiterreichen; Clock-Skew fuer
+            # Ops sichtbar machen (anhaltender Rueckwaerts-Offset friert die Zeit kurz ein).
             if last_now is not None and now < last_now:
+                logger.warning(
+                    "Wall-Clock-Rueckwaertssprung (%.1fs) - Zeit geklemmt (Clock-Skew?).",
+                    (last_now - now).total_seconds(),
+                )
                 now = last_now
             last_now = now
             await asyncio.to_thread(
