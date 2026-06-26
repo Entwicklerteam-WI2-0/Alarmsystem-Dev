@@ -269,6 +269,7 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
         ("horizon_min", -1.0),
         ("min_points", 1),  # mind. 2 Stuetzstellen fuer eine Gerade
         ("min_points", 0),
+        ("min_points", 3.0),  # keine Ganzzahl -> Fehlkonfiguration (NF-05)
     ],
 )
 def test_prognose_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str, wert: float):

@@ -72,6 +72,9 @@ class AssessmentService:
             reading: Das zuletzt gepollte Reading (vom Poller). `None`, wenn der
                 Poll fehlschlug (G1 nicht erreichbar / verworfen) -> Fail-safe.
             now: Bewertungszeitpunkt (UTC, zeitzonenbewusst).
+            forecast_surface_temp_c: Optionale 30-min-T_s-Prognose (DTB-33/FA-06)
+                fuer die GELB-Vorwarnung. `None` = keine Prognose -> ohne Einfluss
+                auf die Bewertung. Nur im Gutfall (nicht stale/fault) wirksam.
 
         Returns:
             Das persistierte Assessment (mit vergebener `id`).
