@@ -19,9 +19,11 @@ Repos werden ueber die get_runtime-Dependency injiziert (app.dependency_override
 ohne DB und ohne Lifespan/Scheduler.
 """
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -94,7 +96,7 @@ class _FakeReadingRepo:
         self._readings = readings
         self._error = error
 
-    def get_latest(self, sensor_id: str, limit: int = 1):
+    def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
         # Beweist, dass der Endpoint _SENSOR_ID korrekt durchreicht — ein Tippfehler
         # in der Konstante wuerde hier auffallen (statt still ein leeres Ergebnis).
         assert sensor_id == "anr-rwy-01", f"unerwartete sensor_id: {sensor_id!r}"
@@ -184,16 +186,18 @@ def test_current_fault_returns_200_unknown():
 # ---------------------------------------------------------------------------
 
 
-def _assert_503_error_envelope(response) -> None:
-    """503 MUSS das Contract-Fehlerformat tragen, NICHT FastAPIs {detail}."""
+def _assert_503_error_envelope(response: httpx.Response) -> None:
+    """503 MUSS exakt das Contract-Fehlerformat tragen: nur `{code, message}`.
+
+    Die Set-Gleichheit der Keys beweist zugleich, dass weder FastAPIs `{detail}`
+    noch eine Ampelfarbe (`risk_level`) durchschlaegt — ein Ausfall liefert nie
+    GRUEN (NF-01). Separate `not in`-Asserts waeren daher redundant.
+    """
     assert response.status_code == 503
     body = response.json()
     assert set(body.keys()) == {"code", "message"}
     assert body["code"] == "SERVICE_UNAVAILABLE"
     assert isinstance(body["message"], str) and body["message"]
-    assert "detail" not in body
-    # Fail-safe: ein Ausfall liefert nie eine Ampelfarbe (schon gar nicht GRUEN).
-    assert "risk_level" not in body
 
 
 def test_current_db_failure_on_assessment_repo_returns_503():
@@ -244,18 +248,21 @@ def test_current_assessment_present_but_no_reading_returns_503():
     _assert_503_error_envelope(response)
 
 
-def test_current_unexpected_processing_error_returns_503_not_500():
-    # Daten liegen vor, aber die Aufbereitung scheitert: ein fehlkonfigurierter
-    # stale_timeout_s=0 laesst is_stale (in build_assessment_current) mit ValueError
-    # werfen. Das darf NICHT als rohes 500/{detail} durchschlagen, sondern muss
-    # contract-konform als 503 {code,message} gemeldet werden (NF-01: nie GRUEN).
+def test_current_unexpected_processing_error_returns_503_not_500(monkeypatch):
+    # Daten liegen vor, aber die Aufbereitung scheitert. Den Fehler patchen wir DIREKT
+    # in build_assessment_current (statt ihn ueber ein Implementierungsdetail wie
+    # stale_timeout_s=0 -> is_stale-ValueError zu provozieren) -> der Test bleibt stabil,
+    # egal wie sich die interne Validierung kuenftig verhaelt. Erwartung: 503 statt 500.
     now = datetime.now(UTC)
-    runtime = SimpleNamespace(
-        thresholds=SimpleNamespace(datenqualitaet=SimpleNamespace(stale_timeout_s=0)),
+    _override_runtime(
         assessment_repo=_FakeAssessmentRepo(_assessment(now, RiskLevel.GREEN)),
         reading_repo=_FakeReadingRepo((_reading(now),)),
     )
-    app.dependency_overrides[get_runtime] = lambda: runtime
+
+    def _boom(*_args: object, **_kwargs: object) -> object:
+        raise RuntimeError("unerwarteter Aufbereitungsfehler")
+
+    monkeypatch.setattr("src.main.build_assessment_current", _boom)
 
     response = client.get("/v1/assessment/current")
 
