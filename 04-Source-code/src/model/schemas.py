@@ -114,3 +114,52 @@ class AuditLogEntry(_Base):
     entity_id: int | None = None
     actor: str = Field(default="system", min_length=1, max_length=128)
     detail: dict[str, Any] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Wire-Schemas der bereitgestellten /v1-API (G2 -> G3, Contract v1, E-36).
+# Eigene Modelle statt der DB-Entitaeten: die Naht nach aussen ist flach und
+# stabil; sie darf sich unabhaengig vom internen Datenmodell entwickeln.
+# ---------------------------------------------------------------------------
+
+
+class AssessmentCurrent(_Base):
+    """Flacher G2->G3-Response fuer GET /v1/assessment/current (kein Envelope, E-36).
+
+    Ampel + Roh-Messwerte. Fail-safe-Invarianten (NF-01) garantiert die
+    Serving-Schicht (build_assessment_current), NICHT dieses Schema:
+    `green` nur bei `is_stale=false` UND `sensor_status=ok`; bei Stale ODER
+    Fault -> `unknown`; genullte Messwerte treten nur bei `unknown` auf.
+    """
+
+    risk_level: RiskLevel
+    driving_factor: str | None = Field(default=None, max_length=64)
+    explanation: str | None = Field(default=None, max_length=512)
+    surface_temp_c: float | None = None
+    dew_point_c: float | None = None
+    delta_t: float | None = None
+    humidity_pct: float | None = None
+    measured_at: datetime  # G1-Messzeit; auf 200 immer gesetzt
+    assessed_at: datetime  # G2-Bewertungszeit
+    is_stale: bool
+    sensor_status: SensorStatus
+
+
+class Health(_Base):
+    """Liveness-Response fuer GET /v1/health (Contract v1)."""
+
+    status: str = "ok"
+
+
+class Error(_Base):
+    """Maschinenlesbares Fehlerformat (Contract v1): keine internen Details/Secrets."""
+
+    code: str = Field(min_length=1, max_length=64)
+    message: str = Field(min_length=1, max_length=512)
+
+
+class AckRequest(_Base):
+    """Request-Body fuer POST /v1/alarms/{id}/ack (Contract v1, NF-09)."""
+
+    operator: str = Field(min_length=1, max_length=128)
+    note: str | None = Field(default=None, max_length=512)
