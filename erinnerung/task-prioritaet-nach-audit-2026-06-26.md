@@ -4,6 +4,10 @@
 > aus `02-Arbeitsdokumente/Tasks+Projektplan.md` angesichts des **REAL-Stands** („Motor gebaut, nicht verdrahtet").
 > **Parallele Stränge sind erlaubt und markiert.** Owner = aktueller Jira-Assignee.
 
+> **🔗 DTB-38 ↔ DTB-64:** DTB-38 (4-Stufen-Bewertungslogik) ist **fertig + korrekt** (Jira „Done") → steht hier
+> bewusst nicht. Die *Verdrahtung* dieser Logik in einen laufenden Pfad ist **DTB-64** (der Engpass unten). Der
+> Code-Kommentar „verdrahtet in DTB-38" meint genau diese Verdrahtung = DTB-64, nicht das (erledigte) DTB-38-Ticket.
+
 ## Leitprinzip — der eine Flaschenhals
 
 Der kritische Pfad hat **einen Engpass: die Laufzeit-Verdrahtung (DTB-64).** Bis sie steht, ist fast alles
