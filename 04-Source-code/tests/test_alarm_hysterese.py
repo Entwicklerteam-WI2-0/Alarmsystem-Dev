@@ -94,7 +94,7 @@ def test_gelb_ist_nicht_alarmwuerdig_und_startet_keinen_timer():
     assert ausloesung is None
 
 
-# --- Schritt 4: Quittierung (Re-Arming, RB-01) + Severity-Upgrade ---
+# --- Schritt 4: beenden() (Clear/Re-Arm, RB-01) + Severity-Upgrade ---
 
 
 def _aktiver_warning(engine: AlarmHysterese, start: datetime) -> None:
@@ -104,7 +104,7 @@ def _aktiver_warning(engine: AlarmHysterese, start: datetime) -> None:
     assert ausloesung is not None and ausloesung.severity is AlarmSeverity.WARNING
 
 
-def test_quittierung_armt_engine_fuer_neuen_alarm_neu():
+def test_beenden_armt_engine_fuer_neuen_alarm_neu():
     engine = _engine()
     _aktiver_warning(engine, _T0)
     # Mensch beendet den Alarm (manuell, RB-01/FA-10) -> Engine wieder auslösebereit.
@@ -116,7 +116,7 @@ def test_quittierung_armt_engine_fuer_neuen_alarm_neu():
     assert erneut.severity is AlarmSeverity.WARNING
 
 
-def test_quittierung_ohne_aktiven_alarm_ist_unkritisch():
+def test_beenden_ohne_aktiven_alarm_ist_unkritisch():
     engine = _engine()
     # Darf nicht crashen und ändert nichts am Normalverhalten.
     engine.beenden()
@@ -166,15 +166,13 @@ def test_kein_auto_downgrade_critical_bleibt_sticky():
     assert engine.beobachte(RiskLevel.GREEN, _T0 + timedelta(seconds=800)) is None
 
 
-# --- Review-Runde 1: Fail-safe-Härtung (UNKNOWN-Freeze, Max-Severity, tz, quittiert) ---
+# --- Review-Runde 1: Fail-safe-Härtung (UNKNOWN-Freeze, Max-Severity, tz, beenden) ---
 
 
 def test_naive_datetime_wird_abgewiesen():
     engine = _engine()
     # Contract §2a D: alle Zeitstempel UTC/tz-aware. Naive Zeit -> laut scheitern,
     # nicht im Alarmpfad mit TypeError crashen (Under-Alarm).
-    import pytest
-
     with pytest.raises(ValueError):
         engine.beobachte(RiskLevel.ORANGE, datetime(2026, 6, 26, 12, 0, 0))  # noqa: DTZ001
 
@@ -233,7 +231,7 @@ def test_rot_innerhalb_pending_hebt_severity_auf_critical():
     assert ausloesung.severity is AlarmSeverity.CRITICAL
 
 
-def test_quittiert_ohne_aktiven_alarm_unterbricht_eskalation_nicht():
+def test_beenden_ohne_aktiven_alarm_unterbricht_eskalation_nicht():
     engine = _engine()
     engine.beobachte(RiskLevel.ORANGE, _T0)  # Eskalation laeuft, noch kein aktiver Alarm
     engine.beenden()  # Fehlbedienung ohne aktiven Alarm -> darf Pending nicht loeschen
@@ -271,7 +269,7 @@ def test_langer_unknown_blackout_erzwingt_frischen_on_delay():
     assert spaet.severity is AlarmSeverity.WARNING
 
 
-def test_quittiert_waehrend_upgrade_pending_setzt_alles_zurueck():
+def test_beenden_waehrend_upgrade_pending_setzt_alles_zurueck():
     engine = _engine()
     _aktiver_warning(engine, _T0)
     engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))  # Upgrade pending
@@ -396,6 +394,41 @@ def test_nicht_utc_zeit_wird_auf_utc_normalisiert():
     ausloesung = engine.beobachte(RiskLevel.ORANGE, t0 + timedelta(seconds=60))
     assert ausloesung is not None
     assert ausloesung.ausgeloest_am.utcoffset() == timedelta(0)
+
+
+def test_gelb_setzt_laufende_eskalation_zurueck():
+    # GELB = bestaetigte De-Eskalation (kein UNKNOWN) -> Pending-Reset, NICHT Freeze.
+    # Pinnt den Reset-Zweig gegen Mutation `not in (UNKNOWN, YELLOW)`.
+    engine = _engine()
+    engine.beobachte(RiskLevel.ORANGE, _T0)
+    engine.beobachte(RiskLevel.YELLOW, _T0 + timedelta(seconds=30))  # Reset
+    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=40))  # frisches Pending
+    assert engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=80)) is None  # 80-40<60
+
+
+def test_beenden_ist_idempotent():
+    engine = _engine()
+    engine.beobachte(RiskLevel.ORANGE, _T0)
+    assert engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=60)) is not None
+    engine.beenden()
+    engine.beenden()  # zweiter Aufruf ohne aktiven Alarm -> No-Op, zerstoert kein Pending
+    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=200))
+    assert engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=260)) is not None
+
+
+def test_rueckwaerts_springende_zeit_loest_nicht_aus():
+    # Dokumentierte Vorbedingung: Aufrufer liefert monotone Zeit. Springt jetzt rueckwaerts,
+    # wird jetzt - pending_seit negativ -> kein Fire (kein Crash, robuste Richtung).
+    engine = _engine()
+    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=100))
+    assert engine.beobachte(RiskLevel.ORANGE, _T0) is None
+
+
+def test_identische_zeitstempel_loesen_nicht_doppelt_aus():
+    # Zwei Beobachtungen mit exakt gleichem jetzt (on_delay>0): 0 s < on_delay -> kein Fire.
+    engine = _engine()
+    assert engine.beobachte(RiskLevel.ORANGE, _T0) is None
+    assert engine.beobachte(RiskLevel.ORANGE, _T0) is None
 
 
 def test_rang_deckt_alle_severities_ab():

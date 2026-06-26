@@ -50,7 +50,7 @@ class AlarmHysterese:
     Bedingung bestätigt weg (GRÜN/GELB), startet der Timer neu. Solange ein Alarm aktiv
     ist, löst die Engine keinen weiteren *gleicher oder niedrigerer* Stufe aus; eine
     Hochstufung (warning -> critical) ist möglich. Kein Auto-Clear/-Downgrade — der aktive
-    Alarm wird nur manuell über `quittiert()` beendet (RB-01, FA-10).
+    Alarm wird nur manuell über `beenden()` gecleart (RB-01, FA-10).
     """
 
     def __init__(self, params: HystereseParameter) -> None:

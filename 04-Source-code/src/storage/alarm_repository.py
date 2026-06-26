@@ -71,8 +71,12 @@ class InMemoryAlarmRepository(AlarmRepository):
         return new_id
 
     def all(self) -> list[Alarm]:
-        """Liest alle Alarme in Einfuege-Reihenfolge (nur Double; YAGNI-Lesepfad)."""
-        return list(self._alarms)
+        """Liest alle Alarme in Einfuege-Reihenfolge (nur Double; YAGNI-Lesepfad).
+
+        Gibt Kopien zurueck, damit der interne Stand nicht ueber die zurueckgegebenen
+        (mutablen) Alarm-Objekte veraendert werden kann (Lese-Aliasing vermeiden).
+        """
+        return [alarm.model_copy() for alarm in self._alarms]
 
 
 class MySqlAlarmRepository(AlarmRepository):

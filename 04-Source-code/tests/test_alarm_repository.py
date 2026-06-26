@@ -89,7 +89,8 @@ def test_mysql_save_uses_parametrized_insert():
     # parametrisiert: Werte in params, NICHT im SQL-String (SQL-Injection-Schutz, V2)
     assert sql.count("%s") == 4
     assert "critical" not in sql
-    # exakte Spalte<->Wert-Zuordnung -- faengt einen severity/state-Swap oder Spalten-Reorder (V5)
+    # Spaltenreihenfolge im SQL UND exakte params -> faengt einen severity/state-Swap (V5)
+    assert "assessment_id, severity, raised_at, state" in sql
     assert params == (1, "critical", UTC_NOW, "active")
 
 
@@ -145,13 +146,14 @@ def test_alarmrepository_has_no_mutation_path_rb01():
 # --- V7 wird am Modell-Rand erzwungen (Alarm-Konstruktion), nicht im Repo ---
 
 
-@pytest.mark.parametrize("repo", [InMemoryAlarmRepository(), MySqlAlarmRepository()])
+@pytest.mark.parametrize("repo_cls", [InMemoryAlarmRepository, MySqlAlarmRepository])
 @pytest.mark.parametrize("zustand", [AlarmState.ACKNOWLEDGED, AlarmState.CLEARED])
-def test_save_rejects_non_active_alarm(repo, zustand):
+def test_save_rejects_non_active_alarm(repo_cls, zustand):
     # V8: save() persistiert nur AUSGELOESTE (aktive) Alarme. Ein nicht-aktiver Zustand
     # ist ein Aufrufer-Fehler (Zustandswechsel laufen ueber DTB-24/manuell), kein DB-Write.
+    # Frische Instanz pro Lauf (kein geteilter Test-State).
     with pytest.raises(ValueError):
-        repo.save(_alarm(state=zustand))
+        repo_cls().save(_alarm(state=zustand))
 
 
 def test_naive_raised_at_rejected_at_model_boundary():
