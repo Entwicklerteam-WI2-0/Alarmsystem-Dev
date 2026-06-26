@@ -23,8 +23,9 @@ _UTC_NOW = datetime(2026, 6, 26, 12, 0, 0, tzinfo=UTC)
 
 # DDL-Identifier koennen in MySQL NICHT parametrisiert werden; der aus Env-Vars stammende
 # DB-Name wird daher vor der Interpolation in CREATE DATABASE auf [A-Za-z0-9_] geweisslistet
-# (verhindert DDL-Injection ueber manipulierte Env-Vars im CI-Kontext).
-_DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
+# (verhindert DDL-Injection ueber manipulierte Env-Vars im CI-Kontext). fullmatch statt match,
+# weil `$` in Python auch vor einem abschliessenden \n matcht (Trailing-Newline aus Env-Dateien).
+_DB_NAME_RE = re.compile(r"[A-Za-z0-9_]+")
 
 
 def _test_db_name() -> str:
@@ -32,7 +33,7 @@ def _test_db_name() -> str:
         name = os.environ["DB_NAME_TEST"]
     else:
         name = f"{os.environ.get('DB_NAME', 'alarmsystem')}_test"
-    if not _DB_NAME_RE.match(name):
+    if not _DB_NAME_RE.fullmatch(name):
         raise ValueError(f"Ungueltiger Test-DB-Name (nur [A-Za-z0-9_] erlaubt): {name!r}")
     return name
 

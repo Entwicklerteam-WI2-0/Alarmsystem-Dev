@@ -173,6 +173,39 @@ def test_zeitkonstante_obergrenze_grenzfall():
         )
 
 
+def test_undershoot_obergrenze_grenzfall():
+    # Plausibilitaets-Grenze _MAX_UNDERSHOOT_C = 10 °C: exakt erlaubt, klar darueber abgelehnt.
+    # Ein zu grosser Deadband wuerde eine Rueckstufung faktisch nie bestaetigen (NF-05-Geist:
+    # Fehlkonfiguration frueh erkennen statt still die Stabilisierung deaktivieren).
+    from src.config.loader import HystereseParameter
+
+    HystereseParameter(  # exakt 10.0 -> ok
+        on_delay_s=60.0,
+        max_continuity_gap_s=120.0,
+        downgrade_stable_s=300.0,
+        downgrade_undershoot_c=10.0,
+    )
+    with pytest.raises(ConfigError):  # 50 °C -> abgelehnt (Fehlkonfiguration)
+        HystereseParameter(
+            on_delay_s=60.0,
+            max_continuity_gap_s=120.0,
+            downgrade_stable_s=300.0,
+            downgrade_undershoot_c=50.0,
+        )
+
+
+def test_kommentar_key_in_sektion_wird_toleriert(tmp_path):
+    # '_'-praefixierte Keys sind Kommentare und duerfen auch in einem Abschnitt stehen
+    # (Konsistenz mit Top-Level). Echte Schwellen-Keys bleiben streng (Tippfehler-Test oben).
+    daten = _minimal_config()
+    daten["hysterese"]["_comment"] = "Inline-Hinweis fuer Operatoren"
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    thresholds = load_thresholds(datei)  # darf NICHT scheitern
+    assert thresholds.hysterese.on_delay_s == 60.0
+
+
 def test_hysterese_parameter_lehnt_bool_bei_direktkonstruktion_ab():
     # bool ist int-Subtyp -> als Zeit/Marge nicht zulassen (Defense-in-Depth).
     from src.config.loader import HystereseParameter

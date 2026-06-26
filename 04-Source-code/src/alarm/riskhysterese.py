@@ -84,6 +84,11 @@ class RiskHysterese:
         streng = assess_ice_risk(
             surface_temp_c, dew_point_c, self._verschoben(thresholds), forecast_surface_temp_c
         )
+        # `streng is UNKNOWN` ist mit der aktuellen `assess_ice_risk`-Semantik unerreichbar:
+        # UNKNOWN entsteht rein datengetrieben (nicht-endliches T_s/T_d) und ist damit für `roh`
+        # und `streng` identisch — und `roh is UNKNOWN` ist oben bereits abgefangen. Der Guard
+        # bleibt als Defense-in-Depth, falls assess_ice_risk künftig schwellenabhängig UNKNOWN
+        # liefert: dann wird konservativ die aktuelle (höhere) Stufe gehalten.
         if streng is RiskLevel.UNKNOWN or _RISK_RANG[streng] >= _RISK_RANG[self._current]:
             self._downgrade_seit = None  # noch im Deadband -> kein stabiler Abstieg
             return self._current

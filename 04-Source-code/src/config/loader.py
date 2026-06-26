@@ -26,6 +26,11 @@ class ConfigError(Exception):
 # auslösen (stiller Under-Alarm). 24 h ist für jede Vereisungs-Entprellung mehr als genug.
 _MAX_ZEIT_S = 86_400.0
 
+# Plausibilitäts-Obergrenze für die Rückstufungs-Marge (°C/K). Ein zu großer Deadband würde
+# eine Rückstufung faktisch nie bestätigen (Anzeige bliebe dauerhaft auf der höheren Stufe).
+# Generös bemessen, fängt Tippfehler ab (NF-05-Geist); der reale G1-Wert liegt weit darunter.
+_MAX_UNDERSHOOT_C = 10.0
+
 
 @dataclass(frozen=True)
 class VereisungsSchwellen:
@@ -88,7 +93,8 @@ class HystereseParameter:
                 raise ConfigError(
                     f"Hysterese-Parameter '{feld}' muss >= 0 sein, ist aber {wert!r}"
                 )
-        # Obergrenze nur für die Zeitkonstanten (Sekunden), nicht für die °C-Marge.
+        # Obergrenze für die Zeitkonstanten (Sekunden): absurd große Werte sprengen timedelta
+        # oder deaktivieren den Alarm faktisch.
         for feld, wert in (
             ("on_delay_s", self.on_delay_s),
             ("max_continuity_gap_s", self.max_continuity_gap_s),
@@ -99,6 +105,13 @@ class HystereseParameter:
                     f"Hysterese-Parameter '{feld}' muss <= {_MAX_ZEIT_S} s (24 h) sein, "
                     f"ist aber {wert!r}"
                 )
+        # Plausibilitäts-Obergrenze für die °C-Marge: ein zu großer Deadband würde eine
+        # Rückstufung faktisch nie bestätigen (Anzeige bliebe dauerhaft auf der höheren Stufe).
+        if self.downgrade_undershoot_c > _MAX_UNDERSHOOT_C:
+            raise ConfigError(
+                f"Hysterese-Parameter 'downgrade_undershoot_c' muss <= {_MAX_UNDERSHOOT_C} °C "
+                f"sein, ist aber {self.downgrade_undershoot_c!r}"
+            )
         # Cross-Field: die Kontinuitäts-Lücke muss mindestens den On-Delay abdecken —
         # sonst bricht jeder Poll die Kontinuität, der On-Delay akkumuliert nie und es
         # feuert NIE ein Alarm (Under-Alarm). Laut scheitern statt still nie alarmieren.
@@ -190,7 +203,10 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict[str, Any]) -> T:
     # Unbekannte/vertippte Schlüssel laut ablehnen (NF-05: eine Safety-Config darf einen
     # vertippten Key nicht still verwerfen -> Operator glaubt sonst, eine Schwelle geändert
     # zu haben, der Default bleibt aktiv). Spiegelt extra='forbid' der Pydantic-Modelle.
-    unerwartet = daten.keys() - erwartet
+    # Ausnahme: '_'-praefixierte Keys sind Kommentar-/Metadaten-Konvention (wie auf Top-Level)
+    # und werden auch im Abschnitt toleriert; echte Schwellen-Keys beginnen nie mit '_', der
+    # Tippfehler-Schutz fuer reale Keys (z. B. 'off_delay_s') bleibt erhalten.
+    unerwartet = {k for k in daten.keys() - erwartet if not k.startswith("_")}
     if unerwartet:
         raise ConfigError(f"Abschnitt '{name}': unbekannte Schlüssel {sorted(unerwartet)}")
     werte = {feld: daten[feld] for feld in erwartet}
