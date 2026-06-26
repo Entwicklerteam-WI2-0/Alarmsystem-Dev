@@ -6,6 +6,7 @@ Konsolidierung erfolgt mit DTB-21.
 """
 
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -20,11 +21,20 @@ from src.storage.repository import RepositoryError
 
 _UTC_NOW = datetime(2026, 6, 26, 12, 0, 0, tzinfo=UTC)
 
+# DDL-Identifier koennen in MySQL NICHT parametrisiert werden; der aus Env-Vars stammende
+# DB-Name wird daher vor der Interpolation in CREATE DATABASE auf [A-Za-z0-9_] geweisslistet
+# (verhindert DDL-Injection ueber manipulierte Env-Vars im CI-Kontext).
+_DB_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
+
 
 def _test_db_name() -> str:
     if "DB_NAME_TEST" in os.environ:
-        return os.environ["DB_NAME_TEST"]
-    return f"{os.environ.get('DB_NAME', 'alarmsystem')}_test"
+        name = os.environ["DB_NAME_TEST"]
+    else:
+        name = f"{os.environ.get('DB_NAME', 'alarmsystem')}_test"
+    if not _DB_NAME_RE.match(name):
+        raise ValueError(f"Ungueltiger Test-DB-Name (nur [A-Za-z0-9_] erlaubt): {name!r}")
+    return name
 
 
 def _conn_params(**extra) -> dict:
@@ -67,6 +77,10 @@ def database(db_available: bool) -> str:
     conn = pymysql.connect(**_conn_params(database=name, autocommit=False))
     try:
         with conn.cursor() as cursor:
+            # Einfaches Splitten an ';' genuegt fuer das aktuelle schema.sql: reine
+            # CREATE-TABLE-DDL, KEINE Trigger/Stored Procedures mit ';' im Body (Append-only
+            # laeuft per GRANT, nicht per Trigger, NF-09). Kaeme solche DDL hinzu, braeuchte
+            # es hier einen echten Statement-Splitter.
             for statement in ddl.split(";"):
                 if statement.strip():
                     cursor.execute(statement)

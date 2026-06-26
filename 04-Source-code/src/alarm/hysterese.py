@@ -130,8 +130,15 @@ class AlarmHysterese:
 
             if jetzt - self._pending_seit >= self._on_delay:
                 ausgeloest = self._pending_max
-                # Invariante exekutierbar machen: _pending_max ist mit _pending_seit gesetzt.
-                assert ausgeloest is not None
+                # Invariante: _pending_max wird immer zusammen mit _pending_seit gesetzt/
+                # gecleart, ist hier also nie None. Bewusst KEIN `assert` (unter `python -O`
+                # entfernt -> _aktiver_alarm=None = stiller Under-Alarm, NF-01), sondern laut
+                # scheitern. Der Zweig ist über die öffentliche API unerreichbar (die
+                # Eskalations-Verzweigung oben setzt _pending_max stets vor dem Feuern).
+                if ausgeloest is None:  # pragma: no cover - defensiver Invarianten-Guard
+                    raise RuntimeError(
+                        "Invariante verletzt: _pending_max ist None trotz gesetztem _pending_seit"
+                    )
                 self._aktiver_alarm = ausgeloest
                 self._reset_pending()
                 return AlarmAusloesung(severity=ausgeloest, ausgeloest_am=jetzt)
