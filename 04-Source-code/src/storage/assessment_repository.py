@@ -168,13 +168,19 @@ class MySqlAssessmentRepository(AssessmentRepository):
             with conn.cursor() as cursor:
                 cursor.execute(MySqlAssessmentRepository._INSERT_SQL, params)
                 assessment_id = cursor.lastrowid
-            conn.commit()
+            # ID-Pruefung VOR commit: bei fehlender/ungueltiger ID (theoretischer
+            # AUTO_INCREMENT-Fehlerfall) wird die Zeile verworfen statt persistiert,
+            # damit keine Orphan-Row ohne zurueckgegebene ID und ohne Assessment-
+            # Snapshot zurueckbleibt (NF-01: konsistenter Zustand; der Service
+            # behandelt den Zyklus als fehlgeschlagen statt halb persistiert).
             # `not` faengt None UND 0 ab (0 = kein AUTO_INCREMENT / unerwarteter
             # MySQL-Zustand); eine gueltige Auto-ID ist immer >= 1.
             if not assessment_id:
+                conn.rollback()
                 raise RepositoryError(
                     "INSERT lieferte keine gueltige ID (AUTO_INCREMENT auf 'assessment' pruefen)"
                 )
+            conn.commit()
             return assessment_id
         except pymysql.Error:
             try:

@@ -221,18 +221,25 @@ class ReadingRepository(Repository):
 
     @staticmethod
     def _insert(conn: pymysql.Connection, params: tuple) -> int:
-        """Fuehrt INSERT aus, committet und gibt lastrowid zurueck."""
+        """Fuehrt INSERT aus, prueft die ID VOR dem commit und gibt lastrowid zurueck.
+
+        Reihenfolge ID-Check vor commit bewusst: bei fehlender/ungueltiger ID
+        (theoretischer AUTO_INCREMENT-Fehlerfall) wird die Zeile verworfen statt
+        persistiert, damit keine Orphan-Row ohne zurueckgegebene ID zurueckbleibt
+        (NF-01: konsistenter Zustand). Entspricht MySqlAssessmentRepository._insert.
+        """
         try:
             with conn.cursor() as cursor:
                 cursor.execute(ReadingRepository._INSERT_SQL, params)
                 reading_id = cursor.lastrowid
-            conn.commit()
             # `not` faengt None UND 0 ab (0 = kein AUTO_INCREMENT / unerwarteter
             # MySQL-Zustand); eine gueltige Auto-ID ist immer >= 1.
             if not reading_id:
+                conn.rollback()
                 raise RepositoryError(
                     "INSERT lieferte keine gueltige ID (AUTO_INCREMENT auf 'reading' pruefen)"
                 )
+            conn.commit()
             return reading_id
         except pymysql.Error:
             try:
