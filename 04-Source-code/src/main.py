@@ -39,6 +39,8 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from src.api.responses import NO_STORE_HEADERS, service_unavailable
+from src.api.v1 import ThresholdsUnavailableError
 from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
 from src.config.loader import Thresholds, load_thresholds
@@ -71,9 +73,6 @@ _DEFAULT_G1_BASE_URL = "http://g1-sensorik.local"
 # zu fixieren — das get_latest()-Assessment ist ohnehin noch global (nicht pro Sensor),
 # daher ist die ID hier nur die Reading-Auswahl fuer den Aktualitaets-/Status-Check.
 _SENSOR_ID = "anr-rwy-01"
-
-# Contract-Fehlercode fuer "G2 nicht lieferfaehig" (503), s. openapi.yaml Error-Beispiel.
-_SERVICE_UNAVAILABLE_CODE = "SERVICE_UNAVAILABLE"
 
 
 @dataclass
@@ -139,28 +138,6 @@ def get_runtime(request: Request) -> Runtime:
     if runtime is None:
         raise RuntimeNotReadyError("Runtime nicht initialisiert (lifespan unvollstaendig).")
     return runtime
-
-
-# Echtzeit-Sicherheitsendpoint: weder Proxies noch Browser duerfen einen Ausfall-
-# (503) ODER Momentan-Zustand (200) cachen — ein gecachtes 503 (G2 laengst wieder da)
-# oder gar ein gecachtes "green" waere ein veraltetes Sicherheitssignal (NF-01).
-# Relevant erst hinter einem kuenftigen Reverse-Proxy/Load-Balancer, aber billig + korrekt.
-_NO_STORE_HEADERS = {"Cache-Control": "no-store"}
-
-
-def _service_unavailable(message: str) -> JSONResponse:
-    """Baut die 503-Antwort im Contract-Fehlerformat `Error {code, message}`.
-
-    Bewusst NICHT `HTTPException(detail=...)`: das liefert `{"detail": ...}` und
-    bricht damit die eingefrorene Naht (Contract verlangt `{code, message}`).
-    Die Nachricht bleibt generisch (keine internen Details/Secrets, RB-01/Contract D).
-    `Cache-Control: no-store`, damit kein Proxy einen ueberholten Ausfall cacht.
-    """
-    return JSONResponse(
-        status_code=503,
-        content=Error(code=_SERVICE_UNAVAILABLE_CODE, message=message).model_dump(),
-        headers=_NO_STORE_HEADERS,
-    )
 
 
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
@@ -240,7 +217,22 @@ app.include_router(v1_router)
 async def _runtime_not_ready_handler(_request: Request, exc: RuntimeNotReadyError) -> JSONResponse:
     """Fehlt der Runtime-Graph, contract-konform als 503 melden (nie rohes 500/{detail})."""
     logger.error("Runtime nicht verfuegbar: %s", exc)
-    return _service_unavailable("G2 momentan nicht lieferfaehig.")
+    return service_unavailable("G2 momentan nicht lieferfaehig.")
+
+
+@app.exception_handler(ThresholdsUnavailableError)
+async def _thresholds_unavailable_handler(
+    _request: Request, exc: ThresholdsUnavailableError
+) -> JSONResponse:
+    """Schwellenwert-Config nicht ladbar -> contract-konform als 503 (nie rohes {detail}).
+
+    Spiegelt `_runtime_not_ready_handler`: eine in der `get_thresholds`-Dependency
+    geworfene `ThresholdsUnavailableError` wird hier auf `Error {code, message}` + no-store
+    abgebildet. `exc` (ggf. mit internem Pfad) geht nur ins Server-Log, die Response bleibt
+    generisch (kein Leak, NF-01-Geist).
+    """
+    logger.error("Schwellenwerte nicht verfuegbar: %s", exc)
+    return service_unavailable("Schwellenwert-Konfiguration nicht verfuegbar.")
 
 
 @app.get("/v1/health")
@@ -290,20 +282,20 @@ def assessment_current(
     """
     # no-store auch auf dem 200-Pfad: ein gecachter Momentan-Zustand (stale/unknown/
     # green) waere ein veraltetes Sicherheitssignal (NF-01). Die direkt zurueckgegebenen
-    # 503-JSONResponses tragen den Header selbst (_service_unavailable).
-    response.headers.update(_NO_STORE_HEADERS)
+    # 503-JSONResponses tragen den Header selbst (service_unavailable).
+    response.headers.update(NO_STORE_HEADERS)
     try:
         assessment = runtime.assessment_repo.get_latest()
         readings = runtime.reading_repo.get_latest(_SENSOR_ID, limit=1)
     except RepositoryError as exc:
         # DB-Ausfall: Detail server-seitig loggen, nach aussen nur generisch (Contract D).
         logger.error("assessment/current: Persistenz nicht verfuegbar: %s", exc)
-        return _service_unavailable("G2 momentan nicht lieferfaehig.")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
 
     reading = readings[0] if readings else None
     if assessment is None or reading is None:
         # Noch kein vollstaendiger Snapshot (frischer Start / Retention) -> nicht lieferfaehig.
-        return _service_unavailable("Noch keine Bewertung verfuegbar.")
+        return service_unavailable("Noch keine Bewertung verfuegbar.")
 
     try:
         return build_assessment_current(
@@ -317,4 +309,4 @@ def assessment_current(
         # is_stale-ValueError, oder kuenftig ein zu langer explanation-Text). Contract-
         # konform als 503 melden statt rohem 500 mit {detail}; Detail nur server-seitig.
         logger.exception("assessment/current: Bewertung konnte nicht aufbereitet werden")
-        return _service_unavailable("G2 momentan nicht lieferfaehig.")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")

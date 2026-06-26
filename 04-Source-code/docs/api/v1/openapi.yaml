@@ -141,7 +141,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
               example:
-                detail: "Schwellenwert-Konfiguration nicht verfuegbar"
+                code: SERVICE_UNAVAILABLE
+                message: "Schwellenwert-Konfiguration nicht verfuegbar."
 
   /v1/assessment/current:
     get:
