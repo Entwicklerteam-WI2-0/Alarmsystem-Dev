@@ -113,6 +113,7 @@ def test_none_reading_is_unknown(thresholds):
     result = service.assess_reading(None, now)
 
     assert result.risk_level == RiskLevel.UNKNOWN
+    assert result.reading_id is None  # ohne Reading kein Bezug moeglich
 
 
 def test_fault_reading_is_unknown_never_green(thresholds):
@@ -125,6 +126,7 @@ def test_fault_reading_is_unknown_never_green(thresholds):
     )
 
     assert result.risk_level == RiskLevel.UNKNOWN
+    assert result.reading_id == 1  # ausloesendes Reading verknuepft (Traceability)
 
 
 def test_stale_reading_is_unknown_never_green(thresholds):
@@ -136,6 +138,7 @@ def test_stale_reading_is_unknown_never_green(thresholds):
     result = service.assess_reading(_reading(old, surface=20.0, dew=0.0), now)
 
     assert result.risk_level == RiskLevel.UNKNOWN
+    assert result.reading_id == 1  # ausloesendes Reading verknuepft (Traceability)
 
 
 def test_naive_now_raises(thresholds):

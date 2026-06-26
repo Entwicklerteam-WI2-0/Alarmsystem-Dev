@@ -52,6 +52,12 @@ logger = logging.getLogger(__name__)
 # TODO DTB-64 / P0-a: poll_interval_s gehoert in die Config (betrieb.poll_interval_s),
 # nicht als Default hier. Bis dahin ueber Env uebersteuerbar.
 _DEFAULT_POLL_INTERVAL_S = 30.0
+# Bewusster Default: http:// im abgeschlossenen Projekt-/Intranet (G1 ist ein
+# Prototyp ohne TLS). Fuer realen Betrieb HTTPS NICHT hier hart erzwingen — ein
+# https://-Default wuerde die Verbindung zu einem HTTP-only-G1 brechen (eingefrorene
+# Naht). Stattdessen pro Umgebung per Env umstellen: G1_BASE_URL=https://g1-sensorik.local
+# (dokumentiert in .env.example). Architektenentscheidung, falls HTTPS-Default + HTTP-Opt-in
+# gewuenscht wird.
 _DEFAULT_G1_BASE_URL = "http://g1-sensorik.local"
 
 

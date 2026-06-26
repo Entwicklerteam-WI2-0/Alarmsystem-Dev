@@ -85,11 +85,19 @@ class AssessmentService:
         stale_timeout_s = self._thresholds.datenqualitaet.stale_timeout_s
 
         if reading is None:
+            # Kein Reading -> kein reading_id moeglich (Fail-safe ohne Bezug).
             assessment = build_unknown_assessment("keine aktuellen Daten", now)
         elif reading.status is SensorStatus.FAULT:
-            assessment = build_unknown_assessment("sensor fault", now)
+            # Reading liegt vor (Poller hat persistiert) -> reading_id verknuepfen,
+            # damit aus dem Snapshot nachvollziehbar bleibt, welches konkrete Reading
+            # den Fail-safe ausgeloest hat (NF-05 / Audit-Traceability).
+            assessment = build_unknown_assessment("sensor fault", now).model_copy(
+                update={"reading_id": reading.id}
+            )
         elif is_stale(reading, now, stale_timeout_s):
-            assessment = build_unknown_assessment("stale (Messwert veraltet)", now)
+            assessment = build_unknown_assessment(
+                "stale (Messwert veraltet)", now
+            ).model_copy(update={"reading_id": reading.id})
         else:
             if reading.id is None:
                 # Invariante: der Poller (DTB-28) MUSS das Reading persistiert haben,
