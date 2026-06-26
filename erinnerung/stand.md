@@ -349,3 +349,11 @@ PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separ
 - **Abhängigkeit DTB-27 (#107):** fachlicher Konsument von DTB-64 (Alarme aus Bewertungen). Merge-Reihenfolge: #105 zuerst, dann #107, danach Verdrahtung Poll-Loop → `AlarmService`.
 - **Nächster Schritt:** DTB-43 `GET /v1/assessment/current` einkommentieren/testen; Health auf Pydantic + 503 heben; PR #105 mergen.
 —backenddev
+
+## Update [26.06., ~23:35] — DTB-64 / PR #105: Review-Runden 1–5 abgeschlossen, alles grün (architekt)
+- **PR #105 (`feat/dtb-64-scaffold`):** alle 5 Review-Runden umgesetzt — NF-05-Traceability (`reading_id` jetzt auch im Stale/Fault-Fail-safe via `model_copy`; `threshold_set_id`-Gap dokumentiert), Scheduler separater `except ValueError`→CRITICAL, `build_assessment_current`-None-Guard, `Health.status`-Constraint, `lastrowid==0`-Härtung, FIXME/TODO, plus Tests.
+- **Bewusst nicht umgesetzt (begründet):** G1-HTTPS-Default nicht geflippt (bräche die eingefrorene HTTP-only-Naht zu G1; HTTPS per Env-Opt-in) · DictCursor-Probe-Cursor abgelehnt (bräche die Fake-basierten Repo-Tests; Guard ist bereits fail-closed).
+- **Folge-Task DTB-65** (threshold_set_id-Versionierung, NF-05) angelegt; DTB-43 um Sensor-Scope-Hinweis (`get_latest`) kommentiert. Persönlicher Entscheidungslog-Eintrag zum DTB-64-Arc geschrieben (`e481808`).
+- **Verifikation:** 364 passed, 14 skipped, ruff clean, **CI 5/5 grün**. Branch lokal=remote `a2f52fe`.
+- **Nächster Schritt (unverändert):** DTB-43 einkommentieren/testen; Health auf Pydantic + 503; PR #105 reviewen/mergen, dann #107.
+—architekt
