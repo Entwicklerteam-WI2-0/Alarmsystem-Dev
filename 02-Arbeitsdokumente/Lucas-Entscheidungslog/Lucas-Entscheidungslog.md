@@ -7,6 +7,24 @@
 
 ---
 
+## 2026-06-26 — Build-Fix PR #93: Schwellen-Guard um technische Guards erweitert statt noqa-Marker
+- **Kontext/Task:** PR #93 Review-Fix-Commits (DTB-58 Poller-Stale + DTB-60 dew_point-Integration) · NF-05 (Schwellen parametrierbar) · DTB-22 (No-Hardcode-Guard). Auslöser: `timeout_s <= 0`-Guard in `src/assessment/failsafe.py` ließ den CI-Job `Lint Config` rot werden.
+- **Entscheidung:** Den Schwellen-Guard `tools/check_hardcoded_thresholds.py` um eine Whitelist technischer Operanden (`timeout_s`, `limit`, `age`) erweitern, statt den Guard-Vergleich mit `# noqa: hardcoded-threshold` zu markieren.
+- **Begründung:** `timeout_s <= 0` ist keine fachliche Vereisungsschwelle, sondern eine technische Vorbedingung für die Stale-Erkennung. Der Guard soll hartcodierte **fachliche** Schwellen (Temperatur/Feuchte/Taupunkt) verhindern, nicht technische Validierungen. Durch die Whitelist bleibt der Guard fail-closed für echte Schwellen und vermeidet Fehlalarme bei zukünftigen technischen Guards.
+- **Alternativen (erwogen/verworfen):**
+  - *`# noqa: hardcoded-threshold` auf der Vergleichszeile:* verworfen — würde ruff-Warnungen wegen unbekanntem Noqa-Code erzeugen und müsste bei jedem weiteren technischen Guard wiederholt werden; untergräbt die Automatisierung.
+  - *Vergleich mit Konstante statt Literal (`timeout_s <= ZERO`):* verworfen — verschleiert nur das Literal, ohne die fachliche Aussage zu ändern; kein echter Fix.
+- **Ergebnis/Status:** umgesetzt in `feat/dtb-58-60-poller-stale-dewpoint` (Commit `bbea4bc`); Guard + Regressionstests (`tests/test_no_hardcoded_thresholds.py`) aktualisiert; CI Lint Config + Tests grün.
+
+## 2026-06-26 — uni-review-orchestrator Skill deployt; Skill-Plan + Spiegel aktualisiert
+- **Kontext/Task:** Team-OS-Toolkit (`Devteam-vibecodes`) · WP5/WP6 Review-Workflow. Auslöser: Bedarf an einer durchlaufenden Kette aller UNI-Review-/QS-/Convention-Skills.
+- **Entscheidung:** Neuen Skill `uni:review-orchestrator` als `.claude/skills/uni-review-orchestrator/SKILL.md` deployen. Er ruft in fester Reihenfolge auf: `code-tour`, `python-review`, `fastapi-review`, `security-review`, `test-coverage`, `verification-loop`, `doku-qualitaets-review`, `quality-gate`, `konventions-healthcheck`, abschließend Branch-Main-Abgleich via `git-workflow`.
+- **Begründung:** Reviewer sollen keine Dimension vergessen (Code-Qualität, Sicherheit, Coverage, Verifikation, Doku, Conventions, Main-Abgleich). Ein Orchestrator-Skill standardisiert den Ablauf, während die Einzel-Skills weiterhin manuell aufrufbar bleiben.
+- **Alternativen (erwogen/verworfen):**
+  - *Manuelles Aufrufen aller Skills im Review:* verworfen — fehleranfällig, inkonsistent zwischen Reviewern.
+  - *Erweiterung eines bestehenden Skills (z. B. `review-pr`):* verworfen — `review-pr` hat seinen eigenen Fokus (DoD-gegated PR-Review); ein separater Orchestrator für die Skill-Kette hält die Verantwortung klar.
+- **Ergebnis/Status:** umgesetzt in `Devteam-vibecodes` (Commit `567e2c3`); `Skill-Plan.md`, `Abhaengigkeiten.md` und `README.md` als Spiegel aktualisiert (Skill-Anzahl 53 → 54).
+
 ## 2026-06-26 — DTB-54: Append-only über DB-Rechte (grants.sql) statt Trigger; Least-Privilege-Matrix
 - **Kontext/Task:** P2.2 · DTB-54 / NF-09 (append-only) · E-35 (rohes PyMySQL, kein ORM, native MariaDB) · betrifft `migrations/grants.sql` + Apply-/Verifikations-Anleitung in `04-Source-code/README.md`. Ergänzt DTB-29/E-39 (Audit-Log append-only auf Interface-Ebene) um die **DB-seitige** Durchsetzung. Auslöser: PR #85-Reviews — grants.sql-Rechte-Matrix + Least-Privilege-Feinschliff.
 - **Entscheidung:**
