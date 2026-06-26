@@ -83,6 +83,15 @@ class AlarmHysterese:
             ValueError: wenn `jetzt` nicht zeitzonenbewusst ist (Contract §2a D: UTC).
             Der Aufrufer muss zudem monoton steigende Zeit liefern (Poll-Schicht).
 
+        VORBEDINGUNG (sicherheitskritisch): Der Aufrufer MUSS die contract-konforme
+        Risikostufe einspeisen, bei der Stale/Defekt → `UNKNOWN` ist (API_FROZEN §2a B),
+        NICHT `yellow`. Nur `UNKNOWN` friert eine laufende Eskalation ein; `GREEN`/`YELLOW`
+        gelten als bestätigte De-Eskalation und SETZEN den On-Delay ZURÜCK. Würde ein
+        Verdrahter Stale fälschlich als `YELLOW` liefern (was Schwellenwerte.md §3 dem
+        Wortlaut nach zulässt), unterdrückte der GELB-Reset eine reale Eskalation still
+        (Under-Alarm/NF-01-Bruch). Diese Vorbedingung gehört in den Orchestrierungs-/
+        Integrationstest.
+
         Hinweis (bewusst): Der On-Delay misst die Zeit seit der ersten Bestätigung und
         toleriert Lücken bis `max_continuity_gap_s` — er verlangt NICHT strikt
         ununterbrochene Anwesenheit der höheren Stufe. Ein ROT-Blip, gehaltenes ORANGE

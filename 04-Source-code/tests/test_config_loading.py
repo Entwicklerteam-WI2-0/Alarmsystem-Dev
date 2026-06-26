@@ -200,6 +200,19 @@ def test_on_delay_null_ist_erlaubt(tmp_path):
     assert thresholds.hysterese.on_delay_s == 0.0
 
 
+def test_integer_schwellwert_wird_akzeptiert(tmp_path):
+    # Ein JSON-Integer (z. B. 0 ohne Dezimalpunkt) ist ein gueltiger Schwellwert
+    # (int wird neben float akzeptiert; nur bool/nicht-numerisch wird abgelehnt).
+    daten = _minimal_config()
+    daten["prognose"]["t_s_grenz_c"] = 0  # int, nicht 0.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    thresholds = load_thresholds(datei)
+
+    assert thresholds.prognose.t_s_grenz_c == 0
+
+
 def test_eigener_pfad_ist_parametrierbar(tmp_path):
     # Arrange — NF-05: Schwellen über externe Config austauschbar
     eigene = tmp_path / "thresholds.json"
