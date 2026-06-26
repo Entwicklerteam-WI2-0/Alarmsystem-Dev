@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 from src.api.v1 import get_thresholds
 from src.config.loader import (
     ConfigError,
+    DatenqualitaetSchwellen,
+    PlausibilitaetSchwellen,
     PrognoseSchwellen,
     Thresholds,
     VereisungsSchwellen,
@@ -28,7 +30,7 @@ def test_get_thresholds_returns_loader_values():
     # Assert: 200 + Struktur aus thresholds.json, deckungsgleich mit dem Loader.
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body) == {"vereisung", "prognose"}
+    assert set(body) == {"vereisung", "prognose", "datenqualitaet", "plausibilitaet"}
     assert body == asdict(load_thresholds())
 
 
@@ -37,6 +39,8 @@ def test_get_thresholds_reflects_loader_not_hardcoded():
     fake = Thresholds(
         vereisung=VereisungsSchwellen(1.0, 2.0, 3.0, 4.0),
         prognose=PrognoseSchwellen(9.0),
+        datenqualitaet=DatenqualitaetSchwellen(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
+        plausibilitaet=PlausibilitaetSchwellen(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
     )
     app.dependency_overrides[get_thresholds] = lambda: fake
     try:
@@ -57,3 +61,13 @@ def test_get_thresholds_config_error_returns_503_without_leak():
     # Assert: sauberer 503 (Fail-safe), interne Details werden NICHT geleakt.
     assert resp.status_code == 503
     assert "geheim" not in resp.text
+
+
+def test_get_thresholds_os_error_returns_503_without_leak():
+    # Arrange: Loader scheitert mit Berechtigungs-/Lese-Fehler (OSError).
+    with patch("src.api.v1.load_thresholds", side_effect=PermissionError("/etc/secret")):
+        # Act
+        resp = client.get("/v1/thresholds")
+    # Assert: sauberer 503 (Fail-safe), interne Details werden NICHT geleakt.
+    assert resp.status_code == 503
+    assert "/etc/secret" not in resp.text

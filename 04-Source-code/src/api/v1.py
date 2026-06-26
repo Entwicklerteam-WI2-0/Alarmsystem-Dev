@@ -27,7 +27,7 @@ def get_thresholds() -> Thresholds:
     """
     try:
         return load_thresholds()
-    except ConfigError as exc:
+    except (ConfigError, OSError) as exc:
         logger.error("Schwellenwert-Config nicht ladbar: %s", exc)
         raise HTTPException(
             status_code=503, detail="Schwellenwert-Konfiguration nicht verfuegbar"

@@ -39,6 +39,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
 from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
@@ -225,8 +226,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await task
 
 
-from src.api.v1 import router as v1_router
-
 app = FastAPI(
     title="Alarmsystem-Backend G2 — Vereisungserkennung ANR",
     version="0.1.0",
@@ -238,9 +237,7 @@ app.include_router(v1_router)
 
 
 @app.exception_handler(RuntimeNotReadyError)
-async def _runtime_not_ready_handler(
-    _request: Request, exc: RuntimeNotReadyError
-) -> JSONResponse:
+async def _runtime_not_ready_handler(_request: Request, exc: RuntimeNotReadyError) -> JSONResponse:
     """Fehlt der Runtime-Graph, contract-konform als 503 melden (nie rohes 500/{detail})."""
     logger.error("Runtime nicht verfuegbar: %s", exc)
     return _service_unavailable("G2 momentan nicht lieferfaehig.")

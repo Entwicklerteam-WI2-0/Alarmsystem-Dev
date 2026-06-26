@@ -95,9 +95,9 @@ class AssessmentService:
                 update={"reading_id": reading.id}
             )
         elif is_stale(reading, now, stale_timeout_s):
-            assessment = build_unknown_assessment(
-                "stale (Messwert veraltet)", now
-            ).model_copy(update={"reading_id": reading.id})
+            assessment = build_unknown_assessment("stale (Messwert veraltet)", now).model_copy(
+                update={"reading_id": reading.id}
+            )
         else:
             if reading.id is None:
                 # Invariante: der Poller (DTB-28) MUSS das Reading persistiert haben,
