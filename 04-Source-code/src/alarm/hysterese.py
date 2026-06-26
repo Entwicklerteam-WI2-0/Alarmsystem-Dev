@@ -53,6 +53,9 @@ class AlarmHysterese:
     def __init__(self, params: HystereseParameter) -> None:
         self._on_delay = timedelta(seconds=params.on_delay_s)
         self._pending_seit: datetime | None = None
+        # Höchste Stufe der laufenden Eskalationsphase — damit ein transientes ROT im
+        # On-Delay-Fenster nicht zu WARNING „verwässert" (Safety-Bias).
+        self._pending_max: AlarmSeverity | None = None
         self._aktiver_alarm: AlarmSeverity | None = None
 
     def beobachte(self, risk_level: RiskLevel, jetzt: datetime) -> AlarmAusloesung | None:
@@ -61,36 +64,57 @@ class AlarmHysterese:
         Returns:
             Eine `AlarmAusloesung` genau auf der Beobachtung, die den On-Delay
             überschreitet; sonst `None` (pending, nicht alarmwürdig oder bereits aktiv).
+
+        Raises:
+            ValueError: wenn `jetzt` nicht zeitzonenbewusst ist (Contract §2a D: UTC).
+            Der Aufrufer muss zudem monoton steigende Zeit liefern (Poll-Schicht).
         """
+        if jetzt.tzinfo is None:
+            raise ValueError(
+                "jetzt muss zeitzonenbewusst (UTC) sein — naive datetime nicht erlaubt."
+            )
+
         severity = severity_for_risk(risk_level)
 
-        # Nur eine Hochstufung (höhere Stufe als der aktive Alarm) ist On-Delay-relevant:
-        # Raise (kein Alarm -> warning/critical) oder Upgrade (warning -> critical). Stufen
-        # <= aktiv (auch nicht-alarmwürdige GRÜN/GELB/unknown) setzen den Eskalations-Timer
-        # zurück und lösen nichts aus — KEIN automatisches Downgrade/Clear (RB-01/FA-10);
-        # der aktive Alarm bleibt bestehen, bis ihn ein Mensch über `quittiert()` beendet.
-        if _rang(severity) <= _rang(self._aktiver_alarm):
-            self._pending_seit = None
+        # Eskalations-Kandidat: alarmwürdig UND höher als der aktive Alarm — Raise
+        # (kein Alarm -> warning/critical) oder Upgrade (warning -> critical).
+        if severity is not None and _rang(severity) > _rang(self._aktiver_alarm):
+            if self._pending_seit is None:
+                self._pending_seit = jetzt
+                self._pending_max = severity
+            elif _rang(severity) > _rang(self._pending_max):
+                self._pending_max = severity  # höchste Stufe der Phase festhalten
+
+            if jetzt - self._pending_seit >= self._on_delay:
+                ausgeloest = self._pending_max
+                self._aktiver_alarm = ausgeloest
+                self._pending_seit = None
+                self._pending_max = None
+                # _pending_max ist hier nie None (mit _pending_seit gesetzt).
+                return AlarmAusloesung(severity=ausgeloest, ausgeloest_am=jetzt)
             return None
 
-        # severity ist hier alarmwürdig (Rang > 0) und höher als der aktive Alarm.
-        if self._pending_seit is None:
-            self._pending_seit = jetzt
-            return None
-
-        if jetzt - self._pending_seit >= self._on_delay:
-            self._aktiver_alarm = severity
+        # Kein Eskalations-Kandidat:
+        #  - UNKNOWN (Unsicherheit/Stale) FRIERT eine laufende Eskalation EIN — kein Reset.
+        #    Sonst könnte ein flackernder Sensor (ORANGE<->UNKNOWN, R1/R2) den On-Delay
+        #    endlos zurücksetzen und einen realen Alarm dauerhaft unterdrücken (NF-01/K1).
+        #  - GRÜN/GELB oder Stufe <= aktiv = bestätigte Nicht-/Niedriger-Lage -> Timer-Reset.
+        #    KEIN Auto-Downgrade/Clear eines aktiven Alarms (RB-01/FA-10).
+        if risk_level is not RiskLevel.UNKNOWN:
             self._pending_seit = None
-            return AlarmAusloesung(severity=severity, ausgeloest_am=jetzt)
-
+            self._pending_max = None
         return None
 
     def quittiert(self) -> None:
         """Meldet, dass ein Mensch den aktiven Alarm beendet hat (manuell, RB-01/FA-10).
 
-        Setzt den internen Zustand zurück, sodass eine erneut auftretende Bedingung wieder
+        Setzt den Alarm-Zustand zurück, sodass eine erneut auftretende Bedingung wieder
         einen Alarm auslösen kann. Dies ist der EINZIGE Weg, den aktiven Alarm zu beenden —
-        es gibt bewusst kein automatisches Clearing (RB-01: Mensch = letzte Instanz).
+        kein automatisches Clearing (RB-01: Mensch = letzte Instanz). Ohne aktiven Alarm ist
+        der Aufruf ein No-Op: eine gerade laufende Eskalation wird NICHT unterbrochen.
         """
+        if self._aktiver_alarm is None:
+            return
         self._aktiver_alarm = None
         self._pending_seit = None
+        self._pending_max = None

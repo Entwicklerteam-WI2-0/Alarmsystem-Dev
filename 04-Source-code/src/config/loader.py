@@ -8,6 +8,7 @@ Enabler für das Bewertungsmodul DTB-38. DB-frei (NF-05; DB-Secrets gehören NIC
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
@@ -38,25 +39,34 @@ class HystereseParameter:
     """Entprellung/Hysterese der Alarm-Generierung (DTB-27, Schwellenwerte.md §2).
 
     Zeitkonstanten in Sekunden, Temperatur-Marge in °C. Gegen Chattering (ISA-18.2):
-    Hochstufung erst nach `on_delay_s` anhaltender Bedingung; Rückstufung erst, wenn
-    die Schwelle um `downgrade_undershoot_c` unterschritten ist UND `downgrade_stable_s`
-    stabil bleibt. Steuert nur das Auslösen/Stabilisieren — KEIN Auto-Clear (RB-01).
+    Hochstufung (Auslösen) erst nach `on_delay_s` anhaltender Bedingung — von der
+    Engine umgesetzt. Die Rückstufung (`downgrade_undershoot_c` um 0,5 °C unterschritten
+    UND `downgrade_stable_s` stabil) ist **geplant** (DTB-27-Folgeschritt) und braucht
+    eine Temperatur-Kopplung in der Bewertungsschicht; beide Felder sind dafür reserviert
+    und werden von der aktuellen Engine noch NICHT ausgewertet. KEIN Auto-Clear (RB-01).
     """
 
     on_delay_s: float
-    downgrade_stable_s: float
-    downgrade_undershoot_c: float
+    downgrade_stable_s: float  # reserviert: Rückstufungs-Stabilität (noch nicht ausgewertet)
+    downgrade_undershoot_c: float  # reserviert: Rückstufungs-Marge (noch nicht ausgewertet)
 
     def __post_init__(self) -> None:
-        # Negative Zeit/Marge ist fachlich ungültig und würde den Debounce aushebeln
-        # (Sicherheitsparameter still ignoriert) -> laut scheitern statt klaglos laden.
+        # Ungültige Werte würden den Debounce aushebeln (Sicherheitsparameter still
+        # ignoriert) -> laut scheitern statt klaglos laden. NaN/inf sind besonders
+        # tückisch: `nan < 0` ist False, also separat über isfinite abfangen.
         for feld, wert in (
             ("on_delay_s", self.on_delay_s),
             ("downgrade_stable_s", self.downgrade_stable_s),
             ("downgrade_undershoot_c", self.downgrade_undershoot_c),
         ):
+            if not math.isfinite(wert):
+                raise ConfigError(
+                    f"Hysterese-Parameter '{feld}' muss endlich sein, ist aber {wert!r}"
+                )
             if wert < 0:
-                raise ConfigError(f"Hysterese-Parameter '{feld}' muss >= 0 sein, ist aber {wert!r}")
+                raise ConfigError(
+                    f"Hysterese-Parameter '{feld}' muss >= 0 sein, ist aber {wert!r}"
+                )
 
 
 @dataclass(frozen=True)

@@ -161,3 +161,98 @@ def test_kein_auto_downgrade_critical_bleibt_sticky():
     # Risiko sinkt: KEIN automatisches Downgrade/Clear (RB-01) -> keine Events.
     assert engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=400)) is None
     assert engine.beobachte(RiskLevel.GREEN, _T0 + timedelta(seconds=800)) is None
+
+
+# --- Review-Runde 1: Fail-safe-Härtung (UNKNOWN-Freeze, Max-Severity, tz, quittiert) ---
+
+
+def test_naive_datetime_wird_abgewiesen():
+    engine = _engine()
+    # Contract §2a D: alle Zeitstempel UTC/tz-aware. Naive Zeit -> laut scheitern,
+    # nicht im Alarmpfad mit TypeError crashen (Under-Alarm).
+    import pytest
+
+    with pytest.raises(ValueError):
+        engine.beobachte(RiskLevel.ORANGE, datetime(2026, 6, 26, 12, 0, 0))  # noqa: DTZ001
+
+
+def test_unknown_friert_on_delay_ein_statt_zu_resetten():
+    engine = _engine()
+    engine.beobachte(RiskLevel.ORANGE, _T0)
+    # UNKNOWN = Unsicherheit/Stale -> darf die laufende Eskalation NICHT zuruecksetzen.
+    engine.beobachte(RiskLevel.UNKNOWN, _T0 + timedelta(seconds=30))
+    # Trotz UNKNOWN-Blip: 70 s nach Start liegt wieder ORANGE an -> Alarm muss feuern.
+    ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=70))
+    assert ausloesung is not None
+    assert ausloesung.severity is AlarmSeverity.WARNING
+
+
+def test_oszillation_orange_unknown_loest_trotzdem_aus():
+    # Defekter Vorfeld-Sensor (R1/R2): ORANGE <-> UNKNOWN flackert poll-weise.
+    # Der reale Vereisungsalarm darf NICHT dauerhaft unterdrueckt werden (NF-01/K1).
+    engine = _engine()
+    engine.beobachte(RiskLevel.ORANGE, _T0)
+    engine.beobachte(RiskLevel.UNKNOWN, _T0 + timedelta(seconds=20))
+    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=40))
+    engine.beobachte(RiskLevel.UNKNOWN, _T0 + timedelta(seconds=55))
+    ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=65))
+    assert ausloesung is not None
+
+
+def test_unknown_allein_loest_keinen_alarm_aus():
+    engine = _engine()
+    engine.beobachte(RiskLevel.UNKNOWN, _T0)
+    # 120 s reines UNKNOWN -> kein Alarm (Unsicherheit ist kein ORANGE/ROT).
+    ausloesung = engine.beobachte(RiskLevel.UNKNOWN, _T0 + timedelta(seconds=120))
+    assert ausloesung is None
+
+
+def test_transientes_rot_im_pending_loest_critical_aus():
+    # ROT zu Beginn der Eskalation, danach ORANGE: die hoechste Stufe der Phase
+    # darf nicht verloren gehen -> Alarm feuert CRITICAL (Safety-Bias).
+    engine = _engine()
+    engine.beobachte(RiskLevel.RED, _T0)
+    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=30))
+    ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=60))
+    assert ausloesung is not None
+    assert ausloesung.severity is AlarmSeverity.CRITICAL
+
+
+def test_rot_innerhalb_pending_hebt_severity_auf_critical():
+    # ORANGE startet die Eskalation, ROT eskaliert sie INNERHALB des Fensters:
+    # die gefeuerte Stufe muss die hoechste der Phase sein (critical), nicht warning.
+    engine = _engine()
+    engine.beobachte(RiskLevel.ORANGE, _T0)
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=30))
+    ausloesung = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=60))
+    assert ausloesung is not None
+    assert ausloesung.severity is AlarmSeverity.CRITICAL
+
+
+def test_quittiert_ohne_aktiven_alarm_unterbricht_eskalation_nicht():
+    engine = _engine()
+    engine.beobachte(RiskLevel.ORANGE, _T0)  # Eskalation laeuft, noch kein aktiver Alarm
+    engine.quittiert()  # Fehlbedienung ohne aktiven Alarm -> darf Pending nicht loeschen
+    ausloesung = engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=60))
+    assert ausloesung is not None
+    assert ausloesung.severity is AlarmSeverity.WARNING
+
+
+def test_upgrade_timer_reset_bei_zwischen_dip():
+    engine = _engine()
+    _aktiver_warning(engine, _T0)
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))  # Upgrade-Timer startet
+    engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=90))  # Dip -> Reset
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=100))  # neuer Timer
+    # 30 s nach Neustart < On-Delay -> noch kein Upgrade
+    assert engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=130)) is None
+    # 60 s nach Neustart -> Upgrade
+    spaet = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=160))
+    assert spaet is not None and spaet.severity is AlarmSeverity.CRITICAL
+
+
+def test_rang_deckt_alle_severities_ab():
+    # Schutz gegen stille KeyError, falls AlarmSeverity erweitert wird.
+    from src.alarm.hysterese import _RANG
+
+    assert set(_RANG) == set(AlarmSeverity)

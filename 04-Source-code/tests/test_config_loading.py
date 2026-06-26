@@ -54,6 +54,19 @@ def test_negative_hysterese_konstante_scheitert_laut(tmp_path, schluessel):
         load_thresholds(datei)
 
 
+@pytest.mark.parametrize("ungueltig", [float("nan"), float("inf"), float("-inf")])
+def test_nicht_endliche_hysterese_konstante_scheitert_laut(tmp_path, ungueltig):
+    # NaN/inf wuerden alle >=-Vergleiche der Hysterese unterlaufen (NaN < 0 ist False!)
+    # -> muessen laut abgewiesen werden, nicht still als verschleppter Crash auftauchen.
+    daten = _minimal_config()
+    daten["hysterese"]["on_delay_s"] = ungueltig
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
 def test_on_delay_null_ist_erlaubt(tmp_path):
     # On-Delay 0 = bewusst kein Debounce (degeneriert, aber gueltig) -> kein Fehler.
     daten = _minimal_config()
