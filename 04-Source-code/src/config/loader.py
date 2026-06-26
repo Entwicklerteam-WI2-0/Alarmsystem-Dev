@@ -157,6 +157,11 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
         raise ConfigError(
             "prognose.min_points muss mindestens 2 sein (Regression braucht 2 Punkte)"
         )
+    if schwellen.min_points > 100:
+        raise ConfigError(
+            "prognose.min_points darf nicht groesser als 100 sein "
+            "(sonst wird die Prognose praktisch abgeschaltet, NF-01)"
+        )
 
 
 def _validate_datenqualitaet(schwellen: DatenqualitaetSchwellen) -> None:

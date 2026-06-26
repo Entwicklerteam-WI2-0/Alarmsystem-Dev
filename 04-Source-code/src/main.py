@@ -109,8 +109,10 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
         try:
             # poller.poll() ist blockierend (httpx.get) -> in einen Thread auslagern,
             # damit der Event-Loop frei bleibt.
-            reading = await asyncio.to_thread(runtime.poller.poll)
+            # now VOR dem Poll: haelt assessed_at nahe an measured_at (Audit-Konsistenz)
+            # und definiert das 30-min-Prognosefenster ab Zyklusbeginn.
             now = datetime.now(UTC)
+            reading = await asyncio.to_thread(runtime.poller.poll)
             # DTB-33 (FA-06): 30-min-T_s-Prognose aus der Historie -> GELB-Vorwarnung.
             # Bruecke liest die Zeitreihe; Fail-safe: None bei fehlendem Reading/DB-Fehler.
             forecast = await asyncio.to_thread(
