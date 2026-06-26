@@ -111,6 +111,12 @@ class MySqlAlarmRepository(AlarmRepository):
             # Broken-Pipe) auf die Domaenen-Exception herunterbrechen, damit der Aufrufer
             # fail-safe reagieren kann (NF-01) statt mit rohem Treiberfehler zu crashen.
             # Ein Speicher-Fehler darf den Alarm nicht still verschlucken.
+            # BEWUSST eng (Konvention aller Repos: Reading/Audit/Assessment fangen dieselbe
+            # Trias): nur BEKANNTE DB-Fehler werden zu RepositoryError. Ein unerwarteter Bug
+            # (TypeError/AttributeError) propagiert ROH -> wird im Scheduler als logger.exception
+            # (mit Traceback) sichtbar, nicht als routinemaessiger DB-Fehler maskiert. Der
+            # Fail-safe-Re-Arm passiert eine Ebene hoeher (AlarmGenerator.verarbeite faengt
+            # breit): Service = Fail-safe-Aktion, Repo = Fehler-Klassifikation (Layer-Trennung).
             raise RepositoryError("Alarm konnte nicht gespeichert werden") from exc
         if not row_id:
             # Keine gueltige AUTO_INCREMENT-ID: None ODER 0 (AUTO_INCREMENT beginnt bei 1,
