@@ -413,6 +413,21 @@ def test_gelb_setzt_laufende_eskalation_zurueck():
     assert engine.beobachte(RiskLevel.ORANGE, _T0 + timedelta(seconds=80)) is None  # 80-40<60
 
 
+def test_gruen_waehrend_upgrade_pending_setzt_upgrade_zurueck():
+    # GRUEN/GELB = bestaetigte De-Eskalation und muss ein laufendes Upgrade-Pending
+    # ZURUECKSETZEN (Reset-Zweig), nicht halten. Pinnt Mutation `==` -> `<=` an der
+    # Hold-Bedingung (sonst liefe das critical-Upgrade aus altem Pending zu frueh).
+    engine = _engine()
+    _aktiver_warning(engine, _T0)
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=70))  # Upgrade-Pending seit 70
+    engine.beobachte(RiskLevel.GREEN, _T0 + timedelta(seconds=90))  # De-Eskalation -> Reset
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=100))  # neues Pending seit 100
+    # mit Bug (==-><=): GRUEN haelt statt zu resetten -> altes Pending(70), 130-70=60 wuerde feuern.
+    assert engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=130)) is None
+    spaet = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=160))  # 160-100=60 >= on_delay
+    assert spaet is not None and spaet.severity is AlarmSeverity.CRITICAL
+
+
 def test_beenden_ist_idempotent():
     engine = _engine()
     engine.beobachte(RiskLevel.ORANGE, _T0)
