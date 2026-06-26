@@ -288,3 +288,14 @@
   + Error-Envelope `{code,message}` (projektweit offen) mit Lucas. (3) DTB-29: Trigger ja/nein +
   Grant-Abdeckung `audit_log` (DTB-54) + MariaDB-Integrationstest. (4) Fork löschen. (5) Folge: DTB-63 (Auth).
   —backenddev
+
+## Update [26.06., ~12:35] — PR #93 (DTB-58/60) Review-Konvergenz + Admin-Merge (architekt)
+- **PR #93 (Poller-Stale DTB-58 + dew_point DTB-60) nach `main` gemergt** (Admin-Merge `e47edb5`).
+  Vorher Review-Findings eingearbeitet (**3× MEDIUM**: DictCursor-Guard in `ReadingRepository.__init__`,
+  `AttributeError` im `_fetch`-Catch, Rollback-Log in `_insert`; **LOWs**: `is_stale`-Reihenfolge,
+  `_CONTROL_CATEGORIES`→`{Cc}`, Druckgrenze 2000→1100 hPa) — je mit Tests. Suite **351 grün**, ruff clean.
+- **Neuer Skill `uni-review-orchestrator`** (Devteam-vibecodes) installiert + erstmals durchgezogen:
+  `python-review` + `security-review` als Subagents (konvergenz-instruiert) → beide **FREIGABEREIF**.
+- **Lesson Learned:** GitHub-Auto-Review konvergiert an überdefensiven Modulen nicht von selbst (endlose Mikro-LOWs);
+  Lösung = orchestriertes **Einmal-Vollreview** statt Befund-für-Befund. Bewusster Schnitt durch Architekt.
+- **Offen:** Feature-Branch `feat/dtb-58-60-poller-stale-dewpoint` löschen; Jira DTB-58/DTB-60 → „Done".
