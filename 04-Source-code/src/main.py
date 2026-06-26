@@ -40,6 +40,7 @@ from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
 from src.storage import (
     AssessmentRepository,
+    AuditRepository,
     MySqlAssessmentRepository,
     MySqlAuditRepository,
     ReadingRepository,
@@ -61,6 +62,7 @@ class Runtime:
     thresholds: Thresholds
     reading_repo: ReadingRepository
     assessment_repo: AssessmentRepository
+    audit_repo: AuditRepository
     poller: Poller
     service: AssessmentService
 
@@ -82,6 +84,7 @@ def build_runtime() -> Runtime:
         thresholds=thresholds,
         reading_repo=reading_repo,
         assessment_repo=assessment_repo,
+        audit_repo=audit_repo,
         poller=poller,
         service=service,
     )

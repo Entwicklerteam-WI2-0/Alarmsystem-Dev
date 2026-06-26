@@ -172,7 +172,12 @@ def build_assessment_current(
     fault = sensor_status is SensorStatus.FAULT
 
     if stale or fault:
-        reason = "stale" if stale else "sensor fault"
+        # Beide Gruende nennen, wenn beide zutreffen (Observability fuer den
+        # Operator) — sensor_status traegt fault zwar strukturiert, explanation
+        # soll den Fail-safe aber vollstaendig erklaeren.
+        reason = " + ".join(
+            label for label, active in (("stale", stale), ("sensor fault", fault)) if active
+        )
         return AssessmentCurrent(
             risk_level=RiskLevel.UNKNOWN,
             driving_factor=None,

@@ -169,9 +169,11 @@ class MySqlAssessmentRepository(AssessmentRepository):
                 cursor.execute(MySqlAssessmentRepository._INSERT_SQL, params)
                 assessment_id = cursor.lastrowid
             conn.commit()
-            if assessment_id is None:
+            # `not` faengt None UND 0 ab (0 = kein AUTO_INCREMENT / unerwarteter
+            # MySQL-Zustand); eine gueltige Auto-ID ist immer >= 1.
+            if not assessment_id:
                 raise RepositoryError(
-                    "INSERT lieferte keine ID (AUTO_INCREMENT auf 'assessment' pruefen)"
+                    "INSERT lieferte keine gueltige ID (AUTO_INCREMENT auf 'assessment' pruefen)"
                 )
             return assessment_id
         except pymysql.Error:

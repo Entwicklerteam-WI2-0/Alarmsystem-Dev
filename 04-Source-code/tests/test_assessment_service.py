@@ -19,6 +19,7 @@ from src.model.enums import RiskLevel, SensorStatus
 from src.model.schemas import Assessment, Reading
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
+from src.storage.repository import RepositoryError
 
 
 @pytest.fixture
@@ -113,6 +114,29 @@ def test_naive_now_raises(thresholds):
 
     with pytest.raises(ValueError, match="zeitzonenbewusst"):
         service.assess_reading(None, datetime.now())  # noqa: DTZ005 - bewusst naiv
+
+
+class _ThrowingAuditRepository(InMemoryAuditRepository):
+    """Audit-Double, das bei jedem append wirft (best-effort-Garantie testen)."""
+
+    def append(self, entry):  # noqa: ARG002 - Signatur des Interface, Wert ungenutzt
+        raise RepositoryError("Audit-Backend nicht verfuegbar")
+
+
+def test_audit_failure_does_not_break_cycle(thresholds):
+    # Arrange — Audit wirft IMMER; der Bewertungszyklus muss trotzdem durchlaufen
+    # (NF-01 vor NF-09: ein Audit-Fehler darf den Sicherheits-Output nie blockieren).
+    arepo = InMemoryAssessmentRepository()
+    service = AssessmentService(thresholds, arepo, _ThrowingAuditRepository())
+    now = datetime.now(UTC)
+
+    # Act — gesunder Wert (waere GRUEN); kein raise trotz Audit-Fehler erwartet.
+    result = service.assess_reading(_reading(now, surface=2.0, dew=0.0), now)
+
+    # Assert — Bewertung wurde erzeugt UND persistiert, obwohl das Audit scheiterte.
+    assert result.id == 1
+    assert result.risk_level == RiskLevel.GREEN
+    assert arepo.get_latest() is not None
 
 
 # ---------------------------------------------------------------------------

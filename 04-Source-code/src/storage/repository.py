@@ -227,9 +227,11 @@ class ReadingRepository(Repository):
                 cursor.execute(ReadingRepository._INSERT_SQL, params)
                 reading_id = cursor.lastrowid
             conn.commit()
-            if reading_id is None:
+            # `not` faengt None UND 0 ab (0 = kein AUTO_INCREMENT / unerwarteter
+            # MySQL-Zustand); eine gueltige Auto-ID ist immer >= 1.
+            if not reading_id:
                 raise RepositoryError(
-                    "INSERT lieferte keine ID (AUTO_INCREMENT auf 'reading' pruefen)"
+                    "INSERT lieferte keine gueltige ID (AUTO_INCREMENT auf 'reading' pruefen)"
                 )
             return reading_id
         except pymysql.Error:
