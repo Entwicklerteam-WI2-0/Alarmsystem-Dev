@@ -15,7 +15,7 @@ import pytest
 
 from src.assessment.service import AssessmentService, build_assessment_current
 from src.config.loader import load_thresholds
-from src.model.enums import RiskLevel, SensorStatus
+from src.model.enums import AuditEventType, RiskLevel, SensorStatus
 from src.model.schemas import Assessment, Reading
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
@@ -33,9 +33,15 @@ def _reading(
     surface: float = 2.0,
     dew: float | None = 0.0,
     status: SensorStatus = SensorStatus.OK,
+    rid: int | None = 1,
 ) -> Reading:
-    """Baut ein Reading; received_at = measured_at (fuer den Test irrelevant)."""
+    """Baut ein Reading; received_at = measured_at (fuer den Test irrelevant).
+
+    `rid` ist defaultmaessig gesetzt (= vom Poller persistiert, DTB-28-Invariante);
+    `rid=None` modelliert ein noch nicht persistiertes Reading.
+    """
     return Reading(
+        id=rid,
         sensor_id="anr-rwy-01",
         measured_at=measured_at,
         surface_temp_c=surface,
@@ -74,7 +80,7 @@ def test_healthy_reading_is_assessed_persisted_and_audited(thresholds):
     assert arepo.get_latest() is not None
     assert arepo.get_latest().id == 1
     assert len(audit.all()) == 1
-    assert audit.all()[0].event_type == "assessment_made"
+    assert audit.all()[0].event_type == AuditEventType.ASSESSMENT_MADE
 
 
 def test_none_reading_is_unknown(thresholds):
@@ -114,6 +120,17 @@ def test_naive_now_raises(thresholds):
 
     with pytest.raises(ValueError, match="zeitzonenbewusst"):
         service.assess_reading(None, datetime.now())  # noqa: DTZ005 - bewusst naiv
+
+
+def test_good_path_requires_persisted_reading_id(thresholds):
+    # Arrange — gesundes Reading (waere GRUEN), aber noch nicht persistiert (id=None).
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+
+    # Act + Assert — die DTB-28-Invariante muss laut scheitern, statt einen Snapshot
+    # mit reading_id=NULL zu schreiben und so die Audit-Traceability (NF-05) zu brechen.
+    with pytest.raises(ValueError, match="Poller muss das Reading"):
+        service.assess_reading(_reading(now, surface=2.0, dew=0.0, rid=None), now)
 
 
 class _ThrowingAuditRepository(InMemoryAuditRepository):
@@ -196,3 +213,21 @@ def test_current_fault_forces_unknown(thresholds):
     assert cur.risk_level == RiskLevel.UNKNOWN
     assert cur.sensor_status == SensorStatus.FAULT
     assert cur.is_stale is False
+
+
+def test_current_stale_and_fault_names_both_reasons(thresholds):
+    # Arrange — Reading ist gleichzeitig stale UND fault (kombinierter Fail-safe-Pfad).
+    now = datetime.now(UTC)
+    old = now - timedelta(seconds=thresholds.datenqualitaet.stale_timeout_s + 60)
+    reading = _reading(old, status=SensorStatus.FAULT)
+    assessment = Assessment(ts=old, risk_level=RiskLevel.GREEN, surface_temp_c=2.0)
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    # Beide Gruende erscheinen in explanation; Invariante bleibt unknown (nie GRUEN).
+    assert cur.risk_level == RiskLevel.UNKNOWN
+    assert cur.is_stale is True
+    assert cur.sensor_status == SensorStatus.FAULT
+    assert cur.explanation == "Fail-safe: stale + sensor fault"

@@ -72,7 +72,9 @@ class AssessmentService:
             Das persistierte Assessment (mit vergebener `id`).
 
         Raises:
-            ValueError: Wenn `now` nicht zeitzonenbewusst ist.
+            ValueError: Wenn `now` nicht zeitzonenbewusst ist ODER ein gueltiges
+                (nicht-stale, nicht-fault) Reading keine `id` traegt — dann hat der
+                Poller die DTB-28-Persistenz-Invariante verletzt (sonst NULL-Snapshot).
             RepositoryError: Wenn die Assessment-Persistenz fehlschlaegt (der
                 aufrufende Scheduler behandelt das fail-safe). Ein Fehler im
                 Audit-Log bricht den Zyklus NICHT ab (best-effort, nur Log).
@@ -89,6 +91,15 @@ class AssessmentService:
         elif is_stale(reading, now, stale_timeout_s):
             assessment = build_unknown_assessment("stale (Messwert veraltet)", now)
         else:
+            if reading.id is None:
+                # Invariante: der Poller (DTB-28) MUSS das Reading persistiert haben,
+                # bevor es bewertet wird. Sonst landet reading_id=NULL im Snapshot und
+                # bricht die Audit-Traceability (NF-05) still -> laut scheitern statt
+                # einen Snapshot ohne Reading-Bezug zu schreiben.
+                raise ValueError(
+                    "reading.id ist None: der Poller muss das Reading vor "
+                    "assess_reading persistieren (DTB-28-Invariante)"
+                )
             risk = assess_ice_risk(
                 reading.surface_temp_c,
                 reading.dew_point_c,
