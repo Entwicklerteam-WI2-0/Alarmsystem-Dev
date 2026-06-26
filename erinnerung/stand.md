@@ -356,3 +356,10 @@ PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separ
 - **Offen:** Reviewer-Freigabe + Merge (Architekt-Einzelfreigabe, Governance); Live-Test gegen MariaDB im Zuge
   **DTB-41** (Integrationstest, hängt an DTB-43); `_SENSOR_ID` später aus `config/` (F24/Geo, Multi-Sensor).
 —architekt
+
+## Update [27.06., ~00:30] — DTB-48: ADR E-40 „Fail-safe Multi-Layer" erstellt (architekt)
+- **DTB-48** = reiner ADR-/Doku-Task (kein Code; Fail-safe-Code liegt in DTB-13/DTB-28/DTB-38/DTB-64). ADR **E-40** dokumentiert die 6 Fail-safe-Schichten (Stale, Fault, Plausibilität, **DB-Ausfall → 503/`unknown`**, Kaskade → ORANGE/GELB [E-34], Serve-Zeit-Re-Check). ID E-40 statt geplantem E-39 (E-39 = Audit-Log/DTB-29).
+- **Ablage:** eigenständiges Dokument `02-Arbeitsdokumente/ADR-E40-Failsafe-Multi-Layer.md`; zentrales Logbuch nur Index-Verweis. 2 Review-LOWs eingearbeitet (Titel-Präzisierung, E-36-Querverweis).
+- **PR #109** (`feat/dtb-48-adr-failsafe`, Commits `c0fda7c`/`1f2c533`/`f0661b2`); Jira DTB-48 → „In Arbeit".
+- **Offen:** PR #109 mergen → DTB-48 auf „Erledigt"; optional Fail-safe-Integrationstest je Schicht als **DTB-49**.
+—architekt
