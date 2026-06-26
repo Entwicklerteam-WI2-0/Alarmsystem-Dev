@@ -195,6 +195,21 @@ def test_range_und_index_sind_sauber():
     assert _scan("for i in range(0, 10):\n    x = werte[2]\n") == []
 
 
+def test_timeout_s_guard_ist_kein_fehlalarm():
+    # timeout_s ist ein technischer Parameter (Stale-Erkennung), keine fachliche Schwelle.
+    assert _scan("if timeout_s <= 0:\n    pass\n") == []
+
+
+def test_limit_guard_ist_kein_fehlalarm():
+    # limit ist ein technischer Parameter (Pagination), keine fachliche Schwelle.
+    assert _scan("if limit <= 0:\n    pass\n") == []
+
+
+def test_alter_guard_ist_kein_fehlalarm():
+    # age ist ein rein technisches Alter, keine Vereisungsschwelle.
+    assert _scan("if age > 3600:\n    pass\n") == []
+
+
 def test_return_annotation_pfeil_ist_kein_fehlalarm():
     # Das '>' in '->' darf nicht als Vergleich gegen ein Literal zählen.
     assert _scan("def bewerte(t_s: float) -> int:\n    return 0\n") == []

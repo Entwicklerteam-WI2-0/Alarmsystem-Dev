@@ -3,10 +3,15 @@
 > Stand: 2026-06-25 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
 
 ## Woran wir gerade arbeiten
+- **DTB-13 (Plausibilität + Stale-Erkennung, Andreas/Petzold):** Umgesetzt auf
+  `feat/dtb-13-stale-erkennung`. Stale (>120 s), Sprung (> 5 °C/min), Flatline (>= 15 min)
+  liefern `RiskLevel.UNKNOWN` (NF-01/E-34). Config parametrierbar; Repository-Interface um
+  `get_latest()` erweitert. Commit `8901068`; Quality-Gate grün (121 Tests). **Offen:** PR
+  nach Genehmigung durch Lucas; Jira-Link DTB-43 dependsOn DTB-13.
 - **DTB-54 (schema.sql einspielen, Andi & Leon):** Apply-Schritt + `migrations/grants.sql` (append-only
-  via GRANT statt Trigger, NF-09) dokumentiert; santa-loop-reviewed; Commit `d2aa4bc` lokal auf
-  `feat/dtb-54-schema-apply` (ungepusht). **Offen:** Init-Schritt (CREATE DB/USER) im README + DoD-Apply-Beweis
-  bei Pi-MariaDB-Init. → Status „Wird überprüft".
+  via GRANT statt Trigger, NF-09) dokumentiert; santa-loop-reviewed; Commit `d2aa4bc` auf
+  `feat/dtb-54-schema-apply` gemergt (#60). **Offen:** Init-Schritt (CREATE DB/USER) im README + DoD-Apply-Beweis
+  bei Pi-MariaDB-Init.
 - **G2 Backend (Alarmsystem ANR):** Woche 2. **Projektplan + Jira-Backlog (Projekt DTB)** steht:
   9 Epics / 43 Tasks (DTB-1..DTB-52) + 43 "Blocks"-Abhängigkeitslinks. Begleitdoc:
   `02-Arbeitsdokumente/Projektplan-Jira-Backlog-G2.md`.
@@ -21,11 +26,10 @@
   abzugleichen:** liegt in `04-Source-code/`, DB-Engineer-Artefakte in `04-Source-code/source/`.
 
 ## Als Nächstes (kritischer Pfad)
-1. **P0/Scaffolding** (DTB-1: DTB-2/50/51/52) — `src/`-Struktur + erste Tests, jetzt inkl. MariaDB via
-   Docker-Compose → macht CI grün-fähig.
-2. **Contract-first**: API + Datenmodell (E-02 / DTB-7) + Seam-Sync mit G1+G3 bis Di → M2. **Jetzt MySQL/MariaDB statt SQLite.**
-3. **T0 Vertical Slice** (E-03 / DTB-8): assessment-Kern + beide Vorfall-Tests + Fail-safe (≥80 % Coverage).
-4. Danach: **PR #18 mergen** + Branch-Protection „Require status checks" (Check `test`); **MySQL-DB-Treiber** in requirements/CI ergänzen.
+1. **DTB-13 abschließen:** PR erstellen (nach Genehmigung durch Lucas), Jira-Link DTB-43 dependsOn DTB-13 setzen.
+2. **DTB-28 Persistenz:** PyMySQL-Repository implementieren (`save`, `get_latest`); damit wird DTB-13 operational.
+3. **DTB-38 Bewertungslogik:** Kaskade aus Schwellenwerte.md §2 + Fail-safe-Integration DTB-13 (≥80 % Coverage).
+4. **M2 (Ende Woche 2):** API + Datenmodell final; G1/G3-Seam-Sync.
 
 ## Offene Punkte / Blocker
 - **MySQL-Vorgabe vollständig eingearbeitet (22.06.):** Backend-Konzept §6/§6a, README, Entscheidungslog
@@ -160,6 +164,18 @@
 - **Neu offen:** (1) **PR #48 mergen** (Reviewer/Lucas). (2) **DTB-26 G3-Sign-off** (`seam-sync-confirmed`)
   — G1-Seite: Lucas. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves offen
   (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
+
+## Update [25.06., ~10:53] — DTB-13 Stale + Plausibilität umgesetzt (backend-db/Andreas)
+- **DTB-13 fertig implementiert** (`feat/dtb-13-stale-erkennung`, Commit `8901068`):
+  `src/assessment/failsafe.py` mit `is_stale()`, `check_plausibility()` (Sprung + Flatline) und
+  `build_unknown_assessment()` (RiskLevel.UNKNOWN). Config um `stale_timeout_s`,
+  `max_temp_jump_c_per_min`, `flatline_timeout_min`, `flatline_epsilon_c` erweitert.
+  Repository-Interface um `get_latest()` erweitert. **121 Tests grün, ruff sauber.**
+- **Remote-Setup auf Hauptrepo umgestellt:** `origin` = `Entwicklerteam-WI2-0/Alarmsystem-Dev`;
+  alter Fork als `fork` erhalten; `main` auf `origin/main` (`b88c39e`) aktualisiert;
+  Feature-Branch rebased.
+- **Neu offen:** PR für DTB-13 nach Genehmigung durch Lucas; Jira-Link DTB-43 dependsOn DTB-13;
+  persönliches Entscheidungslog für Config-Schnitt + Plausibilitätsgrenzwerte.
 
 ## Update [23.06., ~22:00] — DTB-11 Test-CI abgeschlossen + Poller-Fail-safe-Fix (Petzold)
 - **DTB-11 (Test-CI) fertig & gemergt (#50):** `.github/workflows/test.yml` gegen das `04-Source-code/`-Layout

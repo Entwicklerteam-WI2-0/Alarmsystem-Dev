@@ -5,15 +5,17 @@ aus src/storage/repository.py (Implementierung kommt in DTB-28).
 """
 
 import json
+import logging
 import math
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 import httpx
 import pytest
 
+from src.config.loader import DatenqualitaetSchwellen, PlausibilitaetSchwellen
 from src.ingest.poller import Poller
-from src.model.enums import SensorStatus
 from src.model.schemas import Reading
 from src.storage.repository import Repository, RepositoryError
 
@@ -28,6 +30,21 @@ class FakeRepository(Repository):
         self.readings.append(reading)
         return len(self.readings)
 
+    def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+        # Liefert die neuesten Readings fuer einen Sensor (nach measured_at, absteigend).
+        candidates = [r for r in self.readings if r.sensor_id == sensor_id]
+        if not candidates:
+            return ()
+        sorted_candidates = sorted(candidates, key=lambda r: r.measured_at, reverse=True)
+        return tuple(sorted_candidates[:limit])
+
+    def get_since(self, sensor_id: str, since: datetime, limit: int = 1000) -> Sequence[Reading]:
+        # Liefert Readings eines Sensors seit einem Zeitpunkt (aufsteigend).
+        candidates = [
+            r for r in self.readings if r.sensor_id == sensor_id and r.measured_at >= since
+        ]
+        return tuple(sorted(candidates, key=lambda r: r.measured_at)[:limit])
+
 
 @pytest.fixture
 def fake_repo() -> FakeRepository:
@@ -35,8 +52,55 @@ def fake_repo() -> FakeRepository:
 
 
 @pytest.fixture
-def poller(fake_repo: FakeRepository) -> Poller:
-    return Poller(base_url="http://g1.test", repository=fake_repo)
+def quality_thresholds() -> DatenqualitaetSchwellen:
+    return DatenqualitaetSchwellen(
+        stale_timeout_s=120.0,
+        max_temp_jump_c_per_min=5.0,
+        flatline_timeout_min=15.0,
+        flatline_epsilon_c=0.01,
+        max_clock_skew_s=5.0,
+        min_plausible_dew_point_c=-50.0,
+    )
+
+
+@pytest.fixture
+def plausibility_thresholds() -> PlausibilitaetSchwellen:
+    return PlausibilitaetSchwellen(
+        min_temp_c=-50.0,
+        max_temp_c=50.0,
+        min_humidity_pct=0.0,
+        max_humidity_pct=100.0,
+        min_pressure_hpa=800.0,
+        max_pressure_hpa=1100.0,
+    )
+
+
+@pytest.fixture(autouse=True)
+def frozen_now(request):
+    # Deterministische Uhr fuer die Stale-Erkennung: 60 s nach dem measured_at der
+    # valid_snapshot-Fixture -> Standard-Snapshots gelten als frisch (< 120 s).
+    # Stale-Tests setzen measured_at bewusst weiter in die Vergangenheit.
+    # Tests mit @pytest.mark.real_clock laufen gegen die echte Uhr (tz-Awareness-Pruefung).
+    if request.node.get_closest_marker("real_clock"):
+        yield
+        return
+    fixed = datetime(2026, 6, 23, 10, 1, 0, tzinfo=UTC)
+    with patch("src.ingest.poller._now", return_value=fixed):
+        yield
+
+
+@pytest.fixture
+def poller(
+    fake_repo: FakeRepository,
+    quality_thresholds: DatenqualitaetSchwellen,
+    plausibility_thresholds: PlausibilitaetSchwellen,
+) -> Poller:
+    return Poller(
+        base_url="http://g1.test",
+        repository=fake_repo,
+        data_quality_thresholds=quality_thresholds,
+        plausibility_thresholds=plausibility_thresholds,
+    )
 
 
 @pytest.fixture
@@ -267,6 +331,20 @@ def test_poll_empty_sensor_id_does_not_save(
     assert "sensor_id darf nicht leer sein" in caplog.text
 
 
+def test_poll_sensor_id_with_whitespace_is_trimmed(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    snapshot = {**valid_snapshot, "sensor_id": " anr-rwy-01 "}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.sensor_id == "anr-rwy-01"
+    assert fake_repo.readings[0].sensor_id == "anr-rwy-01"
+
+
 def test_poll_pressure_out_of_range_is_set_to_none(
     poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
 ) -> None:
@@ -294,7 +372,7 @@ def test_poll_non_numeric_optional_pressure_is_set_to_none(
     assert reading is not None
     assert reading.pressure_hpa is None
     assert len(fake_repo.readings) == 1
-    assert "pressure_hpa muss eine Zahl sein, erhalten: 'abc'" in caplog.text
+    assert "pressure_hpa muss eine Zahl sein, erhalten: <class 'str'>" in caplog.text
 
 
 def test_poll_missing_optional_pressure_is_none(
@@ -368,6 +446,37 @@ def test_poll_humidity_at_boundaries_saves(
     assert len(fake_repo.readings) == 1
 
 
+def test_poll_uses_configured_plausibility_thresholds(
+    fake_repo: FakeRepository,
+    quality_thresholds: DatenqualitaetSchwellen,
+    valid_snapshot: dict,
+) -> None:
+    # NF-05: Plausibilitaets-Grenzen muessen aus der Config kommen, nicht hardgecoded sein.
+    # Wenn wir die Grenzen verschärfen, wird ein vorher gueltiger Wert verworfen.
+    strict_plausibility = PlausibilitaetSchwellen(
+        min_temp_c=-10.0,
+        max_temp_c=10.0,
+        min_humidity_pct=0.0,
+        max_humidity_pct=100.0,
+        min_pressure_hpa=800.0,
+        max_pressure_hpa=1100.0,
+    )
+    poller = Poller(
+        base_url="http://g1.test",
+        repository=fake_repo,
+        data_quality_thresholds=quality_thresholds,
+        plausibility_thresholds=strict_plausibility,
+    )
+    snapshot = {**valid_snapshot, "surface_temp_c": 20.0}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+
+
 def test_poll_measured_at_not_a_string_does_not_save(
     poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
 ) -> None:
@@ -391,7 +500,7 @@ def test_poll_measured_at_without_timezone_does_not_save(
 
     assert reading is None
     assert len(fake_repo.readings) == 0
-    assert "measured_at muss Zeitzoneninformation enthalten (UTC)" in caplog.text
+    assert "measured_at muss UTC sein" in caplog.text
 
 
 def test_poll_sensor_id_not_a_string_does_not_save(
@@ -417,7 +526,7 @@ def test_poll_non_numeric_required_field_does_not_save(
 
     assert reading is None
     assert len(fake_repo.readings) == 0
-    assert "surface_temp_c muss eine Zahl sein, erhalten: 'kalt'" in caplog.text
+    assert "surface_temp_c muss eine Zahl sein, erhalten: <class 'str'>" in caplog.text
 
 
 @pytest.mark.parametrize("field", ["surface_temp_c", "air_temp_c", "humidity_pct"])
@@ -446,18 +555,20 @@ def test_poll_inf_required_field_does_not_save(
     assert len(fake_repo.readings) == 0
 
 
-def test_poll_missing_optional_status_defaults_to_ok(
-    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+def test_poll_missing_status_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
 ) -> None:
+    # status ist Pflichtfeld laut G1-Contract; fehlendes Feld darf nicht still
+    # auf OK defaulten -> Fail-safe verworfen (NF-01).
     snapshot = dict(valid_snapshot)
     del snapshot["status"]
 
     with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
-    assert reading is not None
-    assert reading.status is SensorStatus.OK
-    assert len(fake_repo.readings) == 1
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "Pflichtfeld in G1-Antwort fehlt: status" in caplog.text
 
 
 def test_poll_status_not_a_string_does_not_save(
@@ -497,19 +608,37 @@ def test_poll_non_json_response_is_failsafe(
     assert "G1-Antwort nicht als JSON parsierbar" in caplog.text
 
 
-def test_poll_repository_error_is_failsafe(caplog) -> None:
+def test_poll_repository_error_is_failsafe(
+    caplog,
+    quality_thresholds: DatenqualitaetSchwellen,
+    plausibility_thresholds: PlausibilitaetSchwellen,
+) -> None:
     class RaisingRepository(Repository):
         def save(self, reading: Reading) -> int:
             raise RepositoryError("DB nicht erreichbar")
 
+        def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+            raise RepositoryError("DB nicht erreichbar")
+
+        def get_since(
+            self, sensor_id: str, since: datetime, limit: int = 1000
+        ) -> Sequence[Reading]:
+            raise RepositoryError("DB nicht erreichbar")
+
     repo = RaisingRepository()
-    poller = Poller(base_url="http://g1.test", repository=repo)
+    poller = Poller(
+        base_url="http://g1.test",
+        repository=repo,
+        data_quality_thresholds=quality_thresholds,
+        plausibility_thresholds=plausibility_thresholds,
+    )
     snapshot = {
         "measured_at": "2026-06-23T10:00:00Z",
         "sensor_id": "anr-rwy-01",
         "surface_temp_c": -0.4,
         "air_temp_c": 1.2,
         "humidity_pct": 96,
+        "status": "ok",
     }
 
     with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
@@ -519,25 +648,311 @@ def test_poll_repository_error_is_failsafe(caplog) -> None:
     assert "Speichern des Readings fehlgeschlagen" in caplog.text
 
 
-def test_poll_unexpected_repository_error_is_not_swallowed(caplog) -> None:
+def test_poll_unexpected_repository_error_is_not_swallowed(
+    caplog,
+    quality_thresholds: DatenqualitaetSchwellen,
+    plausibility_thresholds: PlausibilitaetSchwellen,
+) -> None:
     # Nur RepositoryError soll fail-safe abgefangen werden; andere Exceptions
     # muessen hochgereicht werden, um Programmierfehler nicht zu verschleiern.
     class BuggyRepository(Repository):
         def save(self, reading: Reading) -> int:
             raise RuntimeError("unerwarteter Bug")
 
-    poller = Poller(base_url="http://g1.test", repository=BuggyRepository())
+        def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+            return ()
+
+        def get_since(
+            self, sensor_id: str, since: datetime, limit: int = 1000
+        ) -> Sequence[Reading]:
+            return ()
+
+    poller = Poller(
+        base_url="http://g1.test",
+        repository=BuggyRepository(),
+        data_quality_thresholds=quality_thresholds,
+        plausibility_thresholds=plausibility_thresholds,
+    )
     snapshot = {
         "measured_at": "2026-06-23T10:00:00Z",
         "sensor_id": "anr-rwy-01",
         "surface_temp_c": -0.4,
         "air_temp_c": 1.2,
         "humidity_pct": 96,
+        "status": "ok",
     }
 
     with pytest.raises(RuntimeError, match="unerwarteter Bug"):
         with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
             poller.poll()
+
+
+# -----------------------------------------------------------------------------
+# Stale-Erkennung + Clock-Skew (DTB-58)
+# -----------------------------------------------------------------------------
+def test_poll_stale_snapshot_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # measured_at liegt 6 min vor der eingefrorenen Uhr (> 120 s) -> stale -> verwerfen
+    # (FA-04, NF-01: keine veralteten Werte als aktuell speichern/GRUEN ausgeben).
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T09:55:00Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "veraltet" in caplog.text
+
+
+def test_poll_snapshot_at_freshness_boundary_saves(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Grenze: measured_at genau 120 s vor der eingefrorenen Uhr (10:01:00) -> age == 120 s.
+    # Wegen strikter "> 120 s"-Semantik gilt das noch als frisch -> gespeichert.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T09:59:00Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_snapshot_just_over_boundary_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Grenze + 1 s: 121 s alt -> stale -> verworfen. Sichert die "> 120"-Kante gegen Regression.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T09:58:59Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "veraltet" in caplog.text
+
+
+def test_poll_future_timestamp_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # measured_at liegt 60 s in der Zukunft (defekte/falsch gestellte G1-Uhr) -> unplausibel
+    # -> fail-safe verworfen (NF-01; Schwellenwerte.md §3 unplausibler Wert).
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:02:00Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "Zukunft" in caplog.text
+
+
+def test_poll_minor_clock_skew_still_saves(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Kleiner Vorlauf (3 s in der Zukunft, innerhalb der Skew-Toleranz) ist
+    # normale Uhren-Drift -> gespeichert.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:01:03Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_clock_skew_exactly_at_limit_saves(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Genau am Limit (5 s in der Zukunft) -> noch akzeptiert.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:01:05Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_clock_skew_just_over_limit_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # 5,001 s in der Zukunft -> ueber der Toleranz -> verworfen.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:01:05.001Z"}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "Zukunft" in caplog.text
+
+
+@pytest.mark.real_clock
+def test_now_is_timezone_aware() -> None:
+    # _now() muss tz-aware (UTC) liefern; sonst schlaegt die Subtraktion mit measured_at
+    # (tz-aware) als TypeError fehl. Laeuft bewusst gegen die echte Uhr (kein frozen_now).
+    from src.ingest.poller import _now
+
+    assert _now().tzinfo is not None
+
+
+# -----------------------------------------------------------------------------
+# Taupunkt-Integration (DTB-60)
+# -----------------------------------------------------------------------------
+def test_poll_computes_dew_point(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # DTB-60: Poller berechnet dew_point_c (Magnus) und fuellt es ins Reading.
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(valid_snapshot)
+        reading = poller.poll()
+
+    # Referenz: Magnus(a=17,62; b=243,12; Schwellenwerte.md §1) fuer T_a=1,2 °C, RH=96 %
+    # ergibt T_d = 0,6325 °C (unabhaengig nachgerechnet, nicht aus der Implementierung).
+    assert reading is not None
+    assert reading.dew_point_c == pytest.approx(0.63, abs=1e-2)
+    # dew_point_c muss auch persistiert sein, nicht nur im Returnwert stehen.
+    assert len(fake_repo.readings) == 1
+    assert fake_repo.readings[0].dew_point_c == pytest.approx(0.63, abs=1e-2)
+
+
+def test_poll_computes_negative_dew_point_in_frost(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Use-Case-Kern (Frost): bei Minustemperaturen muss ein negativer Taupunkt
+    # korrekt ins Reading geschrieben werden. Magnus(-5 °C, 80 %) = -7,92 °C.
+    snapshot = {**valid_snapshot, "surface_temp_c": -6.0, "air_temp_c": -5.0, "humidity_pct": 80}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.dew_point_c == pytest.approx(-7.92, abs=1e-2)
+
+
+def test_poll_dew_point_none_when_humidity_zero(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Fail-safe (Entscheidungslog DTB-32): RH=0 laesst T_d nicht berechnen ->
+    # calculate_dew_point wirft ValueError -> Poller faengt ihn -> dew_point_c=None.
+    # Das Reading wird trotzdem gespeichert (kein Crash, kein stilles GRUEN downstream).
+    snapshot = {**valid_snapshot, "humidity_pct": 0}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.dew_point_c is None
+    assert len(fake_repo.readings) == 1
+    assert "Taupunkt nicht berechenbar" in caplog.text
+    # Degradiert (Reading bleibt erhalten) -> WARNING, nicht ERROR (kein Verwerfen).
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+
+def test_poll_dew_point_none_when_humidity_near_zero(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # H1-Regression: RH knapp ueber 0 liefert einen absurden Taupunkt (< -50 °C).
+    # Der Poller plausibilisiert das Ergebnis und setzt dew_point_c=None, statt einen
+    # unsinnigen Wert zu speichern, der downstream faelschlich GRUEN ausloesen koennte.
+    snapshot = {**valid_snapshot, "humidity_pct": 0.01}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.dew_point_c is None
+    assert len(fake_repo.readings) == 1
+    assert "unplausibel" in caplog.text
+    # Degradiert (Reading bleibt erhalten) -> WARNING, nicht ERROR (kein Verwerfen).
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+
+def test_poll_keeps_dew_point_at_plausibility_floor(
+    poller: Poller,
+    fake_repo: FakeRepository,
+    valid_snapshot: dict,
+    quality_thresholds: DatenqualitaetSchwellen,
+) -> None:
+    # Grenzfall (strict <): ein Taupunkt GENAU auf der konfigurierten Untergrenze ist noch
+    # plausibel und wird behalten (nur Werte echt darunter -> None, s. near_zero-Test).
+    floor = quality_thresholds.min_plausible_dew_point_c
+    with patch("src.ingest.poller.calculate_dew_point", return_value=floor):
+        with patch("src.ingest.poller.httpx.get") as mock_get:
+            mock_get.return_value = _ok_response(valid_snapshot)
+            reading = poller.poll()
+
+    assert reading is not None
+    assert reading.dew_point_c == floor
+    assert fake_repo.readings[0].dew_point_c == floor
+
+
+@pytest.mark.parametrize("bad_value", [float("nan"), float("inf"), float("-inf")])
+def test_poll_dew_point_non_finite_is_none(
+    poller: Poller,
+    fake_repo: FakeRepository,
+    valid_snapshot: dict,
+    caplog,
+    bad_value: float,
+) -> None:
+    # Defense-in-depth: sollte calculate_dew_point silent NaN/Inf durchreichen,
+    # wird dew_point_c=None und das Reading trotzdem gespeichert (NF-01).
+    with patch("src.ingest.poller.calculate_dew_point", return_value=bad_value):
+        with patch("src.ingest.poller.httpx.get") as mock_get:
+            mock_get.return_value = _ok_response(valid_snapshot)
+            reading = poller.poll()
+
+    assert reading is not None
+    assert reading.dew_point_c is None
+    assert len(fake_repo.readings) == 1
+    assert "nicht endlich" in caplog.text
+
+
+# -----------------------------------------------------------------------------
+# Typ-Validierung (DTB-22/Review-Blocker)
+# -----------------------------------------------------------------------------
+@pytest.mark.parametrize("field", ["surface_temp_c", "air_temp_c", "humidity_pct"])
+def test_poll_bool_required_field_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, field: str, caplog
+) -> None:
+    # bool ist in Python ein int-Subtyp und wuerde stumm zu 0.0/1.0 -> gefaehrlich.
+    snapshot = {**valid_snapshot, field: True}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "bool" in caplog.text
+
+
+def test_poll_bool_optional_pressure_is_set_to_none(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Auch optionale Zahlenfelder duerfen kein bool akzeptieren.
+    snapshot = {**valid_snapshot, "pressure_hpa": False}
+
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        mock_get.return_value = _ok_response(snapshot)
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.pressure_hpa is None
+    assert len(fake_repo.readings) == 1
+    assert "bool" in caplog.text
 
 
 # ---------------------------------------------------------------------------
