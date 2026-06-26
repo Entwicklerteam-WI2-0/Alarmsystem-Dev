@@ -13,6 +13,7 @@ from abc import ABC, abstractmethod
 
 import pymysql
 
+from src.model.enums import AlarmState
 from src.model.schemas import Alarm
 from src.storage.database import (
     DatabaseConfig,
@@ -27,6 +28,19 @@ from src.storage.repository import RepositoryError
 _INSERT_SQL = (
     "INSERT INTO alarm (assessment_id, severity, raised_at, state) VALUES (%s, %s, %s, %s)"
 )
+
+
+def _require_active(alarm: Alarm) -> None:
+    """V8: nur ausgeloeste (aktive) Alarme werden persistiert.
+
+    Ein nicht-aktiver Zustand beim Speichern ist ein Aufrufer-Fehler — Zustandswechsel
+    (acknowledged/cleared) laufen ueber DTB-24/manuell (RB-01), nicht ueber save().
+    """
+    if alarm.state is not AlarmState.ACTIVE:
+        raise ValueError(
+            f"save() persistiert nur aktive Alarme; state={alarm.state.value} "
+            "(Zustandswechsel laufen ueber DTB-24/manuell)"
+        )
 
 
 class AlarmRepository(ABC):
@@ -45,6 +59,7 @@ class InMemoryAlarmRepository(AlarmRepository):
         self._alarms: list[Alarm] = []
 
     def save(self, alarm: Alarm) -> int:
+        _require_active(alarm)
         new_id = len(self._alarms) + 1
         # Alarm mit vergebener ID ablegen; das Original bleibt unangetastet.
         self._alarms.append(alarm.model_copy(update={"id": new_id}))
@@ -67,6 +82,7 @@ class MySqlAlarmRepository(AlarmRepository):
         self._config = config
 
     def save(self, alarm: Alarm) -> int:
+        _require_active(alarm)
         params = (
             alarm.assessment_id,
             alarm.severity.value,

@@ -127,6 +127,15 @@ def test_mysql_save_missing_lastrowid_failsafe():
 # --- V7 wird am Modell-Rand erzwungen (Alarm-Konstruktion), nicht im Repo ---
 
 
+@pytest.mark.parametrize("repo", [InMemoryAlarmRepository(), MySqlAlarmRepository()])
+@pytest.mark.parametrize("zustand", [AlarmState.ACKNOWLEDGED, AlarmState.CLEARED])
+def test_save_rejects_non_active_alarm(repo, zustand):
+    # V8: save() persistiert nur AUSGELOESTE (aktive) Alarme. Ein nicht-aktiver Zustand
+    # ist ein Aufrufer-Fehler (Zustandswechsel laufen ueber DTB-24/manuell), kein DB-Write.
+    with pytest.raises(ValueError):
+        repo.save(_alarm(state=zustand))
+
+
 def test_naive_raised_at_rejected_at_model_boundary():
     from pydantic import ValidationError
 
