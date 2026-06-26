@@ -155,6 +155,7 @@ def test_current_stale_returns_200_unknown_and_is_stale():
     response = client.get("/v1/assessment/current")
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"  # no-store auch auf Fail-safe-200
     body = response.json()
     assert body["risk_level"] == "unknown"  # nie GRUEN bei Stale (NF-01)
     assert body["is_stale"] is True
@@ -172,6 +173,7 @@ def test_current_fault_returns_200_unknown():
     response = client.get("/v1/assessment/current")
 
     assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"  # no-store auch auf Fail-safe-200
     body = response.json()
     assert body["risk_level"] == "unknown"  # nie GRUEN bei fault (NF-01)
     assert body["sensor_status"] == "fault"
