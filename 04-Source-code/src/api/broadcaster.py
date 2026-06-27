@@ -91,9 +91,11 @@ class AlarmBroadcaster:
         for queue in self._subscribers:
             try:
                 if queue.full():
-                    # Platz fuer den neuesten Alarm schaffen: aeltesten verwerfen.
-                    with contextlib.suppress(asyncio.QueueEmpty):
-                        queue.get_nowait()
+                    # Platz fuer den neuesten Alarm schaffen: aeltesten verwerfen. queue.full()
+                    # ist True und bis get_nowait() liegt KEIN await -> die Queue kann nicht
+                    # zwischendurch leer werden (QueueEmpty unerreichbar). Ein wider Erwarten
+                    # doch geworfener Fehler faengt der aeussere except-Block (best-effort).
+                    queue.get_nowait()
                     logger.warning(
                         "SSE-Client-Puffer voll -> aeltesten Alarm verworfen "
                         "(Client zu langsam; Resync via GET /v1/alarms deckt ab)."
@@ -122,9 +124,10 @@ class AlarmBroadcaster:
         """Meldet ein Abo ab (Verbindungsende) und gibt die Kapazitaet wieder frei.
 
         Idempotent (discard-Semantik): ein bereits abgemeldetes Abo wird ignoriert, statt
-        wie `list.remove` mit ValueError zu scheitern.
+        wie `list.remove` mit ValueError zu scheitern. `remove` unter `suppress(ValueError)`
+        statt `in` + `remove` -> EIN linearer Scan statt zwei.
         """
-        if queue in self._subscribers:
+        with contextlib.suppress(ValueError):
             self._subscribers.remove(queue)
 
     @contextlib.asynccontextmanager
