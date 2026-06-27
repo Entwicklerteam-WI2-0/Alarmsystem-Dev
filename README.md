@@ -47,16 +47,17 @@ Alarmsystem-Dev/
 │   ├── Nutzer und Stakeholdermodel 1.md
 │   └── Nutzer und Stakeholdermodel 2.md
 │
-├── 04-Source-code/                      # Backend-Code (P0-Grundgerüst steht)
+├── 04-Source-code/                      # Backend-Code (Kern verdrahtet: Ingest, Bewertung, Alarme, /v1-Serving)
 │   ├── src/
 │   │   ├── ingest/                      # Pull-Poller (GET /current bei G1), Eingangsvalidierung
 │   │   ├── model/                       # Datenklassen/Schemas (Pydantic)
 │   │   ├── assessment/                  # Vereisungslogik (Schwellenwerte) — Kernmodul, DB-frei
+│   │   ├── alarm/                       # Alarm-Generierung (Severity aus RiskLevel, Hysterese/Entprellung)
 │   │   ├── storage/                     # DB-Zugriff (Repository-Pattern, rohes PyMySQL → MySQL/MariaDB; kein ORM, E-35)
 │   │   ├── api/                         # API-Endpoints für G3 (Frontend)
 │   │   ├── config/                      # Schwellen/Parametrierung
 │   │   ├── forecast/                    # 30-min-Prognose (T3)
-│   │   └── main.py                      # Einstiegspunkt (FastAPI), GET /v1/health
+│   │   └── main.py                      # Einstiegspunkt (FastAPI): DI/Lifespan + Scheduler; GET /v1/health + GET /v1/assessment/current
 │   ├── tests/                           # Unit/Integrationstests
 │   ├── migrations/                      # handgeschriebenes schema.sql (kein Alembic, E-35)
 │   ├── config/                          # Default-Schwellenwerte (parametrierbar)
@@ -67,7 +68,7 @@ Alarmsystem-Dev/
 ├── 05-Fortschrittslog/                  # Code-Stand + Commit-/PR-Log (Orientierung)
 │   └── Fortschrittslog.md
 │
-├── .github/workflows/                   # CI/CD (geplant)
+├── .github/workflows/                   # CI/CD (aktiv: test, lint-config, claude-review)
 │
 ├── .claude/                             # Geteilte Claude-Code-Config (committet)
 │   ├── settings.json                    # Hooks (SessionStart; Enforcement folgt in Phase 2)
@@ -88,7 +89,7 @@ Alarmsystem-Dev/
 
 ---
 
-> **Hinweis zur Struktur:** Der Backend-Code liegt unter **`04-Source-code/`** — das **P0-Grundgerüst steht** (FastAPI-Skelett, `GET /v1/health`, MariaDB-Setup **nativ** (Pi via Tunnel / lokal; kein Docker → E-35)). Struktur-/Setup-Detail siehe `04-Source-code/README.md` und `Backend-Konzept §7`. `.github/workflows/` (CI/CD) ist noch geplant.
+> **Hinweis zur Struktur:** Der Backend-Code liegt unter **`04-Source-code/`**. Über das P0-Grundgerüst hinaus sind **Laufzeit-Verdrahtung (DI/Lifespan + Scheduler, DTB-64), die 4-Stufen-Bewertungslogik, `GET /v1/assessment/current` (DTB-43) und die Alarm-Generierung** real verdrahtet (Stand 27.06.; Priorisierung s. `erinnerung/task-prioritaet-aktuell.md`). MariaDB-Setup **nativ** (Pi via Tunnel / lokal; kein Docker → E-35). Struktur-/Setup-Detail siehe `04-Source-code/README.md` und `Backend-Konzept §7`. **CI/CD ist aktiv** (`.github/workflows/`: `test`, `lint-config`, `claude-review`; `test` + `lint-config` sind Pflicht-Status-Checks).
 
 
 
@@ -232,7 +233,7 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 - Zusammenarbeits-Map (engste Kopplungen: Architekt ⇄ Devs, Architekt ⇄ G1/G3)
 - Git-Workflow (Feature-Branch → PR → Review → Merge)
 - Definition of Ready/Done
-- Cadence (Standup 2–3×/Woche, Team-Sync 1×/Woche)
+- Cadence (Standup 2–3×/Woche, Seam-Sync 1×/Woche)
 
 ---
 
@@ -240,7 +241,7 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 
 | Komponente | Empfehlung | Alternativen |
 |---|---|---|
-| **Sprache** | Python 3.11+ | — |
+| **Sprache** | Python 3.12+ (CI: 3.12 + 3.14) | — |
 | **Framework** | FastAPI | Flask, Node/Express |
 | **Validierung** | Pydantic v2 | — |
 | **Datenbank** | **MySQL 8 / MariaDB** — durch GL vorgegeben (dev = prod, native MariaDB; kein Docker → E-35) | ~~SQLite, PostgreSQL~~ (verworfen, s. Backend-Konzept §6a) |
@@ -339,23 +340,24 @@ Refs: FA-05, NF-01, Schwellenwerte.md
 ```
 assessment/
 ├── __init__.py
-├── logic.py           # Pure functions (testbar): assess(reading, threshold_set) → assessment
-├── thresholds.py      # Threshold-Klasse + default values
-└── validator.py       # Plausibilitäts-Checks
+├── core.py            # Pure 4-Stufen-Kaskade (assess_ice_risk) — testbar, DB-frei
+├── service.py         # AssessmentService: NF-01-Enforcement + Persistenz-Orchestrierung
+├── failsafe.py        # is_stale / check_plausibility / build_unknown_assessment
+└── utils.py           # Magnus-Taupunkt (calculate_dew_point)
 
 model/
 ├── __init__.py
-├── schemas.py         # Pydantic-Modelle (Request/Response)
-└── entities.py        # DB-Entitäten
+├── schemas.py         # Pydantic-Modelle (Reading, Assessment, AssessmentCurrent, ...)
+└── enums.py           # RiskLevel, SensorStatus, AlarmState, AlarmSeverity, ...
 ```
 
 ### Tests
 ```
 tests/
-├── test_assessment.py       # Unit: Bewertungslogik
-├── test_ingest.py           # Unit: Validierung
-├── test_api.py              # Unit: Endpoints
-└── test_integration_e2e.py  # Integration: Full-Stack
+├── test_assessment.py                  # Unit: Bewertungslogik (4-Stufen-Kaskade)
+├── test_ingest.py                      # Unit: Poller/Validierung
+├── test_assessment_current_endpoint.py # Unit: GET /v1/assessment/current
+└── test_e2e_ingest_assessment_api.py   # Integration: Ingest→Bewertung→API
 ```
 
 ### Naming
@@ -375,12 +377,12 @@ tests/
 - **`GET /current`-Snapshot** — welche Felder, welche Einheiten, gemeinsamer `measured_at` (UTC)?
 - **`GET /health`** — Verfügbarkeits-Check (200 ok / 503 fault)
 - **Poll-Intervall** — G2 bestimmt selbst (≤ 60 s); keine Push-Frequenz seitens G1 nötig
-- **Team-Sync:** 1×/Woche (Anfang Woche 2)
+- **Seam-Sync:** 1×/Woche (Anfang Woche 2)
 
 #### zu G3 (Frontend)
 - **`GET /v1/assessment/current`-Response** — welche Felder, Formatierung?
 - **`GET /v1/alarms`** — wie werden Alarme visualisiert?
-- **Team-Sync:** 1×/Woche (Anfang Woche 2)
+- **Seam-Sync:** 1×/Woche (Anfang Woche 2)
 
 ---
 
@@ -411,7 +413,7 @@ tests/
 - **P1 auf stärkste Köpfe legen** (Architekt + 1–2 Backend-Devs)
 - **Contract früh einfrieren** (Mitte Woche 1)
 - **Parallel entwickeln** gegen denselben Vertrag
-- **Team-Syncs** regelmäßig halten
+- **Seam-Syncs** regelmäßig halten
 
 ---
 
@@ -455,10 +457,10 @@ tests/
 
 - **Lizenz:** Projekt-Repo (ggf. später spezifizieren)
 - **Sprache:** Deutsch (Docs), Englisch (Code-Kommentare, wo sinnvoll)
-- **Timezone:** CET (UTC+1)
+- **Timezone:** UTC / ISO-8601 (alle Zeitstempel — Contract-Vorgabe; CET nur für menschliche Anzeige)
 
 ---
 
 **Viel Erfolg bei der Implementierung!** 🚀
 
-*Letzte Aktualisierung: 25.06.2026 — G2 Backend & Entscheidungslogik (API-Contract v1.0 eingefroren; `/v1`-Endpoints; E-35 PyMySQL/native MariaDB)*
+*Letzte Aktualisierung: 27.06.2026 — G2 Backend & Entscheidungslogik (Kern verdrahtet: DTB-64 Laufzeit + DTB-43 Serving + Alarm-Generierung; CI aktiv; API-Contract v1.0 eingefroren; E-35 PyMySQL/native MariaDB)*

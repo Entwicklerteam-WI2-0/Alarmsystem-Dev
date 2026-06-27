@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.alarm.hysterese import AlarmHysterese
@@ -69,6 +70,16 @@ _DEFAULT_G1_BASE_URL = "http://g1-sensorik.local"
 # zu fixieren — das get_latest()-Assessment ist ohnehin noch global (nicht pro Sensor),
 # daher ist die ID hier nur die Reading-Auswahl fuer den Aktualitaets-/Status-Check.
 _SENSOR_ID = "anr-rwy-01"
+
+# CORS (C1, Vorbereitung G3-Browser-Integration / DTB-23): G3 ist ein Browser-Frontend
+# von ANDERER Origin (eigener Host/Port). Ohne CORS-Header blockt der Browser per
+# Same-Origin-Policy JEDEN Call von G3 -> Server-zu-Server und die pytest-Suite sind davon
+# unberuehrt, die echte UI aber nicht. Bewusster Default "*" fuer den abgeschlossenen
+# Prototyp/Intranet (analog zum http-Default von G1): pro Umgebung per Env einschraenken,
+# z. B. G2_CORS_ORIGINS="http://devpi.local:3000" (dokumentiert in .env.example).
+# allow_credentials bleibt False -> mit "*" kompatibel und ausreichend, da Auth (DTB-63)
+# ueber den Authorization-Header laeuft, nicht ueber Cookies.
+_DEFAULT_CORS_ORIGINS = "*"
 
 
 def build_runtime() -> Runtime:
@@ -237,6 +248,28 @@ def _scheduler_enabled() -> bool:
     return os.environ.get("G2_ENABLE_SCHEDULER", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _cors_origins() -> list[str]:
+    """Erlaubte CORS-Origins aus Env (komma-separiert); Default/leer/"*" -> ["*"].
+
+    Prototyp/Intranet. Hinweis (Deployment): wird einmalig beim App-Start (Modulimport,
+    add_middleware) gelesen -> Aenderung von G2_CORS_ORIGINS wirkt erst nach App-Neustart,
+    nicht per systemd-Reload.
+    """
+    raw = os.environ.get("G2_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).strip()
+    # Leerer String (z. B. `G2_CORS_ORIGINS=` in der .env) zaehlt wie "nicht gesetzt":
+    # auf den offenen Default zurueckfallen, statt CORS still komplett zu sperren
+    # (ein versehentlich leerer Wert ist wahrscheinlicher als bewusstes Block-all).
+    if not raw:
+        return ["*"]
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    # "*" dominiert: taucht der Wildcard irgendwo in der Liste auf (auch Mischform wie
+    # "*,http://x"), gilt er allein -> ["*"]. Vermeidet eine ueberraschende gemischte
+    # allow_origins-Liste.
+    if "*" in origins:
+        return ["*"]
+    return origins
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startet/stoppt den Hintergrund-Scheduler und haengt den Runtime-Graph an app.state."""
@@ -265,6 +298,20 @@ app = FastAPI(
     title="Alarmsystem-Backend G2 — Vereisungserkennung ANR",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+# CORS (C1): erlaubt G3s Browser-Frontend (andere Origin) den Zugriff. Methoden bewusst
+# auf die Contract-Verben begrenzt (GET = lesen/SSE, POST = /v1/alarms/{id}/ack).
+# Origins/Default siehe _cors_origins / _DEFAULT_CORS_ORIGINS oben.
+# expose_headers bleibt Default (leer): G3 liest nur CORS-safelisted Response-Header (u. a.
+# Cache-Control) — fuer den aktuellen Contract ausreichend. Muss G3 spaeter einen Custom-Header
+# lesen (z. B. X-Request-Id), hier expose_headers=[...] ergaenzen.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 # Versionierte /v1-Endpoints (Serving zu G3), z. B. GET /v1/thresholds (DTB-62).
