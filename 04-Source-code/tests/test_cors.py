@@ -11,17 +11,31 @@ Default-Zustand (deterministisch, ohne Env-Manipulation). Die CORS-Header werden
 Middleware unabhaengig vom 200/503-Pfad gesetzt, daher braucht es keine Runtime-Override.
 """
 
+import os
+
+import pytest
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 
 from src.main import _cors_origins, app
 
+# Die beiden GLOBALE-App-Tests unten pruefen den Wildcard-Default. Dessen CORS-Config wird
+# beim Import von src.main eingefroren (add_middleware liest _cors_origins() einmalig). Ist
+# G2_CORS_ORIGINS im Prozess-Env gesetzt (z. B. in CI / via pytest-dotenv), gilt der Default
+# nicht mehr -> nur diese beiden Tests ueberspringen, statt still falsch zu schlagen. Die
+# uebrigen Tests bauen eigene Apps bzw. testen _cors_origins() direkt und sind env-unabhaengig.
+_skip_if_env_origins = pytest.mark.skipif(
+    os.getenv("G2_CORS_ORIGINS") is not None,
+    reason="G2_CORS_ORIGINS via Env gesetzt -> Wildcard-Default nicht garantiert",
+)
+
 client = TestClient(app)
 
 _ORIGIN = "http://g3-frontend.test"
 
 
+@_skip_if_env_origins
 def test_simple_get_has_cors_allow_origin_header():
     # Act: GET mit Origin-Header (so wie ein Browser ihn cross-origin sendet).
     response = client.get("/v1/health", headers={"Origin": _ORIGIN})
@@ -31,6 +45,7 @@ def test_simple_get_has_cors_allow_origin_header():
     assert response.headers.get("access-control-allow-origin") == "*"
 
 
+@_skip_if_env_origins
 def test_preflight_options_allows_contract_methods():
     # Act: Browser-Preflight vor einem "komplexen" Request (z. B. POST /ack).
     response = client.options(
@@ -92,3 +107,9 @@ def test_restricted_origins_block_foreign_origin(monkeypatch):
 
     foreign = local_client.get("/ping", headers={"Origin": "http://evil.test"})
     assert "access-control-allow-origin" not in foreign.headers
+
+
+def test_app_has_cors_middleware_wired():
+    # Env-unabhaengig: die reale App hat die CORSMiddleware im Stack. Sichert die Verdrahtung
+    # auch dann ab, wenn die Wildcard-Verhaltenstests bei gesetztem Env uebersprungen werden.
+    assert any(m.cls is CORSMiddleware for m in app.user_middleware)
