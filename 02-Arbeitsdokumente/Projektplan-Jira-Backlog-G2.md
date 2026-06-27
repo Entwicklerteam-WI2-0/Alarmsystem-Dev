@@ -7,6 +7,7 @@
 > **FEUCHTE-FIX (E-33):** „Feuchte vorhanden" := `ΔT (T_s − T_d) ≤ 1,0 °C` — an die **Oberfläche** gebunden. Der frühere Luft-RH-Trigger (`RH ≥ 90 %`) ist **komplett entfernt**, weil Luftfeuchte nichts über die Oberfläche aussagt (Vorfall 1: 92 % Luftfeuchte bei trockener Oberfläche → ΔT > 1,0 → **GELB**, nicht ORANGE). `RH` (= **Luftfeuchte**) fließt nur **indirekt** über den Taupunkt `T_d` (Magnus) in `ΔT` ein; `humidity_pct` im G1-`GET /current`-Snapshot ist Luftfeuchte und reiner T_d-Input — **kein** separater Oberflächenfeuchte-Wert nötig.
 > **DUMMY-SCHWELLEN:** Alle Schwellenwerte bleiben Platzhalter bis G1 liefert — ausnahmslos über `config/` parametrierbar, NIE hardcoden.
 > **Owner = Empfehlung** (skill-bewusst), kein harter Assignee. Tasks gehören in den Backlog; Owner-Hinweis je Task unten.
+> **⚠️ STACK-KORREKTUR (nach 2026-06-22 · E-29/E-31/E-35):** Dieses Dokument ist ein Snapshot vom 22.06. Der ursprüngliche T0-Stack **SQLite + HTTP-POST** ist **überholt**. Verbindlich: **DB = MySQL/MariaDB** (GL-Vorgabe E-29) über **rohes PyMySQL** + handgeschriebenes `schema.sql` (kein ORM/Alembic, native, kein Docker — E-35); **Ingest = Pull-Poller** gegen G1 `GET /current` (E-31), kein `POST /readings`. SQLite-Nennungen unten sind als **MySQL/MariaDB** zu lesen; rein historische Audit-Begründungen (E-08-Snapshot) bleiben als Zeitdokument stehen.
 
 ---
 
@@ -42,7 +43,7 @@
 
 ## 2. Überblick
 
-Alarmsystem Vereisungserkennung — Backend Gruppe 2 (G2). Prototyp zur Erfassung und Bewertung von Vereisungsbedingungen auf der Startbahn des Flughafens ANR (3-wöchiges Projekt). Stack T0 (Python + FastAPI + SQLite) ist faktisch gewählt; die G1→G2-Naht ist **Pull** (G2 = HTTP-Client/Poller gegen G1s `GET /current`, vgl. E-31). Kritischer Pfad: API/Datenmodell-Naht P1 (bis Woche 2, Di fällig) + Bewertungsmodul P2.4 (3-Faktor: T_s + ΔT + RH) mit beiden Vorfall-Testfällen + Fail-safe. Meilenstein M2 (Ende Woche 2, ca. 2026-06-26) ist risikoreich: kein Produktionscode vorhanden, Lucas als Single-Point-of-Failure auf kritischem Pfad.
+Alarmsystem Vereisungserkennung — Backend Gruppe 2 (G2). Prototyp zur Erfassung und Bewertung von Vereisungsbedingungen auf der Startbahn des Flughafens ANR (3-wöchiges Projekt). Stack T0 (Python + FastAPI + **MySQL/MariaDB**, rohes PyMySQL — E-29/E-35) ist gewählt; die G1→G2-Naht ist **Pull** (G2 = HTTP-Client/Poller gegen G1s `GET /current`, vgl. E-31). Kritischer Pfad: API/Datenmodell-Naht P1 (bis Woche 2, Di fällig) + Bewertungsmodul P2.4 (3-Faktor: T_s + ΔT + RH) mit beiden Vorfall-Testfällen + Fail-safe. Meilenstein M2 (Ende Woche 2, ca. 2026-06-26) ist risikoreich: kein Produktionscode vorhanden, Lucas als Single-Point-of-Failure auf kritischem Pfad.
 
 **Kritischer Pfad:** P0.2–P0.3 (Scaffolding, Mo Woche 2) → P1.1–P1.4 (Contract, Mo/Di Woche 2) → Seam-Sync (Di 08:00) → P2.1–P2.6 (Vertical Slice, Mi–Fr Woche 2) → M2 Deadline (Fr 17:00 2026-06-26). Kein Überschreitung, alle PRs gemergt auf main bis Do 17:00 damit Fr für Abgabe-Freeze Zeit bleibt. Reservezeit: <12h für Rollback/Hotfixes. P3 Spillover zu Woche 3 akzeptiert. **Engpässe:** Lucas (P0+P1+P2.4+P5.1/5.2), Test-Team (P2.6+P3.6+P3.7+P5.3), DB-Engineers (P2.2+P3.1/3.2). **Mitigation:** Pair-Programming Mo/Di, Parallelisierung kleiner Tasks, TDD-Ansatz (Testfälle vor Code).
 
@@ -60,7 +61,7 @@ Repo-Struktur, Stack-Entscheidung, lauffähiges Grundgerüst (GET /health), Bran
 **Exit-Kriterien:**
 - src/, tests/, config/ Ordnerstruktur angelegt und gepusht
 - GET /health Endpoint startet mit HTTP 200
-- Stack-Entscheidung (Python+FastAPI+SQLite) im Entscheidungslogbuch begründet
+- Stack-Entscheidung (Python+FastAPI+MySQL/MariaDB, rohes PyMySQL — E-29/E-35) im Entscheidungslogbuch begründet
 - Branch/PR-Konventionen + DoD in README.md dokumentiert
 
 ### P1 — Contract: API + Datenmodell (KRITISCH)  ·  M2
@@ -330,7 +331,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Task · Highest · S
 - **Owner (Empfehlung):** Lucas Voehringer (Systemarchitekt)
 - **Anforderungen:** NF-05, NF-10
-- **Beschreibung:** Begründe Wahl Python+FastAPI+SQLite vs. Alternativen (Flask, Node, MQTT). Dokumentation ins Entscheidungslogbuch (E-08).
+- **Beschreibung:** Begründe Wahl Python+FastAPI+MySQL/MariaDB (rohes PyMySQL, E-29/E-35) vs. Alternativen (Flask, Node, MQTT). Dokumentation ins Entscheidungslogbuch (E-08).
 - **DoD:**
   - Wahl im Entscheidungslogbuch E-08 mit Begründung (Deployment-Einfachheit, Team-Kompetenz, Skalierbarkeit)
   - Commit mit 'E-08: Stack final' Nachricht
@@ -442,10 +443,10 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Story · High · M
 - **Owner (Empfehlung):** Andreas Moritz oder Leon Hartling (DB-Engineers)
 - **Abhängig von:** P1.1
-- **Beschreibung:** Implementiere Repository-Pattern für readings: Klasse ReadingRepository mit Methoden save(reading), get_latest(sensor_id), get_since(sensor_id, from_ts). SQLite-Tabelle 'readings' mit Index auf sensor_id + ts. Transaktionen + Error-Handling.
+- **Beschreibung:** Implementiere Repository-Pattern für readings: Klasse ReadingRepository mit Methoden save(reading), get_latest(sensor_id), get_since(sensor_id, from_ts). MySQL/MariaDB-Tabelle 'reading' mit Index auf sensor_id + ts. Transaktionen + Error-Handling.
 - **DoD:**
   - src/storage/repository.py mit ReadingRepository klasse
-  - SQLite-Schema (CREATE TABLE readings ...) in src/storage/schema.sql
+  - DDL (CREATE TABLE reading ...) in `migrations/schema.sql` (handgeschrieben, kein Alembic — E-35)
   - Unit-Tests für Repository (save, get_latest, get_since)
   - Integration mit src/api/main.py via Dependency Injection
 
@@ -776,7 +777,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Task · High · S
 - **Owner (Empfehlung):** Mohammadi oder Berger (Test-Setup)
 - **Abhängig von:** P0.2
-- **Beschreibung:** Erstelle pytest.ini oder pyproject.toml [tool.pytest]: testpaths=tests, addopts=--cov=src, markers=integration. Schreibe conftest.py mit Fixtures: config_fixture (Dummy-Schwellen), db_fixture (In-Memory SQLite), reading_factory (Test-Daten).
+- **Beschreibung:** Erstelle pytest.ini oder pyproject.toml [tool.pytest]: testpaths=tests, addopts=--cov=src, markers=integration. Schreibe conftest.py mit Fixtures: config_fixture (Dummy-Schwellen), db_fixture (In-Memory-Fake-Repository, DB-frei), reading_factory (Test-Daten).
 - **DoD:**
   - pyproject.toml [tool.pytest] oder pytest.ini vorhanden
   - conftest.py mit ≥3 Fixtures (config, db, reading_factory)
@@ -798,7 +799,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 
 #### P0.6: pytest-Setup + .github/workflows/test.yml (CI-Gate)  ·  [E-08-TestCI]  ·  M2 (heute 2026-06-21, Blocker fuer alle weiteren PRs)
 - **Owner (Empfehlung):** Petzold (15-30 Min Aufwand, eigenstaendig moeglich)
-- **Beschreibung:** Erstelle pyproject.toml mit [tool.pytest.ini_options] (testpaths=['tests'], addopts='--cov=src'). Erstelle tests/conftest.py mit Fixtures: config_fixture (laedt Dummy-Config), db_fixture (In-Memory-SQLite). Erstelle .github/workflows/test.yml: auf push/PR -> pytest --cov=src --cov-fail-under=80. Branch-Schutzregel empfehlen (test.yml muss gruen sein vor Merge auf main). Ohne diesen Task laufen alle Tests nur manuell.
+- **Beschreibung:** Erstelle pyproject.toml mit [tool.pytest.ini_options] (testpaths=['tests'], addopts='--cov=src'). Erstelle tests/conftest.py mit Fixtures: config_fixture (laedt Dummy-Config), db_fixture (In-Memory-Fake-Repository, DB-frei). Erstelle .github/workflows/test.yml: auf push/PR -> pytest --cov=src --cov-fail-under=80. Branch-Schutzregel empfehlen (test.yml muss gruen sein vor Merge auf main). Ohne diesen Task laufen alle Tests nur manuell.
 - **DoD:**
   - pyproject.toml oder pytest.ini mit testpaths=tests vorhanden
   - tests/conftest.py mit mindestens 2 Fixtures (config_fixture, db_fixture)
