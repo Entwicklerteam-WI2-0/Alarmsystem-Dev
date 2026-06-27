@@ -88,13 +88,16 @@ _MAX_LOGGED_HEADER_LEN = 64
 
 
 def _sanitize_header_value(value: str) -> str:
-    """Entfernt CR/LF und begrenzt die Laenge eines client-kontrollierten Headerwerts.
+    """Entfernt ALLE nicht-druckbaren Zeichen und begrenzt die Laenge eines Headerwerts.
 
     Schutz gegen Log-Injection/-Forging (NF-09 Log-Integritaet): ein eingeschmuggelter
-    Zeilenumbruch im (von G3 gesendeten) Last-Event-ID-Header koennte sonst eine
-    gefaelschte Log-Zeile erzeugen. Wir loggen nur den bereinigten, begrenzten Wert.
+    Zeilenumbruch ODER Unicode-Zeilentrenner (U+2028/U+2029) im (von G3 gesendeten)
+    Last-Event-ID-Header koennte sonst eine gefaelschte/verschleierte Log-Zeile erzeugen.
+    Gefiltert wird per str.isprintable() (entfernt CR/LF, Tabs, C0/C1-Controls,
+    Zero-Width); normaler Text + Leerzeichen bleiben. Geloggt wird nur der bereinigte,
+    begrenzte Wert.
     """
-    return value.replace("\r", "").replace("\n", "")[:_MAX_LOGGED_HEADER_LEN]
+    return "".join(ch for ch in value if ch.isprintable())[:_MAX_LOGGED_HEADER_LEN]
 
 
 @router.get(

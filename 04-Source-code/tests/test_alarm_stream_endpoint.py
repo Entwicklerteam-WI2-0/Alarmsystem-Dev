@@ -29,7 +29,7 @@ from starlette.responses import StreamingResponse
 
 from src.api.broadcaster import AlarmBroadcaster
 from src.api.exceptions import RuntimeNotReadyError
-from src.api.v1 import stream_alarms
+from src.api.v1 import _MAX_LOGGED_HEADER_LEN, _sanitize_header_value, stream_alarms
 from src.main import app, get_runtime
 from src.model.enums import AlarmSeverity, AlarmState
 from src.model.schemas import Alarm
@@ -299,6 +299,34 @@ def test_stream_returns_503_when_at_capacity():
         assert body["code"] == "SERVICE_UNAVAILABLE"
 
     asyncio.run(scenario())
+
+
+def test_sanitize_header_value_strips_all_non_printable():
+    # Defense-in-depth gegen Log-Forging/-Obfuskation: NICHT nur CR/LF, sondern ALLE
+    # nicht-druckbaren Zeichen entfernen (Unicode-Zeilentrenner, Tabs, C0/C1-Controls,
+    # Zero-Width). So kann ein client-kontrollierter Header keine Log-Zeile faelschen
+    # oder verschleiern. Normaler Text + Leerzeichen bleiben erhalten.
+    raw = (
+        "7"
+        + chr(13)  # CR
+        + chr(10)  # LF
+        + "A"
+        + chr(0x2028)  # Line Separator
+        + "B"
+        + chr(0x2029)  # Paragraph Separator
+        + "C"
+        + chr(9)  # Tab
+        + "D"
+        + chr(0)  # NUL
+        + "E"
+        + chr(27)  # ESC
+        + "F ok"
+    )
+    assert _sanitize_header_value(raw) == "7ABCDEF ok"
+
+
+def test_sanitize_header_value_truncates():
+    assert _sanitize_header_value("x" * 200) == "x" * _MAX_LOGGED_HEADER_LEN
 
 
 def test_stream_sanitizes_last_event_id_in_log(caplog):
