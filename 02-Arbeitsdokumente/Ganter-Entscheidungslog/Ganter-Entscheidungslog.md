@@ -222,7 +222,7 @@
     machen und die Schichtgrenze (Berechnung vs. Stream-Haltung) durchbrechen.
   - **ε frei wählen:** verworfen — Schwellen kommen aus der Quelle, nicht aus der Luft; ε ist an die
     DS18B20-Auflösung gekoppelt und mit dem Architekten plausibilisiert. **Offen:** Bit-Auflösung mit G1 final
-    bestätigen (rein Config, falls abweichend).
+    bestätigen (rein Config, falls abweichend) — abgedeckt durch **DTB-69** (Tuning-Ticket, Lucas zugewiesen).
 - **Ergebnis/Status:** umgesetzt + 3× `santa-loop`-geprüft, **beide CRITICALs geschlossen**. Tests decken die
   Fenster-/Dither-/Recovery-Fälle ab, u. a. „30 flache Polls → flatline", „±1-LSB-Dither über 40 Polls →
   flatline" und „Erholung, sobald die Temperatur sich real bewegt". **533 passed / 16 skipped**, Coverage
@@ -271,13 +271,15 @@
   dokumentiert; **Tuning-Ticket angelegt** (**DTB-69**, Lucas zugewiesen — ε und `flatline_timeout_min` gegen die
   finale G1-Sensorauflösung + reale Drift-Statistik nachkalibrieren; G1-Anfrage als Kommentar). Konsens mit dem
   Architekten (Lucas).
-- **Offene Koordination (Stand 2026-06-27, ehrlich festgehalten):** Beim Sync auf `main` ist aufgefallen, dass
+- **Offene Koordination (Stand 2026-06-27, aufgelöst):** Beim Sync auf `main` ist aufgefallen, dass
   DTB-20 **parallel** über **PR #120** (`fix/dtb-20-flatline-epsilon-ds18b20`, bereits gemergt) gelöst wurde —
   dort als reine **ε-Kalibrierung (0,15) + Dither-Regressionstest** auf der bestehenden DTB-13-Logik (Flatline
-  bleibt **in** `check_plausibility`, Vergleich gegen *ein* Vorgänger-Reading). Mein Branch geht weiter: Ich
-  ziehe die Flatline in eine **fenster-/spannweitenbasierte** `check_flatline` und verdrahte sie in den Poller —
+  bleibt **in** `check_plausibility`, Vergleich gegen *ein* Vorgänger-Reading). Mein Branch ging weiter: Ich
+  zog die Flatline in eine **fenster-/spannweitenbasierte** `check_flatline` und verdrahtete sie in den Poller —
   weil der Single-Point-Vergleich bei 30-s-Polling nicht zuverlässig die 15-min-Dauer erreicht und gegen Dither
-  anfälliger ist. Dadurch bricht der von #120 gemergte Regressionstest `test_check_plausibility_lsb_dither_is_flatline`.
-  **Bewusste Entscheidung:** ich pushe meinen Code-Branch **nicht** eigenmächtig und überschreibe die fremde,
-  gemergte Arbeit nicht, sondern kläre zuerst mit Lucas + dem #120-Autor, welches Design gewinnt (mein Fenster
-  vs. mains Single-Point). Dieser Log-Eintrag dokumentiert meine Variante + Begründung als Diskussionsgrundlage.
+  anfälliger ist. Dadurch brach der von #120 gemergte Regressionstest `test_check_plausibility_lsb_dither_is_flatline`.
+  **Bewusste Entscheidung:** ich pushte meinen Code-Branch **nicht** eigenmächtig und überschrieb die fremde,
+  gemergte Arbeit nicht, sondern klärte zuerst mit Lucas + dem #120-Autor, welches Design gewinnt (mein Fenster
+  vs. mains Single-Point). Dieser Log-Eintrag dokumentierte meine Variante + Begründung als Diskussionsgrundlage.
+  **Update:** Im Journal-Eintrag [23:10] hat der Architekt (Lucas) das **Fenster-/Spannweiten-Design**
+  bestätigt; die Implementierung wurde in **PR #124** gemerggt. Die Koordination ist damit aufgelöst.
