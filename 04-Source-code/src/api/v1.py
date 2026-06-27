@@ -135,8 +135,9 @@ async def stream_alarms(
     ueber den Resync `GET /v1/alarms` (DTB-31, Sicherheits-Backstop) — der Stream selbst
     puffert keine Historie.
 
-    `subscribe()` meldet das Abo am Broadcaster an und (im finally) beim Verbindungsende
-    wieder ab; `request.is_disconnected` beendet den Generator, sobald der Client geht.
+    `reserve()` legt das Abo synchron + kapazitaetsgeprueft an; `release()` baut es im
+    `_frames`-finally beim Verbindungsende wieder ab; `request.is_disconnected` beendet den
+    Generator, sobald der Client geht.
 
     Reconnect: das `id:`-Feld jedes Frames IST der Reconnect-Mechanismus — der Client
     sendet beim Wiederverbinden den zuletzt gesehenen Wert als `Last-Event-ID`-Header.
