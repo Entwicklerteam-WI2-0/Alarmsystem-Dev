@@ -16,6 +16,7 @@ import pytest
 from src.model.enums import SensorStatus, Source
 from src.model.schemas import Reading
 from src.storage.repository import ReadingRepository, RepositoryError
+from tests._sql_splitter import split_sql_statements
 
 
 # ---------------------------------------------------------------------------
@@ -103,10 +104,10 @@ def database(test_db_name: str, db_available: bool) -> None:
     )
     try:
         with conn.cursor() as cursor:
-            for statement in ddl.split(";"):
-                statement = statement.strip()
-                if statement:
-                    cursor.execute(statement)
+            # split_sql_statements ignoriert ';' in Strings/Kommentaren (schema.sql hat seit
+            # DTB-29/DTB-33 Prepared Statements + Kommentare mit ';'); Spiegel #119.
+            for statement in split_sql_statements(ddl):
+                cursor.execute(statement)
         conn.commit()
     finally:
         conn.close()
