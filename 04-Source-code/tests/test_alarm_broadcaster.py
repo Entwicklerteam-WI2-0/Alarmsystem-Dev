@@ -19,7 +19,7 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 
-from src.api.broadcaster import AlarmBroadcaster, sse_alarm_frames
+from src.api.broadcaster import _HEARTBEAT_S, AlarmBroadcaster, sse_alarm_frames
 from src.model.enums import AlarmSeverity, AlarmState
 from src.model.schemas import Alarm
 
@@ -107,16 +107,27 @@ def test_publish_without_subscribers_is_noop():
 
 def test_publish_swallows_subscriber_error():
     # Best-effort (NF-01): wirft ein einzelner Abonnent beim Zustellen, darf publish NICHT
-    # werfen (sonst wuerde ein kaputter Stream-Client den Bewertungszyklus reissen). Ein
-    # Stub-Abo, dessen full() wirft, simuliert den Fehlerfall am direktesten.
-    class _BrokenQueue:
-        def full(self) -> bool:
-            raise RuntimeError("boom")
+    # werfen (sonst wuerde ein kaputter Stream-Client den Bewertungszyklus reissen). Den
+    # Fehler injizieren wir ueber die OEFFENTLICHE subscribe()-Naht (kein Privatzugriff auf
+    # _subscribers): das put_nowait des realen Abo-Queues wirft.
+    async def scenario() -> None:
+        bc = AlarmBroadcaster()
+        async with bc.subscribe() as queue:
 
-    bc = AlarmBroadcaster()
-    bc._subscribers.add(_BrokenQueue())  # type: ignore[arg-type]  # noqa: SLF001
+            def _boom(_item: object) -> None:
+                raise RuntimeError("boom")
 
-    bc.publish(_alarm(1))  # darf nicht werfen
+            queue.put_nowait = _boom  # type: ignore[method-assign]
+            bc.publish(_alarm(1))  # darf nicht werfen
+
+    asyncio.run(scenario())
+
+
+def test_heartbeat_interval_matches_contract():
+    # Contract: ~15 s Heartbeat. Pinnt den Default-Wert, damit eine Fehlkonfiguration
+    # (z. B. 300 s) auffaellt — die uebrigen SSE-Tests setzen bewusst kleine heartbeat_s
+    # und wuerden eine Drift am Default NICHT bemerken.
+    assert _HEARTBEAT_S == 15.0
 
 
 def test_publish_drops_oldest_when_queue_full():

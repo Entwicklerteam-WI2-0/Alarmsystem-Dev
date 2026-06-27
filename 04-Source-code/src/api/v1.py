@@ -6,6 +6,7 @@ Alle Endpoints hier sind **rein lesend** (RB-01-neutral): kein Aktor, keine
 Runway-Steuerung.
 """
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -16,6 +17,8 @@ from src.api.responses import NO_STORE_HEADERS
 from src.api.runtime import Runtime, get_runtime
 from src.config.loader import Thresholds
 from src.model.schemas import Error
+
+logger = logging.getLogger(__name__)
 
 # Kein Router-weiter Tag: jeder Endpoint deklariert seinen Ressourcen-Tag selbst
 # (wie assessment/current -> "Assessment" in main.py), damit die FastAPI-Auto-Docs
@@ -108,7 +111,20 @@ async def stream_alarms(
 
     `subscribe()` meldet das Abo am Broadcaster an und (im finally) beim Verbindungsende
     wieder ab; `request.is_disconnected` beendet den Generator, sobald der Client geht.
+
+    Reconnect: das `id:`-Feld jedes Frames IST der Reconnect-Mechanismus — der Client
+    sendet beim Wiederverbinden den zuletzt gesehenen Wert als `Last-Event-ID`-Header.
+    G2 puffert bewusst KEINE Historie (kein Replay); verpasste Alarme holt G3 ueber den
+    Resync `GET /v1/alarms` (DTB-31). Der eingehende Header wird daher nur protokolliert
+    (Diagnose), nicht zum Nachliefern verwendet.
     """
+    last_event_id = request.headers.get("last-event-id")
+    if last_event_id:
+        logger.info(
+            "SSE-Reconnect mit Last-Event-ID=%s — G3 sollte via GET /v1/alarms resyncen "
+            "(DTB-31); G2 liefert keine Historie nach.",
+            last_event_id,
+        )
     broadcaster = runtime.alarm_broadcaster
 
     async def _frames() -> object:

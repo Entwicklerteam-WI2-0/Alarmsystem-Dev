@@ -14,6 +14,7 @@ Dependency (get_runtime) VOR dem Streaming wirft -> normale JSON-Antwort.
 """
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -61,7 +62,7 @@ def test_stream_response_is_event_stream_with_no_store():
     async def scenario() -> None:
         broadcaster = AlarmBroadcaster()
         runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
-        request = SimpleNamespace(is_disconnected=_never_disconnected)
+        request = SimpleNamespace(is_disconnected=_never_disconnected, headers={})
 
         response = await stream_alarms(runtime=runtime, request=request)
 
@@ -85,7 +86,7 @@ def test_stream_emits_published_alarm_as_frame():
     async def scenario() -> None:
         broadcaster = AlarmBroadcaster()
         runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
-        request = SimpleNamespace(is_disconnected=_disconnect_after(1))
+        request = SimpleNamespace(is_disconnected=_disconnect_after(1), headers={})
 
         response = await stream_alarms(runtime=runtime, request=request)
         gen = response.body_iterator
@@ -102,6 +103,24 @@ def test_stream_emits_published_alarm_as_frame():
         assert '"severity":"warning"' in frame
         await gen.aclose()  # Abo abbauen (subscribe()-finally)
         assert broadcaster.subscriber_count == 0
+
+    asyncio.run(scenario())
+
+
+def test_stream_logs_last_event_id_on_reconnect(caplog):
+    # Reconnect-Mechanismus (Contract): der Client schickt beim Wiederverbinden den zuletzt
+    # gesehenen `id:`-Wert als Last-Event-ID-Header. G2 puffert KEINE Historie (Resync =
+    # GET /v1/alarms, DTB-31) -> der Header wird nur protokolliert (Diagnose), nicht repliziert.
+    async def scenario() -> None:
+        broadcaster = AlarmBroadcaster()
+        runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
+        request = SimpleNamespace(
+            is_disconnected=_never_disconnected, headers={"last-event-id": "7"}
+        )
+        with caplog.at_level(logging.INFO, logger="src.api.v1"):
+            response = await stream_alarms(runtime=runtime, request=request)
+            await response.body_iterator.aclose()
+        assert any("7" in record.getMessage() for record in caplog.records)
 
     asyncio.run(scenario())
 
