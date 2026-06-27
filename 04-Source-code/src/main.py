@@ -203,9 +203,12 @@ def _scheduler_enabled() -> bool:
 
 
 def _cors_origins() -> list[str]:
-    """Erlaubte CORS-Origins aus Env (komma-separiert); Default "*" (Prototyp/Intranet)."""
+    """Erlaubte CORS-Origins aus Env (komma-separiert); Default/leer -> "*" (Prototyp/Intranet)."""
     raw = os.environ.get("G2_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).strip()
-    if raw == "*":
+    # Leerer String (z. B. `G2_CORS_ORIGINS=` in der .env) zaehlt wie "nicht gesetzt":
+    # auf den offenen Default zurueckfallen, statt CORS still komplett zu sperren
+    # (ein versehentlich leerer Wert ist wahrscheinlicher als bewusstes Block-all).
+    if not raw or raw == "*":
         return ["*"]
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 

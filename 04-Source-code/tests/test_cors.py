@@ -11,9 +11,11 @@ Default-Zustand (deterministisch, ohne Env-Manipulation). Die CORS-Header werden
 Middleware unabhaengig vom 200/503-Pfad gesetzt, daher braucht es keine Runtime-Override.
 """
 
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.testclient import TestClient
 
-from src.main import app
+from src.main import _cors_origins, app
 
 client = TestClient(app)
 
@@ -44,3 +46,42 @@ def test_preflight_options_allows_contract_methods():
     assert response.headers.get("access-control-allow-origin") == "*"
     allow_methods = response.headers.get("access-control-allow-methods", "")
     assert "POST" in allow_methods and "GET" in allow_methods
+
+
+def test_cors_origins_empty_falls_back_to_wildcard(monkeypatch):
+    # Edge-Case (Review MEDIUM): leeres `G2_CORS_ORIGINS=` existiert als Wert und umgeht den
+    # Default -> darf CORS NICHT still sperren, sondern wie "nicht gesetzt" auf "*" zurueckfallen.
+    monkeypatch.setenv("G2_CORS_ORIGINS", "")
+    assert _cors_origins() == ["*"]
+
+
+def test_cors_origins_parses_comma_separated_list(monkeypatch):
+    monkeypatch.setenv("G2_CORS_ORIGINS", " http://a.test , http://b.test ")
+    assert _cors_origins() == ["http://a.test", "http://b.test"]
+
+
+def test_restricted_origins_block_foreign_origin(monkeypatch):
+    # Negativtest (Review LOW): bei eingeschraenkten Origins bekommt eine FREMDE Origin KEINEN
+    # allow-origin-Header. Isolierte App mit _cors_origins() unter gesetzter Env (kein Reimport
+    # der globalen App noetig, daher keine Suite-Seiteneffekte).
+    monkeypatch.setenv("G2_CORS_ORIGINS", "http://allowed.test")
+    restricted = FastAPI()
+    restricted.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins(),
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
+    )
+
+    @restricted.get("/ping")
+    def _ping() -> dict[str, bool]:
+        return {"ok": True}
+
+    local_client = TestClient(restricted)
+
+    allowed = local_client.get("/ping", headers={"Origin": "http://allowed.test"})
+    assert allowed.headers.get("access-control-allow-origin") == "http://allowed.test"
+
+    foreign = local_client.get("/ping", headers={"Origin": "http://evil.test"})
+    assert "access-control-allow-origin" not in foreign.headers
