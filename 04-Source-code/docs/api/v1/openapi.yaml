@@ -398,9 +398,11 @@ paths:
         abgelehnt (nicht idempotent, kein lautloses Schlucken) — so bleibt jede
         Quittierung ein eindeutiger, nachvollziehbarer Audit-Eintrag.
 
-        **Auth (M2/M3):** Im Prototyp (M2) kein Auth-Header erforderlich.
-        Implementierung so aufbauen, dass `Authorization` in M3 ohne Breaking
-        Change ergaenzt werden kann (vgl. Versandbegleittext G3).
+        **Auth (DTB-63, NF-07):** Erfordert einen gueltigen `X-API-Key`-Header
+        (statischer API-Key, serverseitig aus `G2_API_KEY`). Fehlender/falscher
+        Schluessel -> `401`. Reiner Zugangsschutz — RB-01 unberuehrt (kein Aktor).
+      security:
+        - ApiKeyAuth: []
       parameters:
         - name: id
           in: path
@@ -426,6 +428,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Acknowledgement"
+        "401":
+          description: Fehlender oder ungueltiger API-Key (DTB-63, NF-07).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: UNAUTHORIZED
+                message: "Ungueltiger oder fehlender API-Key."
         "400":
           description: "Ungueltiger Pfad-Parameter `id` (z. B. `id=0`, verletzt `minimum: 1`)."
           content:
@@ -464,6 +475,17 @@ paths:
                 $ref: "#/components/schemas/Error"
 
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        Statischer API-Key fuer **schreibende** Endpoints (DTB-63, NF-07). Soll-Wert
+        serverseitig aus Umgebungsvariable `G2_API_KEY` (kein Secret im Code). Lesende
+        Endpoints sind offen. Methode bewusst wechselbar (Basic/JWT spaeter) —
+        Naht-Entscheidung beim Architekt.
+
   schemas:
 
     # --- Enums (Spiegel von src/model/enums.py) ---
