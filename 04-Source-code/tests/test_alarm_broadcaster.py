@@ -172,24 +172,15 @@ def test_publish_isolates_failing_subscriber_from_others(caplog):
             def _boom(_item: object) -> None:
                 raise RuntimeError("boom")
 
-            bad.put_nowait = _boom  # type: ignore[method-assign]  # ein Abonnent wirft
-            # Deterministische Iterationsreihenfolge erzwingen: werfendes Abo zuerst, alle
-            # guten danach (white-box -> publish iteriert die Liste in genau dieser Folge).
-            bc._subscribers = [bad, *gute]  # type: ignore[assignment]
-            try:
-                with caplog.at_level(logging.ERROR, logger="src.api.broadcaster"):
-                    bc.publish(_alarm(11))  # darf NICHT werfen (best-effort)
-                # Kein Abo durch den Fehler verloren -> der kaputte Client reisst nichts ab.
-                assert bc.subscriber_count == 6
-                results = [await asyncio.wait_for(q.get(), timeout=1) for q in gute]
-            finally:
-                # Set GARANTIERT wiederherstellen (auch wenn eine Assertion oder ein
-                # wait_for-Timeout oben wirft), damit der subscribe()-Kontextmanager beim
-                # Verlassen sauber `discard()` aufrufen kann (eine list hat kein discard).
-                # So bleibt im Fehlerfall die echte Meldung sichtbar statt eines
-                # maskierenden AttributeError aus den finally-Bloecken von subscribe().
-                bc._subscribers = set(bc._subscribers)  # type: ignore[assignment]
-            return results
+            # `bad` ist das ZUERST verbundene Abo -> publish iteriert es zuerst (Zustellreihenfolge
+            # = Abo-Reihenfolge, da _subscribers eine list ist). Alle guten Abos kommen danach;
+            # die Zielregression (try/except um die GANZE Schleife statt pro Abo) greift sicher.
+            bad.put_nowait = _boom  # type: ignore[method-assign]
+            with caplog.at_level(logging.ERROR, logger="src.api.broadcaster"):
+                bc.publish(_alarm(11))  # darf NICHT werfen (best-effort)
+            # Kein Abo durch den Fehler verloren -> der kaputte Client reisst nichts ab.
+            assert bc.subscriber_count == 6
+            return [await asyncio.wait_for(q.get(), timeout=1) for q in gute]
 
     got = asyncio.run(scenario())
     # ALLE guten Abonnenten bekommen den Alarm trotz Fehler beim werfenden (Isolation belegt) —
@@ -277,8 +268,8 @@ def test_publish_drops_oldest_when_queue_full(caplog):
         if record.levelno == logging.WARNING and record.name == "src.api.broadcaster"
     ]
     assert len(warnings) == 1
-    assert "verworfen" in warnings[0].message
-    assert "Resync" in warnings[0].message
+    assert "verworfen" in warnings[0].getMessage()
+    assert "Resync" in warnings[0].getMessage()
 
 
 def test_drop_oldest_is_isolated_per_queue_in_fan_out():
@@ -293,30 +284,24 @@ def test_drop_oldest_is_isolated_per_queue_in_fan_out():
     # WICHTIG zur Mechanik: publish() ist synchron (kein await zwischen den Abos), daher kann
     # der gesunde Client NICHT "leer bleiben und am Ende alle 3 holen" — bei max_queue=2 liefe
     # auch seine Queue ueber. Echte Isolation belegt nur, wer ZWISCHEN den publish-Aufrufen
-    # konsumiert (genau das modelliert einen gesunden Client). Iterationsreihenfolge white-box
-    # fixiert (slow zuerst, vgl. test_publish_isolates_failing_subscriber_from_others), damit
-    # eine break/return-Regression den danach iterierten gesunden Client deterministisch um den
+    # konsumiert (genau das modelliert einen gesunden Client). `slow` ist das ZUERST verbundene
+    # Abo -> publish iteriert es zuerst (Abo-Reihenfolge = list-Reihenfolge), damit eine
+    # break/return-Regression den danach iterierten gesunden `fast` deterministisch um den
     # 3. Alarm braechte (sein fast.get() liefe sonst in den Timeout -> Test rot).
     async def scenario() -> list[int]:
         bc = AlarmBroadcaster(max_queue=2)
         async with bc.subscribe() as slow, bc.subscribe() as fast:
-            bc._subscribers = [slow, fast]  # type: ignore[assignment]  # slow garantiert zuerst
-            try:
-                bc.publish(_alarm(1))
-                assert (await asyncio.wait_for(fast.get(), timeout=1)).id == 1
-                bc.publish(_alarm(2))
-                assert (await asyncio.wait_for(fast.get(), timeout=1)).id == 2
-                # slow ist jetzt voll ([1, 2]) -> der 3. Alarm dropt slows aeltesten (id=1),
-                # darf fast aber NICHT um id=3 bringen (Isolation).
-                bc.publish(_alarm(3))
-                assert (await asyncio.wait_for(fast.get(), timeout=1)).id == 3
-                slow_ids = [
-                    (await asyncio.wait_for(slow.get(), timeout=1)).id for _ in range(slow.qsize())
-                ]
-            finally:
-                # Set wiederherstellen (auch bei Assertion/Timeout oben), damit der
-                # subscribe()-Kontextmanager beim Verlassen sauber discard() aufrufen kann.
-                bc._subscribers = set(bc._subscribers)  # type: ignore[assignment]
+            bc.publish(_alarm(1))
+            assert (await asyncio.wait_for(fast.get(), timeout=1)).id == 1
+            bc.publish(_alarm(2))
+            assert (await asyncio.wait_for(fast.get(), timeout=1)).id == 2
+            # slow ist jetzt voll ([1, 2]) -> der 3. Alarm dropt slows aeltesten (id=1),
+            # darf fast aber NICHT um id=3 bringen (Isolation).
+            bc.publish(_alarm(3))
+            assert (await asyncio.wait_for(fast.get(), timeout=1)).id == 3
+            slow_ids = [
+                (await asyncio.wait_for(slow.get(), timeout=1)).id for _ in range(slow.qsize())
+            ]
         return slow_ids
 
     slow_ids = asyncio.run(scenario())

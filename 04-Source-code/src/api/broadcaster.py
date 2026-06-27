@@ -60,7 +60,10 @@ class AlarmBroadcaster:
         max_queue: int = _DEFAULT_MAX_QUEUE,
         max_subscribers: int = _DEFAULT_MAX_SUBSCRIBERS,
     ) -> None:
-        self._subscribers: set[asyncio.Queue[Alarm]] = set()
+        # list (nicht set): die Zustellreihenfolge ist die Abo-Reihenfolge — deterministisch
+        # by design (fair: zuerst Verbundene zuerst), ohne White-Box-Reihenfolge-Hacks in Tests.
+        # reserve() vergibt je Abo eine NEUE Queue -> keine Duplikate.
+        self._subscribers: list[asyncio.Queue[Alarm]] = []
         self._max_queue = max_queue
         self._max_subscribers = max_subscribers
 
@@ -112,12 +115,17 @@ class AlarmBroadcaster:
                 f"max. {self._max_subscribers} gleichzeitige SSE-Abos erreicht"
             )
         queue: asyncio.Queue[Alarm] = asyncio.Queue(maxsize=self._max_queue)
-        self._subscribers.add(queue)
+        self._subscribers.append(queue)
         return queue
 
     def release(self, queue: asyncio.Queue[Alarm]) -> None:
-        """Meldet ein Abo ab (Verbindungsende) und gibt die Kapazitaet wieder frei."""
-        self._subscribers.discard(queue)
+        """Meldet ein Abo ab (Verbindungsende) und gibt die Kapazitaet wieder frei.
+
+        Idempotent (discard-Semantik): ein bereits abgemeldetes Abo wird ignoriert, statt
+        wie `list.remove` mit ValueError zu scheitern.
+        """
+        if queue in self._subscribers:
+            self._subscribers.remove(queue)
 
     @contextlib.asynccontextmanager
     async def subscribe(self) -> AsyncIterator[asyncio.Queue[Alarm]]:
