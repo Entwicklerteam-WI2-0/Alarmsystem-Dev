@@ -284,14 +284,13 @@ def test_beenden_waehrend_upgrade_pending_setzt_alles_zurueck():
 
 
 def test_beenden_verzoegert_eskalation_aber_verliert_sie_nicht():
-    # Diskussionspunkt G3 (Nick): "Beenden einer WARNUNG verzoegert eine laufende ROT-Eskalation
+    # Diskussionspunkt G3 (Roman): "Beenden einer WARNUNG verzoegert eine laufende ROT-Eskalation
     # um ~60 s — eine Eskalation nach oben will man doch nicht verzoegern?" Bewusste Entscheidung
-    # (Option A / K1): Bei 30-s-Poll-Intervall (config: poll_interval_s=30, on_delay_s=60) sind
-    # 60 s On-Delay >= 2 frische Messungen. Nach dem manuellen Reset feuert eine REAL
-    # fortbestehende KRITISCH-Lage WIEDER mit der richtigen Stufe, sobald frische Polls sie
-    # re-bestaetigen.
+    # (K1): Bei 30-s-Poll-Intervall (config: poll_interval_s=30, on_delay_s=60) sind 60 s On-Delay
+    # >= 2 frische Messungen. Nach dem manuellen Reset feuert eine REAL fortbestehende KRITISCH-Lage
+    # WIEDER mit der richtigen Stufe, sobald frische Polls sie re-bestaetigen.
     # Es geht also KEINE Eskalation verloren — sie wird nur an eine "gesicherte Grundlage" geknuepft
-    # (kein Alarm auf einem einzelnen ROT-Blip) -> Fehlalarm-Vermeidung. Belegt die Antwort an Nick.
+    # (kein Alarm auf einem einzelnen ROT-Blip) -> Fehlalarm-Vermeidung. Belegt die Antwort an Roman.
     engine = _engine()
     _aktiver_warning(engine, _T0)  # WARNUNG aktiv (Operator sieht sie)
 
