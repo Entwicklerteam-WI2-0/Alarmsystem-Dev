@@ -2,7 +2,7 @@
 
 > **Stand:** 2026-06-22 · **Zweck:** **Single Source of Truth** für die zwei am 22.06. beschlossenen
 > Änderungen + **Change-Map** für die Spiegel-Dokumente (Phase B). Dient zugleich als Grundlage für den
-> Seam-Sync mit G1. **Bezug:** Entscheidungslog **E-31** (Pull) + **E-32** (Niederschlag-Streichung),
+> Team-Sync mit G1. **Bezug:** Entscheidungslog **E-31** (Pull) + **E-32** (Niederschlag-Streichung),
 > `Backend-Konzept.md`, `Schwellenwerte.md`. **Quelle gewinnt** bei Konflikt: dieses Blatt + E-31/E-32.
 
 ---
@@ -23,7 +23,7 @@
   GELB/„unbekannt".
 - **Kein** von G2 gehosteter `POST /readings`-Endpoint mehr.
 
-**Referenz-Payload `GET /current` (Feldnamen final im Seam-Sync):**
+**Referenz-Payload `GET /current` (Feldnamen final im Team-Sync):**
 ```json
 {
   "measured_at": "2026-06-22T14:03:05Z",

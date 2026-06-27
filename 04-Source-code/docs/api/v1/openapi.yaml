@@ -18,7 +18,7 @@
 #        G2-Nichtverfuegbarkeit.
 #
 # Status: EINGEFROREN (v1.0, 2026-06-24) — G1- und G3-Lead haben bestaetigt
-#        (DTB-26, seam-sync-confirmed). Git-Tag api-v1.0 ausstehend (Freigabe Lucas).
+#        (DTB-26, team-sync-confirmed). Git-Tag api-v1.0 ausstehend (Freigabe Lucas).
 # OPERATIONSZAHL: Die urspruengliche DTB-19-DoD nannte ">= 15 Operationen". Diese
 #        ist durch die verbindliche Architekten-Vorlage (Jira DTB-19, Kommentar
 #        23.06., Lucas Voehringer/DRI) UEBERHOLT: massgeblich ist das Lean-Set von

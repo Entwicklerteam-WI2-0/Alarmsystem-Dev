@@ -29,7 +29,7 @@
 1. **DTB-13 abschließen:** PR erstellen (nach Genehmigung durch Lucas), Jira-Link DTB-43 dependsOn DTB-13 setzen.
 2. **DTB-28 Persistenz:** PyMySQL-Repository implementieren (`save`, `get_latest`); damit wird DTB-13 operational.
 3. **DTB-38 Bewertungslogik:** Kaskade aus Schwellenwerte.md §2 + Fail-safe-Integration DTB-13 (≥80 % Coverage).
-4. **M2 (Ende Woche 2):** API + Datenmodell final; G1/G3-Seam-Sync.
+4. **M2 (Ende Woche 2):** API + Datenmodell final; G1/G3-Team-Sync.
 
 ## Offene Punkte / Blocker
 - **MySQL-Vorgabe vollständig eingearbeitet (22.06.):** Backend-Konzept §6/§6a, README, Entscheidungslog
@@ -64,7 +64,7 @@
   + neues `Umstellung-Pull-3Faktor-Faktenblatt.md`. **PR #32 gemergt** (455d71f), main aktuell.
 - **40%-Klarstellung** (nur Prüfungs-Notengewicht, KEINE Arbeits-/Architekturregel) in CLAUDE.md/AGENTS.md + global.
 - **Branch-Cleanup erledigt:** 5 abgearbeitete Branches gelöscht, **`feat/ci-base` (#18) unberührt**, Remote geprunet.
-- **Neu offen:** (1) 40%-Klarstellung in `Devteam-vibecodes`-Skill-Sources nachziehen. (2) **G1-Seam-Sync final**
+- **Neu offen:** (1) 40%-Klarstellung in `Devteam-vibecodes`-Skill-Sources nachziehen. (2) **G1-Team-Sync final**
   (`humidity_pct` = Luftfeuchte; Feldnamen + `measured_at` bestätigen; Contract **P1.4** einfrieren).
   (3) E-ID-Kollision E-29/E-30 (Altbestand, DRI Lucas).
 
@@ -110,7 +110,7 @@
   neue G2→G3-Serving-Sektion).
 - **Offen/weiter:** **Backend-Konzept §6/§7** echte E-35-Prosa (noch SQLAlchemy/Docker) + `docker-compose.yml`
   entfernen + `Projektplan-Jira-Backlog-G2.md` (SQLite) nachziehen. CI-DB-Bereitstellung (DTB-11) mit Johannes.
-  Jira-Link 10011 (Altbestand) manuell löschen. G1-Seam-Sync (P1.4) → dann DTB-19 OpenAPI + DTB-28 Persistenz.
+  Jira-Link 10011 (Altbestand) manuell löschen. G1-Team-Sync (P1.4) → dann DTB-19 OpenAPI + DTB-28 Persistenz.
 
 ## Update [23.06., ~14:15] — API-Contract verankert + Backlog-Übersicht (architekt)
 - **G1→G2 API-Vertrag final dokumentiert:** `Backend-Konzept.md` §9 enthält jetzt den verbindlichen
@@ -152,7 +152,7 @@
   (3 MEDIUM-Fixes eingearbeitet).
 - **Operationszahl** „≥ 15" (alte DoD) durch Architekten-Vorlage (DRI) **überholt** → Lean-Set ~6+2 maßgeblich
   (im Datei-Header dokumentiert).
-- **Neu offen:** (1) Branch pushen + PR (DTB-19). (2) **DTB-26 G3-Sign-off** (`seam-sync-confirmed`)
+- **Neu offen:** (1) Branch pushen + PR (DTB-19). (2) **DTB-26 G3-Sign-off** (`team-sync-confirmed`)
   einsammeln — **G1-Seite: Lucas**. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves
   (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
 
@@ -161,7 +161,7 @@
   `POST /v1/alarms/{id}/ack` → `409` bei Double-Ack (NF-09, nicht idempotent); `AckRequest.operator`
   → `minLength: 1`; g1-`status` → Sync-Hinweis auf `SensorStatus`. Validator erneut grün; doppelter 503
   (Web-Fix 865de56 + Fix) konsolidiert. DTB-19 damit fertig & review-fest.
-- **Neu offen:** (1) **PR #48 mergen** (Reviewer/Lucas). (2) **DTB-26 G3-Sign-off** (`seam-sync-confirmed`)
+- **Neu offen:** (1) **PR #48 mergen** (Reviewer/Lucas). (2) **DTB-26 G3-Sign-off** (`team-sync-confirmed`)
   — G1-Seite: Lucas. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves offen
   (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
 

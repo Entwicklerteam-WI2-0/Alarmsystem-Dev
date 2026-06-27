@@ -120,7 +120,7 @@ GET /current → {
 GET /health → 200 (ok) / 503 (fault)
 ```
 
-`measured_at` und `/health` sind nicht verhandelbar; Feldnamen/Einheiten sonst Seam-Sync.
+`measured_at` und `/health` sind nicht verhandelbar; Feldnamen/Einheiten sonst Team-Sync.
 
 ## Schnittstelle G2 → G3 (Serving, ausgehend)
 

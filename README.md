@@ -232,7 +232,7 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 - Zusammenarbeits-Map (engste Kopplungen: Architekt ⇄ Devs, Architekt ⇄ G1/G3)
 - Git-Workflow (Feature-Branch → PR → Review → Merge)
 - Definition of Ready/Done
-- Cadence (Standup 2–3×/Woche, Seam-Sync 1×/Woche)
+- Cadence (Standup 2–3×/Woche, Team-Sync 1×/Woche)
 
 ---
 
@@ -375,12 +375,12 @@ tests/
 - **`GET /current`-Snapshot** — welche Felder, welche Einheiten, gemeinsamer `measured_at` (UTC)?
 - **`GET /health`** — Verfügbarkeits-Check (200 ok / 503 fault)
 - **Poll-Intervall** — G2 bestimmt selbst (≤ 60 s); keine Push-Frequenz seitens G1 nötig
-- **Seam-Sync:** 1×/Woche (Anfang Woche 2)
+- **Team-Sync:** 1×/Woche (Anfang Woche 2)
 
 #### zu G3 (Frontend)
 - **`GET /v1/assessment/current`-Response** — welche Felder, Formatierung?
 - **`GET /v1/alarms`** — wie werden Alarme visualisiert?
-- **Seam-Sync:** 1×/Woche (Anfang Woche 2)
+- **Team-Sync:** 1×/Woche (Anfang Woche 2)
 
 ---
 
@@ -411,7 +411,7 @@ tests/
 - **P1 auf stärkste Köpfe legen** (Architekt + 1–2 Backend-Devs)
 - **Contract früh einfrieren** (Mitte Woche 1)
 - **Parallel entwickeln** gegen denselben Vertrag
-- **Seam-Syncs** regelmäßig halten
+- **Team-Syncs** regelmäßig halten
 
 ---
 

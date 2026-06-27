@@ -1,4 +1,4 @@
-*Seam-Sync-Anfrage G2 → G3 (Versand-Vorlage). Sign-off von G3-Lead erhalten am 2026-06-23 → Contract beidseitig eingefroren (siehe `Team-Sync-Entscheidungen.md`, DTB-26).*
+*Team-Sync-Anfrage G2 → G3 (Versand-Vorlage). Sign-off von G3-Lead erhalten am 2026-06-23 → Contract beidseitig eingefroren (siehe `Team-Sync-Entscheidungen.md`, DTB-26).*
 
 ---
 
@@ -58,7 +58,7 @@ Mit dieser Bestaetigung ist die G2->G3 Naht auf unserer Seite eingefroren.
 Bestaetigt von G3:
 Name:       Nick (G3-Lead)
 Datum:      2026-06-23
-Status:     seam-sync-confirmed G2->G3 v1
+Status:     team-sync-confirmed G2->G3 v1
 
 ---
 
