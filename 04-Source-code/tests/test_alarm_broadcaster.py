@@ -16,10 +16,18 @@ im Betrieb -> kein cross-thread Queue-Zugriff).
 """
 
 import asyncio
+import inspect
+import json
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 
-from src.api.broadcaster import _HEARTBEAT_S, AlarmBroadcaster, sse_alarm_frames
+from src.api.broadcaster import (
+    _DEFAULT_MAX_QUEUE,
+    _HEARTBEAT_S,
+    AlarmBroadcaster,
+    sse_alarm_frames,
+)
 from src.model.enums import AlarmSeverity, AlarmState
 from src.model.schemas import Alarm
 
@@ -105,22 +113,100 @@ def test_publish_without_subscribers_is_noop():
     asyncio.run(scenario())
 
 
+def test_publish_before_subscribe_is_not_replayed():
+    # Scope-Grenze positiv abgesichert (broadcaster.py Docstring Z. 8-11, E-37): KEIN Replay-/
+    # Last-N-Puffer. Ein VOR dem Abo publizierter Alarm wird einem spaeter verbundenen Client
+    # NICHT nachgeliefert — der Resync laeuft ueber GET /v1/alarms (DTB-31), nicht ueber den
+    # Stream. Pinnt die Abwesenheit jeder Historie: eine 'gut gemeinte' Replay-on-subscribe-
+    # Regression (Nachlieferung bei Reconnect) liefe sonst durch alle Tests gruen und
+    # kollidierte mit der DTB-31-Resync-Semantik (Doppelzustellung an G3).
+    async def scenario() -> None:
+        bc = AlarmBroadcaster()
+        bc.publish(_alarm(1))  # OHNE Abonnent -> darf nirgends gepuffert werden
+        async with bc.subscribe() as queue:
+            # Neu verbundener Client sieht keinen vor-Abo-Alarm (kein Replay).
+            assert queue.empty()
+
+    asyncio.run(scenario())
+
+
 def test_publish_swallows_subscriber_error():
     # Best-effort (NF-01): wirft ein einzelner Abonnent beim Zustellen, darf publish NICHT
     # werfen (sonst wuerde ein kaputter Stream-Client den Bewertungszyklus reissen). Den
     # Fehler injizieren wir ueber die OEFFENTLICHE subscribe()-Naht (kein Privatzugriff auf
     # _subscribers): das put_nowait des realen Abo-Queues wirft.
-    async def scenario() -> None:
+    async def scenario() -> bool:
         bc = AlarmBroadcaster()
         async with bc.subscribe() as queue:
+            fired = {"x": False}
 
             def _boom(_item: object) -> None:
+                fired["x"] = True
                 raise RuntimeError("boom")
 
             queue.put_nowait = _boom  # type: ignore[method-assign]
             bc.publish(_alarm(1))  # darf nicht werfen
+            return fired["x"]
 
-    asyncio.run(scenario())
+    # Positiv belegen, dass der except-Swallow-Pfad (broadcaster.publish Z. 72-73) wirklich
+    # durchlaufen wurde: ohne diesen Beweis bliebe der Test still vakuumig gruen, falls die
+    # Zustellung von put_nowait auf z. B. `await queue.put` umgebaut wuerde (dann feuert _boom nie).
+    assert asyncio.run(scenario()) is True
+
+
+def test_publish_isolates_failing_subscriber_from_others(caplog):
+    # Pro-Abonnent-Isolation (NF-01): wirft die Zustellung an EINEN Abonnenten, muessen ALLE
+    # uebrigen den Alarm trotzdem erhalten. Das try/except sitzt PRO Queue im Loop, nicht um
+    # die GANZE Schleife — eine Regression (try/except um die for, oder break/return statt
+    # continue im Fehlerfall) liesse alle NACH dem werfenden Abo liegenden guten Abos
+    # aushungern. Die Erkennung deterministisch machen (white-box, tests-only): publish
+    # iteriert `for queue in self._subscribers`, das funktioniert auch ueber eine Liste ->
+    # die Abo-Reihenfolge mit dem werfenden `bad` an Position 0 fixieren. So liegen ALLE
+    # guten Abos garantiert NACH dem Fehler; die Zielregression wird in JEDEM Lauf rot
+    # (nicht nur in ~5/6 wie bei instabiler set-Iteration).
+    async def scenario() -> list[Alarm]:
+        bc = AlarmBroadcaster()
+        async with (
+            bc.subscribe() as bad,
+            bc.subscribe() as g1,
+            bc.subscribe() as g2,
+            bc.subscribe() as g3,
+            bc.subscribe() as g4,
+            bc.subscribe() as g5,
+        ):
+            gute = [g1, g2, g3, g4, g5]
+
+            def _boom(_item: object) -> None:
+                raise RuntimeError("boom")
+
+            bad.put_nowait = _boom  # type: ignore[method-assign]  # ein Abonnent wirft
+            # Deterministische Iterationsreihenfolge erzwingen: werfendes Abo zuerst, alle
+            # guten danach (white-box -> publish iteriert die Liste in genau dieser Folge).
+            bc._subscribers = [bad, *gute]  # type: ignore[assignment]
+            try:
+                with caplog.at_level(logging.ERROR, logger="src.api.broadcaster"):
+                    bc.publish(_alarm(11))  # darf NICHT werfen (best-effort)
+                # Kein Abo durch den Fehler verloren -> der kaputte Client reisst nichts ab.
+                assert bc.subscriber_count == 6
+                results = [await asyncio.wait_for(q.get(), timeout=1) for q in gute]
+            finally:
+                # Set GARANTIERT wiederherstellen (auch wenn eine Assertion oder ein
+                # wait_for-Timeout oben wirft), damit der subscribe()-Kontextmanager beim
+                # Verlassen sauber `discard()` aufrufen kann (eine list hat kein discard).
+                # So bleibt im Fehlerfall die echte Meldung sichtbar statt eines
+                # maskierenden AttributeError aus den finally-Bloecken von subscribe().
+                bc._subscribers = set(bc._subscribers)  # type: ignore[assignment]
+            return results
+
+    got = asyncio.run(scenario())
+    # ALLE guten Abonnenten bekommen den Alarm trotz Fehler beim werfenden (Isolation belegt) —
+    # das werfende Abo iteriert garantiert VOR allen guten, also greift die Regression sicher.
+    assert [a.id for a in got] == [11, 11, 11, 11, 11]
+    # Der Fehlerpfad wurde nachweislich durchlaufen (geloggt, nicht propagiert).
+    assert any(
+        record.levelno >= logging.ERROR and record.name == "src.api.broadcaster"
+        for record in caplog.records
+    )
 
 
 def test_heartbeat_interval_matches_contract():
@@ -128,22 +214,107 @@ def test_heartbeat_interval_matches_contract():
     # (z. B. 300 s) auffaellt — die uebrigen SSE-Tests setzen bewusst kleine heartbeat_s
     # und wuerden eine Drift am Default NICHT bemerken.
     assert _HEARTBEAT_S == 15.0
+    # Zusaetzlich den TATSAECHLICH genutzten Default-Parameter pinnen, nicht nur die Konstante:
+    # der Endpoint (v1.py) ruft sse_alarm_frames OHNE heartbeat_s und verlaesst sich voll auf
+    # diesen Default. Wuerde er von _HEARTBEAT_S entkoppelt (z. B. heartbeat_s=30.0), liefe G2
+    # mit falschem Heartbeat auf der eingefrorenen G2->G3-Naht, waehrend der Konstanten-Assert
+    # oben gruen bliebe.
+    assert inspect.signature(sse_alarm_frames).parameters["heartbeat_s"].default is _HEARTBEAT_S
 
 
-def test_publish_drops_oldest_when_queue_full():
-    async def scenario() -> None:
+def test_default_queue_is_bounded():
+    # NF-01-Speichersicherheit am AUSGELIEFERTEN Default absichern: main.py verdrahtet
+    # AlarmBroadcaster() OHNE max_queue, laeuft also voll auf _DEFAULT_MAX_QUEUE. Die Drop-
+    # oldest-Tests setzen max_queue=2 explizit und wuerden eine Regression, die den Default
+    # auf 0 (asyncio.Queue(maxsize=0) = UNBOUNDED) setzt, NICHT bemerken — dann waechst der
+    # Puffer eines langsamen/haengenden SSE-Clients unbegrenzt (Resource-Exhaustion). Analog
+    # zum Heartbeat-Default-Pin (test_heartbeat_interval_matches_contract).
+    #
+    # Bewusst KEIN == 100-Assert: die Puffergroesse ist internes Tuning, kein Wire-Contract.
+    # Gepinnt wird nur die Invariante "endlich/bounded" (> 0, niemals 0 = unbounded).
+    assert _DEFAULT_MAX_QUEUE > 0
+
+    async def scenario() -> int:
+        # Verhaltensbasiert: das real verdrahtete Default-Abo MUSS eine bounded Queue liefern.
+        async with AlarmBroadcaster().subscribe() as queue:
+            assert queue.maxsize == _DEFAULT_MAX_QUEUE
+            assert queue.maxsize > 0  # 0 waere unbounded -> Speichersicherheit gebrochen
+            return queue.maxsize
+
+    assert asyncio.run(scenario()) == _DEFAULT_MAX_QUEUE
+
+
+def test_publish_drops_oldest_when_queue_full(caplog):
+    async def scenario() -> list[int]:
         bc = AlarmBroadcaster(max_queue=2)
         async with bc.subscribe() as queue:
             # 3 Alarme ohne Konsum -> Puffer (2) laeuft ueber -> aeltester (id=1) faellt raus.
-            bc.publish(_alarm(1))
-            bc.publish(_alarm(2))
-            bc.publish(_alarm(3))
+            with caplog.at_level(logging.WARNING, logger="src.api.broadcaster"):
+                bc.publish(_alarm(1))
+                bc.publish(_alarm(2))
+                bc.publish(_alarm(3))
             first = await asyncio.wait_for(queue.get(), timeout=1)
             second = await asyncio.wait_for(queue.get(), timeout=1)
-        # Der NEUESTE Alarm ueberlebt (relevanteste Lage); der aelteste wird verworfen.
-        assert [first.id, second.id] == [2, 3]
+        return [first.id, second.id]
 
-    asyncio.run(scenario())
+    got = asyncio.run(scenario())
+    # Der NEUESTE Alarm ueberlebt (relevanteste Lage); der aelteste wird verworfen.
+    assert got == [2, 3]
+    # Der Drop MUSS die einzige Ops-/Resync-Spur fuer Datenverlust an der G2->G3-Naht
+    # hinterlassen (NF-01-Observability, DTB-31): genau eine WARNING mit Verwerf-/Resync-Hinweis.
+    # Faellt der logger.warning zu einem stillen Drop weg, wird dieser Test rot.
+    warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING and record.name == "src.api.broadcaster"
+    ]
+    assert len(warnings) == 1
+    assert "verworfen" in warnings[0].message
+    assert "Resync" in warnings[0].message
+
+
+def test_drop_oldest_is_isolated_per_queue_in_fan_out():
+    # Fan-out + Backpressure kombiniert (broadcaster.py Docstring Z. 12-14): der Drop-oldest-
+    # Zweig (Z. 63-71) wird sonst nur mit GENAU EINEM Abonnenten geprueft. Hier laufen ein
+    # langsamer (nie konsumierender) und ein gesunder (sofort konsumierender) Abonnent parallel.
+    # Der volle Puffer des langsamen Clients DARF dem gesunden keinen Alarm kosten: der Drop
+    # ist pro Queue isoliert. Eine Regression mit break/return im if queue.full()-Block oder ein
+    # Drop gegen das falsche/geteilte Queue liefe durch alle bestehenden (Einzel-Abo-)Tests
+    # gruen, wuerde aber genau diesen Daseinszweck der bounded Queue brechen.
+    #
+    # WICHTIG zur Mechanik: publish() ist synchron (kein await zwischen den Abos), daher kann
+    # der gesunde Client NICHT "leer bleiben und am Ende alle 3 holen" — bei max_queue=2 liefe
+    # auch seine Queue ueber. Echte Isolation belegt nur, wer ZWISCHEN den publish-Aufrufen
+    # konsumiert (genau das modelliert einen gesunden Client). Iterationsreihenfolge white-box
+    # fixiert (slow zuerst, vgl. test_publish_isolates_failing_subscriber_from_others), damit
+    # eine break/return-Regression den danach iterierten gesunden Client deterministisch um den
+    # 3. Alarm braechte (sein fast.get() liefe sonst in den Timeout -> Test rot).
+    async def scenario() -> list[int]:
+        bc = AlarmBroadcaster(max_queue=2)
+        async with bc.subscribe() as slow, bc.subscribe() as fast:
+            bc._subscribers = [slow, fast]  # type: ignore[assignment]  # slow garantiert zuerst
+            try:
+                bc.publish(_alarm(1))
+                assert (await asyncio.wait_for(fast.get(), timeout=1)).id == 1
+                bc.publish(_alarm(2))
+                assert (await asyncio.wait_for(fast.get(), timeout=1)).id == 2
+                # slow ist jetzt voll ([1, 2]) -> der 3. Alarm dropt slows aeltesten (id=1),
+                # darf fast aber NICHT um id=3 bringen (Isolation).
+                bc.publish(_alarm(3))
+                assert (await asyncio.wait_for(fast.get(), timeout=1)).id == 3
+                slow_ids = [
+                    (await asyncio.wait_for(slow.get(), timeout=1)).id for _ in range(slow.qsize())
+                ]
+            finally:
+                # Set wiederherstellen (auch bei Assertion/Timeout oben), damit der
+                # subscribe()-Kontextmanager beim Verlassen sauber discard() aufrufen kann.
+                bc._subscribers = set(bc._subscribers)  # type: ignore[assignment]
+        return slow_ids
+
+    slow_ids = asyncio.run(scenario())
+    # slow: aeltester (id=1) gedroppt, neueste ueberleben -> [2, 3]. fast hat oben bereits
+    # lueckenlos [1, 2, 3] erhalten -> Backpressure des langsamen Clients ist pro Queue isoliert.
+    assert slow_ids == [2, 3]
 
 
 # ---------------------------------------------------------------------------
@@ -165,9 +336,20 @@ def test_sse_frame_carries_alarm_as_json_with_event_id():
     assert frame.startswith("id: 42\n")
     assert "data: " in frame
     assert frame.endswith("\n\n")
-    assert '"id":42' in frame
-    assert '"severity":"critical"' in frame
-    assert '"state":"active"' in frame
+    # Wire-Form-Guard: die `data:`-Nutzlast IST die eingefrorene G2->G3-Naht (E-37). Das
+    # vollstaendige Alarm-Schema pinnen — sonst leakt ein neues internes Pydantic-Feld
+    # (z. B. cleared_at) ungeprueft auf den Stream, und ein Wegfall/Aliasing von
+    # assessment_id/raised_at wuerde G3 brechen, ohne dass ein Test rot wird.
+    data_line = next(line for line in frame.splitlines() if line.startswith("data: "))
+    payload = json.loads(data_line[len("data: ") :])
+    assert set(payload) == {"id", "assessment_id", "severity", "raised_at", "state"}
+    assert payload["id"] == 42
+    assert payload["assessment_id"] == 420  # alarm_id * 10
+    assert payload["severity"] == "critical"
+    assert payload["state"] == "active"
+    # UTC-Instant verifizieren (nicht ein hartkodiertes Format-Literal): ein geaendertes
+    # datetime-Format auf der Naht wuerde G3 brechen.
+    assert datetime.fromisoformat(payload["raised_at"].replace("Z", "+00:00")) == _T0
 
 
 def test_sse_emits_heartbeat_on_idle():
@@ -190,3 +372,39 @@ def test_sse_stops_immediately_when_already_disconnected():
 
     frames = asyncio.run(scenario())
     assert frames == []  # getrennter Client -> kein Frame, sauberer Abbruch
+
+
+def test_sse_emits_consecutive_alarms_in_event_id_order():
+    # Steady-State-Schleife: MEHRERE Alarme hintereinander muessen alle in `id:`-Reihenfolge
+    # rausgehen. Eine Regression, die die Schleife nach dem ersten Output verlaesst (return/break
+    # statt continue), bliebe sonst gruen — G3 erhielte im Dauerbetrieb nur das erste Event.
+    async def scenario() -> list[str]:
+        queue: asyncio.Queue[Alarm] = asyncio.Queue()
+        queue.put_nowait(_alarm(1))
+        queue.put_nowait(_alarm(2))
+        gen = sse_alarm_frames(queue, _disconnect_after(2), heartbeat_s=5)
+        return await _drain(gen)
+
+    frames = asyncio.run(scenario())
+    assert len(frames) == 2
+    assert frames[0].startswith("id: 1\n")
+    assert frames[1].startswith("id: 2\n")
+
+
+def test_sse_continues_with_alarm_after_heartbeat():
+    # Interleave Heartbeat -> dann Alarm: nach einem Leerlauf-Heartbeat (continue nach
+    # TimeoutError) MUSS die Schleife weiterlaufen und einen danach eintreffenden Alarm noch
+    # zustellen. Verankert die continue-Fortsetzung, die die disconnect_after(1)-Tests nicht
+    # treffen (jeder dort beendet nach genau einem Output).
+    async def scenario() -> list[str]:
+        queue: asyncio.Queue[Alarm] = asyncio.Queue()  # leer -> erste Runde Heartbeat
+        gen = sse_alarm_frames(queue, _disconnect_after(2), heartbeat_s=0.01)
+        first = await gen.__anext__()  # Leerlauf -> Heartbeat
+        queue.put_nowait(_alarm(8))  # jetzt Alarm einreihen
+        second = await gen.__anext__()  # Schleife setzt nach continue fort -> Alarm-Frame
+        await gen.aclose()
+        return [first, second]
+
+    frames = asyncio.run(scenario())
+    assert frames[0] == ":keep-alive\n\n"
+    assert frames[1].startswith("id: 8\n")
