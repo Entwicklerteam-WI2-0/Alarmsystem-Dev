@@ -103,7 +103,7 @@ def _project(points: list[tuple[float, float]], horizon_min: float) -> float | N
     # numerisch knapp darueber (nahezu identische Timestamps), ist die Regression
     # entartet -> fail-safe None, statt eine ausufernde Steigung zu extrapolieren.
     # math.isfinite(forecast) fängt zudem NaN/inf bei entarteten Zahlen ab.
-    if not sxx or sxx < _MIN_SXX:
+    if sxx < _MIN_SXX:
         return None
     slope = sxy / sxx
     intercept = mean_y - slope * mean_x  # y bei x = 0 (= now)

@@ -193,6 +193,9 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                     now,
                 )
             except Exception:  # noqa: BLE001 - Prognose-Fehler darf Bewertung nie blockieren (NF-01)
+                # Fängt auch den ValueError aus bridge.py (naives `now`) ab, der
+                # laut Docstring sichtbar werden soll. Durch logger.exception bleibt
+                # er sichtbar; die Bewertung läuft unbedingt weiter (NF-01).
                 logger.exception("Prognose fehlgeschlagen (fail-safe, forecast=None).")
                 forecast = None
             await asyncio.to_thread(
