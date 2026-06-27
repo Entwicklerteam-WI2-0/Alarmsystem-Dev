@@ -163,6 +163,9 @@ def _frame(alarm: Alarm) -> str:
         # mit DB-id duerfen gestreamt werden. Sonst ginge "id: None" als SSE-Event-ID
         # raus, die G3s EventSource als Last-Event-ID speichern wuerde.
         raise ValueError("alarm.id muss gesetzt sein (DB-id) bevor gestreamt wird")
+    # Newline-Sicherheit (PR-Review): model_dump_json() escaped Steuerzeichen (inkl. Newlines)
+    # in Stringwerten gemaess JSON-Spec, erzeugt also nie ein echtes Newline-Byte -> die
+    # data:-Zeile bleibt auch bei kuenftigen Freitext-Feldern immer einzeilig (kein Frame-Bruch).
     return f"id: {alarm.id}\ndata: {alarm.model_dump_json()}\n\n"
 
 

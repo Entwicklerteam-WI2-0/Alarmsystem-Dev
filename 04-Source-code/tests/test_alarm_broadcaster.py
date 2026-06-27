@@ -299,9 +299,12 @@ def test_drop_oldest_is_isolated_per_queue_in_fan_out():
             # darf fast aber NICHT um id=3 bringen (Isolation).
             bc.publish(_alarm(3))
             assert (await asyncio.wait_for(fast.get(), timeout=1)).id == 3
-            slow_ids = [
-                (await asyncio.wait_for(slow.get(), timeout=1)).id for _ in range(slow.qsize())
-            ]
+            # Robust statt qsize()-Snapshot vor der Comprehension (mit await darin): leeren,
+            # solange Items da sind. An dieser Stelle befuellt niemand mehr slow -> get_nowait
+            # liefert sicher (kein await noetig).
+            slow_ids = []
+            while not slow.empty():
+                slow_ids.append(slow.get_nowait().id)
         return slow_ids
 
     slow_ids = asyncio.run(scenario())

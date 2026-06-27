@@ -14,7 +14,6 @@ Dependency (get_runtime) VOR dem Streaming wirft -> normale JSON-Antwort.
 """
 
 import asyncio
-import contextlib
 import json
 import logging
 from datetime import UTC, datetime
@@ -101,28 +100,12 @@ def test_stream_emits_published_alarm_as_frame():
         request = SimpleNamespace(is_disconnected=disconnect_after(1), headers=Headers({}))
 
         response = await stream_alarms(runtime=runtime, request=request)
+        # reserve() in stream_alarms abonniert SYNCHRON -> das Abo (und die Queue) existiert
+        # sofort, ohne dass der Generator schon iteriert wurde. Also direkt einreihen + treiben.
+        assert broadcaster.subscriber_count == 1
         gen = response.body_iterator
-        # Den ersten Frame anfordern; der Generator subscribt + parkt auf der leeren Queue.
-        first = asyncio.ensure_future(gen.__anext__())
-        # Auf die Abo-Registrierung warten, aber begrenzt: bricht die Verdrahtung
-        # subscribe()->sse_alarm_frames so, dass gen sofort wirft, bliebe subscriber_count
-        # dauerhaft 0 -> ohne Schranke wuerde der Test endlos haengen (CI-Timeout) statt
-        # deterministisch fehlzuschlagen.
-        for _ in range(1000):
-            if broadcaster.subscriber_count:
-                break
-            await asyncio.sleep(0)
-        else:  # pragma: no cover - nur bei kaputter Verdrahtung erreicht
-            # Die gecancelte, noch pending Task sauber abwickeln, BEVOR der Test fehlschlaegt
-            # -> keine "Task was destroyed but it is pending"-Warnung beim Loop-Teardown,
-            # die sonst genau die Diagnose dieses Fehlerpfads ueberlagern wuerde.
-            first.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await first
-            pytest.fail("Abo wurde nicht registriert (subscribe-Verdrahtung defekt)")
-
         broadcaster.publish(_alarm(7))
-        frame = await asyncio.wait_for(first, timeout=1)
+        frame = await asyncio.wait_for(gen.__anext__(), timeout=1)
 
         assert frame.startswith("id: 7\n")
         # Wire-Form-Guard: vollstaendiges Alarm-Schema auf der `data:`-Naht pinnen (E-37),
@@ -156,22 +139,10 @@ def test_stream_emits_two_published_alarms_in_id_order():
         request = SimpleNamespace(is_disconnected=disconnect_after(2), headers=Headers({}))
 
         response = await stream_alarms(runtime=runtime, request=request)
-        gen = response.body_iterator
-
-        # Ersten Frame anfordern; der Generator subscribt + parkt auf der leeren Queue.
-        first = asyncio.ensure_future(gen.__anext__())
-        for _ in range(1000):
-            if broadcaster.subscriber_count:
-                break
-            await asyncio.sleep(0)
-        else:  # pragma: no cover - nur bei kaputter Verdrahtung erreicht
-            first.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await first
-            pytest.fail("Abo wurde nicht registriert (subscribe-Verdrahtung defekt)")
+        gen = response.body_iterator  # reserve() hat synchron abonniert -> Queue existiert
 
         broadcaster.publish(_alarm(1))
-        frame1 = await asyncio.wait_for(first, timeout=1)
+        frame1 = await asyncio.wait_for(gen.__anext__(), timeout=1)
         assert frame1.startswith("id: 1\n")
 
         # Zweiter Alarm durch denselben offenen Stream -> der Re-Yield-Loop MUSS einen ZWEITEN
