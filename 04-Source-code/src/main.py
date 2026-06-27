@@ -257,6 +257,9 @@ app = FastAPI(
 # CORS (C1): erlaubt G3s Browser-Frontend (andere Origin) den Zugriff. Methoden bewusst
 # auf die Contract-Verben begrenzt (GET = lesen/SSE, POST = /v1/alarms/{id}/ack).
 # Origins/Default siehe _cors_origins / _DEFAULT_CORS_ORIGINS oben.
+# expose_headers bleibt Default (leer): G3 liest nur CORS-safelisted Response-Header (u. a.
+# Cache-Control) — fuer den aktuellen Contract ausreichend. Muss G3 spaeter einen Custom-Header
+# lesen (z. B. X-Request-Id), hier expose_headers=[...] ergaenzen.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
