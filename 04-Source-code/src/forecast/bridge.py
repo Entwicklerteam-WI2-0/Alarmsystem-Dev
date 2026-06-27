@@ -59,6 +59,12 @@ def compute_forecast_for_cycle(
         logger.error("Prognose: Zeitreihe nicht lesbar (fail-safe, keine Prognose): %s", exc)
         return None
 
+    # Invariante (bewusst NICHT abgefangen): forecast_surface_temp subtrahiert `now` von
+    # `reading.measured_at`. Beide sind zeitzonenbewusst — `now` per ValueError-Guard in
+    # trend.py, `measured_at` weil das Pydantic-`Reading`-Schema UTC-aware erzwingt. Faellt
+    # diese Schema-Invariante je weg, wuerde die Subtraktion einen TypeError werfen; der bleibt
+    # bewusst sichtbar (Programmier-/Contract-Fehler), statt als "keine Prognose" maskiert zu
+    # werden. Nur transiente Datenlayer-Fehler (RepositoryError) sind fail-safe.
     return forecast_surface_temp(
         readings,
         now,

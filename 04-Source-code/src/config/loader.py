@@ -31,6 +31,12 @@ _MAX_ZEIT_S = 86_400.0
 # Generös bemessen, fängt Tippfehler ab (NF-05-Geist); der reale G1-Wert liegt weit darunter.
 _MAX_UNDERSHOOT_C = 10.0
 
+# Plausibler Bereich für eine Oberflächentemperatur-Schwelle (°C). Generös bemessen
+# (NF-05: finale Werte von G1), fängt aber grobe Fehlkonfigurationen ab, die die Prognose-
+# Vorwarnung still abschalten würden (FA-06).
+_MIN_PLAUSIBLE_SURFACE_TEMP_C = -50.0
+_MAX_PLAUSIBLE_SURFACE_TEMP_C = 50.0
+
 
 @dataclass(frozen=True)
 class VereisungsSchwellen:
@@ -208,6 +214,15 @@ class Thresholds:
                 f"({self.hysterese.max_continuity_gap_s!r}) < datenqualitaet.stale_timeout_s "
                 f"({self.datenqualitaet.stale_timeout_s!r}) -> Stale-Phase bricht Alarm-Kontinuität"
             )
+        # Cross-Section (FA-06/NF-01): die Prognose-Vorwarnung feuert bei forecast <= t_s_grenz_c.
+        # Liegt die Schwelle UNTER dem Gefrierpunkt, warnt die 30-min-Prognose erst, wenn die
+        # Oberfläche ohnehin schon gefriert -> die Vorwarnung wäre still neutralisiert.
+        if self.prognose.t_s_grenz_c < self.vereisung.t_s_gefrierpunkt_c:
+            raise ConfigError(
+                "Config-Inkonsistenz: prognose.t_s_grenz_c "
+                f"({self.prognose.t_s_grenz_c!r}) < vereisung.t_s_gefrierpunkt_c "
+                f"({self.vereisung.t_s_gefrierpunkt_c!r}) -> 30-min-Vorwarnung still abgeschaltet"
+            )
 
 
 # Pflicht-Abschnitte der Config und ihr jeweiliger Zieltyp.
@@ -304,7 +319,14 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
     Unplausible Werte wuerden die 30-min-Vorwarnung praktisch abschalten (NF-01):
     ein nicht-positives Fenster/Horizont oder weniger als zwei Stuetzstellen
     machen eine lineare Regression unmoeglich -> laut scheitern statt still leer.
+    Die Vorwarn-Schwelle t_s_grenz_c muss zudem in einem physikalisch plausiblen
+    Oberflaechentemp-Bereich liegen, sonst feuert die Prognose nie (FA-06).
     """
+    if not _MIN_PLAUSIBLE_SURFACE_TEMP_C <= schwellen.t_s_grenz_c <= _MAX_PLAUSIBLE_SURFACE_TEMP_C:
+        raise ConfigError(
+            f"prognose.t_s_grenz_c muss zwischen {_MIN_PLAUSIBLE_SURFACE_TEMP_C} und "
+            f"{_MAX_PLAUSIBLE_SURFACE_TEMP_C} °C liegen, ist aber {schwellen.t_s_grenz_c!r}"
+        )
     _require_positive(schwellen.trend_window_min, "prognose.trend_window_min", upper=1_440)
     _require_positive(schwellen.horizon_min, "prognose.horizon_min", upper=1_440)
     # min_points zaehlt Stuetzstellen -> echte Ganzzahl verlangen (3.0 ist Fehlkonfig).

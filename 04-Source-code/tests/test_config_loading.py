@@ -572,6 +572,8 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
         ("max_readings_limit", 2),  # kleiner als min_points -> stiller Ausfall (NF-01)
         ("max_readings_limit", 10001),  # zu viele Readings -> DB-Last
         ("max_readings_limit", 1000.0),  # keine Ganzzahl
+        ("t_s_grenz_c", -100.0),  # ausserhalb plausibler Oberflaechentemp -> Vorwarnung tot
+        ("t_s_grenz_c", 100.0),  # ausserhalb plausibler Oberflaechentemp -> Vorwarnung tot
     ],
 )
 def test_prognose_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str, wert: float):
@@ -583,3 +585,28 @@ def test_prognose_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str, wert
 
     with pytest.raises(ConfigError):
         load_thresholds(datei)
+
+
+def test_t_s_grenz_unter_gefrierpunkt_scheitert_laut(tmp_path):
+    # Cross-Section (FA-06/NF-01): die Prognose-Vorwarnung feuert bei forecast <= t_s_grenz_c.
+    # Liegt t_s_grenz_c UNTER dem Gefrierpunkt, warnt die 30-min-Prognose erst, wenn die
+    # Oberflaeche ohnehin schon gefriert -> die Vorwarnung ist still neutralisiert.
+    daten = _minimal_config()
+    daten["prognose"]["t_s_grenz_c"] = daten["vereisung"]["t_s_gefrierpunkt_c"] - 0.5
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_t_s_grenz_gleich_gefrierpunkt_ist_erlaubt(tmp_path):
+    # Grenzfall: t_s_grenz_c == t_s_gefrierpunkt_c ist gueltig (Default-Config) — die
+    # Vorwarnung greift spaetestens am Gefrierpunkt.
+    daten = _minimal_config()
+    daten["prognose"]["t_s_grenz_c"] = daten["vereisung"]["t_s_gefrierpunkt_c"]
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    thresholds = load_thresholds(datei)
+    assert thresholds.prognose.t_s_grenz_c == daten["vereisung"]["t_s_gefrierpunkt_c"]

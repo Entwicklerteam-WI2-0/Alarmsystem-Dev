@@ -13,6 +13,8 @@ Fail-safe (NF-01):
     * Fehlt der Taupunkt T_d, gilt Feuchte = wahr (konservativ).
     * Fehlende/veraltete oder ungültige (NaN/inf) Daten führen nie zu GRÜN.
     * Bei ungültigem T_s oder T_d wird `unknown` zurückgegeben.
+    * Eine defekte (NaN/inf) Prognose wird erst NACH der ROT/ORANGE-Kaskade
+      geprüft -> mindestens GELB, ohne eine akute Ist-Lage zu deklassieren.
 
 Die Taupunkt-Berechnung selbst liegt in DTB-32; diese Funktion erwartet T_d
 als berechneten Input. So bleiben Berechnung und Bewertung getrennt testbar.
@@ -51,13 +53,6 @@ def assess_ice_risk(
     if dew_point_c is not None and not math.isfinite(dew_point_c):
         return RiskLevel.UNKNOWN
 
-    # Eine defekte Prognose (NaN/inf) wird nicht ignoriert, sondern führt zu
-    # GELB: das Forecasting-Subsystem ist kaputt, daher konservative Reaktion.
-    # Ein None-Wert bedeutet hingegen „keine Prognose verfügbar" und bleibt
-    # ohne Auswirkung auf die Bewertung.
-    if forecast_surface_temp_c is not None and not math.isfinite(forecast_surface_temp_c):
-        return RiskLevel.YELLOW
-
     # Feuchte-Vorhandensein: ΔT = T_s - T_d. Fehlt T_d -> konservativ wahr.
     if dew_point_c is None:
         humid = True
@@ -77,6 +72,14 @@ def assess_ice_risk(
     # 2. ORANGE: gefrorene Oberfläche mit Feuchte (aber noch nicht am Taupunkt).
     if surface_temp_c <= v.t_s_gefrierpunkt_c and humid:
         return RiskLevel.ORANGE
+
+    # Defekte Prognose (NaN/inf): erst HIER prüfen, NACH ROT/ORANGE. Ein kaputtes
+    # Forecasting-Subsystem darf eine akute Ist-Lage (ROT/ORANGE) nicht auf GELB
+    # deklassieren (NF-01 Under-Alarm). Liegt keine ROT/ORANGE-Lage vor, reagiert
+    # es konservativ mit GELB (nie GRÜN). Ein None-Wert bedeutet „keine Prognose
+    # verfügbar" und bleibt ohne Auswirkung auf die Bewertung.
+    if forecast_surface_temp_c is not None and not math.isfinite(forecast_surface_temp_c):
+        return RiskLevel.YELLOW
 
     # 3. GELB: kalte/grenzwertige Oberfläche ODER Prognose droht Gefrieren.
     if surface_temp_c <= v.t_s_gelb_auffang_c:
