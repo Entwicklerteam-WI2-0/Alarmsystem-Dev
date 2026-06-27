@@ -32,7 +32,6 @@ import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -41,18 +40,19 @@ from fastapi.responses import JSONResponse
 
 from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator, AuditError
+from src.api.exceptions import RuntimeNotReadyError
+from src.api.responses import NO_STORE_HEADERS, service_unavailable
+from src.api.runtime import Runtime, get_runtime
+from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
-from src.config.loader import Thresholds, load_thresholds
+from src.config.loader import load_thresholds
 from src.forecast.bridge import compute_forecast_for_cycle
 from src.ingest.poller import Poller
 from src.model.schemas import AssessmentCurrent, Error, Reading
 from src.storage import (
-    AssessmentRepository,
-    AuditRepository,
     MySqlAssessmentRepository,
     MySqlAuditRepository,
     ReadingRepository,
-    Repository,
     RepositoryError,
 )
 from src.storage.alarm_repository import MySqlAlarmRepository
@@ -72,26 +72,6 @@ _DEFAULT_G1_BASE_URL = "http://g1-sensorik.local"
 # zu fixieren — das get_latest()-Assessment ist ohnehin noch global (nicht pro Sensor),
 # daher ist die ID hier nur die Reading-Auswahl fuer den Aktualitaets-/Status-Check.
 _SENSOR_ID = "anr-rwy-01"
-
-# Contract-Fehlercode fuer "G2 nicht lieferfaehig" (503), s. openapi.yaml Error-Beispiel.
-_SERVICE_UNAVAILABLE_CODE = "SERVICE_UNAVAILABLE"
-
-
-@dataclass(frozen=True)
-class Runtime:
-    """Zusammengebauter Dependency-Graph einer laufenden Instanz (DI). Unveränderlich:
-    der Graph wird in `build_runtime` einmal zusammengebaut und danach nie mutiert."""
-
-    thresholds: Thresholds
-    # ABC-Typ (nicht die konkrete ReadingRepository): konsistent mit assessment_repo/
-    # audit_repo und erlaubt In-Memory-Doubles (Tests/lokal) ohne Type-Bruch. build_runtime
-    # injiziert weiterhin die konkrete PyMySQL-ReadingRepository (DTB-41 Option A).
-    reading_repo: Repository
-    assessment_repo: AssessmentRepository
-    audit_repo: AuditRepository
-    poller: Poller
-    service: AssessmentService
-    alarm_generator: AlarmGenerator
 
 
 def build_runtime() -> Runtime:
@@ -154,58 +134,6 @@ def run_assessment_cycle(
             "assessment.id ist None trotz Persistenz (assess_reading-Invariante verletzt)"
         )
     alarm_generator.verarbeite(assessment.risk_level, assessment.id, now)
-
-
-class RuntimeNotReadyError(RuntimeError):
-    """`app.state.runtime` fehlt — lifespan hat den DI-Graph (noch) nicht gesetzt.
-
-    Eigene Exception statt rohem AttributeError: faengt `build_runtime()` im lifespan
-    vor dem yield eine unbehandelte Exception (oder ist `runtime` aus anderem Grund
-    nicht gesetzt), wuerde ein direkter `app.state.runtime`-Zugriff als FastAPI-
-    Standard-500 mit `{detail}` durchschlagen und den Fehler-Contract brechen. Der
-    registrierte Exception-Handler bildet diese Exception contract-konform auf
-    503 `{code, message}` ab (NF-01: nie GRUEN, auch nicht bei Startup-Fehlern).
-    """
-
-
-def get_runtime(request: Request) -> Runtime:
-    """DI-Zugriff auf den in `lifespan` zusammengebauten Runtime-Graph.
-
-    Eigene Dependency (kein direkter `app.state`-Zugriff im Endpoint), damit Tests
-    sie via `app.dependency_overrides` durch In-Memory-Fakes ersetzen koennen —
-    ohne DB, Lifespan oder Scheduler.
-
-    Raises:
-        RuntimeNotReadyError: Wenn `app.state.runtime` fehlt (lifespan nicht oder nur
-            teilweise durchlaufen). Der Exception-Handler liefert daraufhin 503
-            (`Error {code, message}`) statt eines rohen 500/`{detail}`.
-    """
-    runtime = getattr(request.app.state, "runtime", None)
-    if runtime is None:
-        raise RuntimeNotReadyError("Runtime nicht initialisiert (lifespan unvollstaendig).")
-    return runtime
-
-
-# Echtzeit-Sicherheitsendpoint: weder Proxies noch Browser duerfen einen Ausfall-
-# (503) ODER Momentan-Zustand (200) cachen — ein gecachtes 503 (G2 laengst wieder da)
-# oder gar ein gecachtes "green" waere ein veraltetes Sicherheitssignal (NF-01).
-# Relevant erst hinter einem kuenftigen Reverse-Proxy/Load-Balancer, aber billig + korrekt.
-_NO_STORE_HEADERS = {"Cache-Control": "no-store"}
-
-
-def _service_unavailable(message: str) -> JSONResponse:
-    """Baut die 503-Antwort im Contract-Fehlerformat `Error {code, message}`.
-
-    Bewusst NICHT `HTTPException(detail=...)`: das liefert `{"detail": ...}` und
-    bricht damit die eingefrorene Naht (Contract verlangt `{code, message}`).
-    Die Nachricht bleibt generisch (keine internen Details/Secrets, RB-01/Contract D).
-    `Cache-Control: no-store`, damit kein Proxy einen ueberholten Ausfall cacht.
-    """
-    return JSONResponse(
-        status_code=503,
-        content=Error(code=_SERVICE_UNAVAILABLE_CODE, message=message).model_dump(),
-        headers=_NO_STORE_HEADERS,
-    )
 
 
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
@@ -320,12 +248,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Versionierte /v1-Endpoints (Serving zu G3), z. B. GET /v1/thresholds (DTB-62).
+app.include_router(v1_router)
+
 
 @app.exception_handler(RuntimeNotReadyError)
 async def _runtime_not_ready_handler(_request: Request, exc: RuntimeNotReadyError) -> JSONResponse:
     """Fehlt der Runtime-Graph, contract-konform als 503 melden (nie rohes 500/{detail})."""
     logger.error("Runtime nicht verfuegbar: %s", exc)
-    return _service_unavailable("G2 momentan nicht lieferfaehig.")
+    return service_unavailable("G2 momentan nicht lieferfaehig.")
 
 
 @app.get("/v1/health")
@@ -375,20 +306,20 @@ def assessment_current(
     """
     # no-store auch auf dem 200-Pfad: ein gecachter Momentan-Zustand (stale/unknown/
     # green) waere ein veraltetes Sicherheitssignal (NF-01). Die direkt zurueckgegebenen
-    # 503-JSONResponses tragen den Header selbst (_service_unavailable).
-    response.headers.update(_NO_STORE_HEADERS)
+    # 503-JSONResponses tragen den Header selbst (service_unavailable).
+    response.headers.update(NO_STORE_HEADERS)
     try:
         assessment = runtime.assessment_repo.get_latest()
         readings = runtime.reading_repo.get_latest(_SENSOR_ID, limit=1)
     except RepositoryError as exc:
         # DB-Ausfall: Detail server-seitig loggen, nach aussen nur generisch (Contract D).
         logger.error("assessment/current: Persistenz nicht verfuegbar: %s", exc)
-        return _service_unavailable("G2 momentan nicht lieferfaehig.")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
 
     reading = readings[0] if readings else None
     if assessment is None or reading is None:
         # Noch kein vollstaendiger Snapshot (frischer Start / Retention) -> nicht lieferfaehig.
-        return _service_unavailable("Noch keine Bewertung verfuegbar.")
+        return service_unavailable("Noch keine Bewertung verfuegbar.")
 
     try:
         return build_assessment_current(
@@ -402,4 +333,4 @@ def assessment_current(
         # is_stale-ValueError, oder kuenftig ein zu langer explanation-Text). Contract-
         # konform als 503 melden statt rohem 500 mit {detail}; Detail nur server-seitig.
         logger.exception("assessment/current: Bewertung konnte nicht aufbereitet werden")
-        return _service_unavailable("G2 momentan nicht lieferfaehig.")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")

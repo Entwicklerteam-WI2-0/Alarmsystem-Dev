@@ -364,6 +364,23 @@ PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separ
 - **Offen:** PR #109 mergen → DTB-48 auf „Erledigt"; optional Fail-safe-Integrationstest je Schicht als **DTB-49**.
 —architekt
 
+## Update [27.06., ~02:35] — DTB-27 Alarm-Generierung gemergt (architekt/Petzold)
+- **DTB-27 (Alarm-Generierung + Hysterese + Persistenz) nach `main` gemergt** (PR #107, Merge `15ea127`).
+  Die Alarm-Module sind in den AssessmentService-Zyklus verdrahtet (`run_assessment_cycle`, DTB-64-Naht):
+  pro Poll → assess_reading → Severity/On-Delay-Hysterese → save-only-Persistenz + Audit. **RB-01** (kein
+  Auto-Clear, save-only) und **NF-01** (stale/fault → unknown → kein Alarm) gewahrt. Mitgenommen: **P0-a**
+  (`poll_interval_s` in Config) + drei NF-05-Cross-Checks (max_gap≥on_delay, max_gap≥stale_timeout, poll≤max_gap).
+- **Review/Qualität:** mehrere externe Runden + 10-Dimensionen-Audit konvergiert; 501 passed / 16 skip,
+  Alarm/Assessment/Config 100 % Cov, ruff check + format sauber. Jira **DTB-27 → Erledigt**.
+- **⚠️ Pre-Prod-Gate (HTTP):** `src/main.py` `_DEFAULT_G1_BASE_URL = http://g1-sensorik.local` (bewusst, da G1
+  HTTP-only / eingefrorene Naht). **Vor Produktivbetrieb auf HTTPS umstellen** — per Env `G1_BASE_URL`, NICHT im
+  Code hart erzwingen (würde HTTP-only-G1 brechen).
+- **Folge-Tickets:** **DTB-66** (driving_factor/explanation befüllen, Assessment-Domäne/DTB-38), **DTB-68** (CI:
+  `ruff format --check` + repo-weiter Format-Pass). RiskHysterese ist gebaut; Verdrahtung am Ampel-Endpoint = DTB-43.
+- **Doku-PR offen:** `docs/dtb-27-entscheidungslog` (persönl. Entscheidungslog inkl. NF-09-Abwägung +
+  Backend-Konzept §4/§7). Operator-Hinweis (beenden-60s-Fenster) als `.txt` an G3/Nick weiterzuleiten.
+—architekt/Petzold
+
 ## Update [27.06. — DTB-33 30-min-T_s-Prognose-Producer fertig (Leon H.)
 - **DTB-33 (FA-06) umgesetzt** auf `feat/dtb-33-forecast-producer`:
   - `src/forecast/trend.py`: reine Funktion `forecast_surface_temp()` — lineare Regression auf relative Minuten,
@@ -381,6 +398,6 @@ PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separ
     explizites `limit` bei `get_since`, Testlücke "Reading vorhanden, History leer", Docstring-Update.
 - **Qualität:** 392 passed / 14 skipped, `ruff` sauber, `tools/check_hardcoded_thresholds.py` OK,
     Coverage assessment/forecast/config **99 %**.
-- **Branch mit `main` synchronisiert** (Merge-Commit `1aa2485`); keine Konflikte.
+- **Branch mit `main` synchronisiert** (Merge-Commit `1aa2485` / Folge-Merge nach PR #107/#99/#112); keine offenen Konflikte.
 - **Entscheidungen:** 3 Einträge im persönlichen `Hartling-Entscheidungslog`.
-- **Offen:** PR erstellen, Reviewer-Freigabe, Merge durch Lucas.
+- **Offen:** PR #110 Reviewer-Freigabe, Merge durch Lucas.

@@ -57,7 +57,7 @@ Prognose · API · Logging/Audit · Konfiguration (Schwellen).
 |---|---|
 | `reading` | id · sensor_id · ts(UTC, = G1 `measured_at`) · surface_temp_c · air_temp_c · humidity_pct · dew_point_c(berechnet) · pressure_hpa · status(G1) · ice_indicator(optional/G1/sim) · source(`real|sim`) · received_at |
 | `assessment` | id · ts · reading_id · risk_level(`green|yellow|orange|red`) · driving_factor · threshold_set_id · explanation |
-| `alarm` | id · assessment_id · severity · raised_at · state(`active|acknowledged`) |
+| `alarm` | id · assessment_id · severity · raised_at · state(`active|acknowledged|cleared`) *(Clearing rein manuell, RB-01/FA-10)* |
 | `acknowledgement` | id · alarm_id · operator · note · ts  *(append-only, NF-09)* |
 | `threshold_set` | id · name · params(json) · valid_from · changed_by  *(NF-05)* |
 | `audit_log` | append-only Event-Log |
@@ -156,6 +156,7 @@ src/
   ingest/        # Poller (holt `GET /current` von G1) + Health-Check, Eingangsvalidierung
   model/         # Datenklassen / Schemas
   assessment/    # Vereisungslogik (Schwellenwerte) — Kernmodul, hohe Testabdeckung
+  alarm/         # Alarm-Generierung: Severity-Mapping + Hysterese/Entprellung (DTB-27)
   storage/       # DB-Zugriff (Repository-Pattern, rohes PyMySQL → MySQL/MariaDB; kein ORM, E-35)
   api/           # Serving-Endpoints für G3
   config/        # Schwellen/Parameter (parametrierbar)
