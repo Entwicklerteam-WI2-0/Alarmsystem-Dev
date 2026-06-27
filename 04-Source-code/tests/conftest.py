@@ -14,10 +14,13 @@ from datetime import UTC, datetime
 
 import pytest
 
+from src.alarm.hysterese import AlarmHysterese
+from src.alarm.service import AlarmGenerator
 from src.assessment.service import AssessmentService
 from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
 from src.main import Runtime
+from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
 from src.storage.repository import InMemoryReadingRepository
@@ -75,6 +78,17 @@ def poller(reading_repo: InMemoryReadingRepository, thresholds: Thresholds) -> P
 
 
 @pytest.fixture
+def alarm_generator(
+    thresholds: Thresholds, audit_repo: InMemoryAuditRepository
+) -> AlarmGenerator:
+    # In-Memory-AlarmGenerator (DTB-27): Hysterese aus echter Config, In-Memory-Alarm-Repo,
+    # geteiltes audit_repo — analog build_runtime, aber ohne DB.
+    return AlarmGenerator(
+        AlarmHysterese(thresholds.hysterese), InMemoryAlarmRepository(), audit_repo
+    )
+
+
+@pytest.fixture
 def runtime(
     thresholds: Thresholds,
     reading_repo: InMemoryReadingRepository,
@@ -82,6 +96,7 @@ def runtime(
     audit_repo: InMemoryAuditRepository,
     poller: Poller,
     assessment_service: AssessmentService,
+    alarm_generator: AlarmGenerator,
 ) -> Runtime:
     # Vollstaendiger Runtime-Graph mit In-Memory-Repos; teilt alle Instanzen mit den
     # Einzelfixtures, sodass poller.poll() + service.assess_reading() und die spaetere
@@ -93,6 +108,7 @@ def runtime(
         audit_repo=audit_repo,
         poller=poller,
         service=assessment_service,
+        alarm_generator=alarm_generator,
     )
 
 
