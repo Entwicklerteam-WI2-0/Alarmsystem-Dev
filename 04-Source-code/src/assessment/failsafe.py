@@ -139,9 +139,21 @@ def check_flatline(
 
     Returns:
         "temperature flatline", wenn eingefroren; sonst None.
+
+    Raises:
+        ValueError: wenn current_measured_at oder ein gesetztes window_start nicht
+            zeitzonenbewusst (UTC) ist — analog is_stale (DTB-20 LOW).
     """
+    # TZ-Awareness analog zu is_stale erzwingen: naive datetimes liefern bei der
+    # Subtraktion unten sonst einen stummen TypeError statt eines fruehen, klaren
+    # Fehlers (DTB-20 LOW). Alle Zeitstempel laufen produktiv durch _parse_iso_utc,
+    # der Guard schuetzt aber Aufrufer aus anderem Kontext.
+    if current_measured_at.tzinfo is None:
+        raise ValueError("current_measured_at muss zeitzonenbewusst sein (UTC)")
     if window_start is None:
         return None
+    if window_start.tzinfo is None:
+        raise ValueError("window_start muss zeitzonenbewusst sein (UTC)")
     delta_min = (current_measured_at - window_start).total_seconds() / 60.0
     if delta_min < thresholds.flatline_timeout_min:
         return None

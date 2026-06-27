@@ -223,6 +223,27 @@ def test_check_flatline_before_timeout_is_plausible(
     assert check_flatline(start, current, 0.0, quality_thresholds) is None
 
 
+def test_check_flatline_naive_current_raises(
+    quality_thresholds: DatenqualitaetSchwellen,
+) -> None:
+    # TZ-Guard analog is_stale (DTB-20 LOW): naives current_measured_at -> frueher ValueError
+    # statt stummem TypeError bei der Subtraktion.
+    naive_current = datetime(2026, 6, 23, 10, 15, 0)
+    start = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    with pytest.raises(ValueError, match="zeitzonenbewusst"):
+        check_flatline(start, naive_current, 0.0, quality_thresholds)
+
+
+def test_check_flatline_naive_window_start_raises(
+    quality_thresholds: DatenqualitaetSchwellen,
+) -> None:
+    # TZ-Guard fuer window_start (nur relevant, wenn ein Fenster offen ist).
+    naive_start = datetime(2026, 6, 23, 10, 0, 0)
+    current = datetime(2026, 6, 23, 10, 15, 0, tzinfo=UTC)
+    with pytest.raises(ValueError, match="zeitzonenbewusst"):
+        check_flatline(naive_start, current, 0.0, quality_thresholds)
+
+
 # ---------------------------------------------------------------------------
 # Assessment-Builder
 # ---------------------------------------------------------------------------
