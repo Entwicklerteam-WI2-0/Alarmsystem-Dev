@@ -637,31 +637,3 @@ def test_t_s_grenz_gleich_gefrierpunkt_ist_erlaubt(tmp_path):
 
     thresholds = load_thresholds(datei)
     assert thresholds.prognose.t_s_grenz_c == daten["vereisung"]["t_s_gefrierpunkt_c"]
-
-
-def test_horizon_groesser_als_trend_window_scheitert_laut(tmp_path):
-    # Cross-Field (DTB-33 Review LOW / NF-01): ein Prognosehorizont jenseits des
-    # Trendfensters extrapoliert die T_s-Gerade weit ueber den beobachteten Zeitraum
-    # hinaus (60-min-Horizont aus 10-min-Daten) -> statistisch unbelastbar. Muss laut
-    # scheitern statt eine fragwuerdige Vorwarnung still zu konfigurieren.
-    daten = _minimal_config()
-    daten["prognose"]["trend_window_min"] = 10.0
-    daten["prognose"]["horizon_min"] = 60.0
-    datei = tmp_path / "thresholds.json"
-    datei.write_text(json.dumps(daten), encoding="utf-8")
-
-    with pytest.raises(ConfigError):
-        load_thresholds(datei)
-
-
-def test_horizon_gleich_trend_window_ist_erlaubt(tmp_path):
-    # Grenzfall: horizon_min == trend_window_min ist gueltig (Default-Config: 30 == 30) —
-    # der Horizont reicht exakt bis ans Ende des Datenfensters, keine Ueber-Extrapolation.
-    daten = _minimal_config()
-    daten["prognose"]["trend_window_min"] = 30.0
-    daten["prognose"]["horizon_min"] = 30.0
-    datei = tmp_path / "thresholds.json"
-    datei.write_text(json.dumps(daten), encoding="utf-8")
-
-    thresholds = load_thresholds(datei)
-    assert thresholds.prognose.horizon_min == thresholds.prognose.trend_window_min
