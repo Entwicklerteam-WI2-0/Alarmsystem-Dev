@@ -347,6 +347,23 @@ def test_poll_sensor_id_with_whitespace_is_trimmed(
     assert fake_repo.readings[0].sensor_id == "anr-rwy-01"
 
 
+def test_poll_sensor_id_unsafe_chars_are_stripped(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # DTB-20 Review (MEDIUM): eingebettete Control-/Format-Zeichen werden aus sensor_id
+    # entfernt (\n = Cc, U+202E RIGHT-TO-LEFT OVERRIDE = Cf) -> keine Log-/Audit-Injection
+    # und keine optische Manipulation. Der nutzbare Identifier bleibt erhalten.
+    snapshot = {**valid_snapshot, "sensor_id": "anr-rwy-01\n[AUDIT]‮"}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.sensor_id == "anr-rwy-01[AUDIT]"
+    assert "\n" not in reading.sensor_id
+    assert "‮" not in reading.sensor_id
+
+
 def test_poll_pressure_out_of_range_is_set_to_none(
     poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
 ) -> None:

@@ -34,6 +34,13 @@ REQUIRED_FIELDS = (
     "status",
 )
 
+# Unicode-Kategorien, die aus String-Feldern (z. B. sensor_id) entfernt werden, bevor sie
+# geloggt/persistiert werden: Control (Cc, inkl. \n/\r/\t, U+007F), Format (Cf, inkl. U+202E
+# RIGHT-TO-LEFT OVERRIDE und Zero-Width-Zeichen) sowie die Zeilentrenner Zl/Zp (U+2028/U+2029).
+# Verhindert Log-/Audit-Injection und optische Manipulation (DTB-20 Review). Konsistent mit
+# und etwas strenger als _sanitize_reason in failsafe.py.
+_UNSAFE_STRING_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+
 
 def _now() -> datetime:
     # In eine Helper-Funktion gekapselt, damit Tests die Uhr deterministisch patchen koennen
@@ -426,11 +433,14 @@ def _as_string(value: object, field: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{field} muss ein String sein, erhalten: {type(value)}")
     stripped = value.strip()
-    # Eingebettete Control-Characters (Unicode-Kategorie Cc, inkl. \n/\r/\t und U+007F)
-    # entfernen: ein manipuliertes G1-Feld wie "anr-rwy-01\n[AUDIT] ..." koennte sonst eine
-    # gefaelschte Log-/Audit-Zeile injizieren (DTB-20 LOW). Aeusserer Whitespace ist oben
-    # bereits entfernt; dieser Filter trifft nur noch eingebettete Steuerzeichen.
-    stripped = "".join(ch for ch in stripped if unicodedata.category(ch) != "Cc")
+    # Eingebettete unsichere Zeichen entfernen (Control/Format/Zeilentrenner, siehe
+    # _UNSAFE_STRING_CATEGORIES): ein manipuliertes G1-Feld wie "anr-rwy-01\n[AUDIT] ..."
+    # oder mit U+202E (RTL-Override, optische Umkehr) koennte sonst eine gefaelschte oder
+    # irrefuehrende Log-/Audit-Zeile erzeugen (DTB-20 Review). Aeusserer Whitespace ist oben
+    # bereits entfernt; dieser Filter trifft nur noch eingebettete Zeichen.
+    stripped = "".join(
+        ch for ch in stripped if unicodedata.category(ch) not in _UNSAFE_STRING_CATEGORIES
+    )
     if not stripped:
         raise ValueError(f"{field} darf nicht leer sein")
     return stripped

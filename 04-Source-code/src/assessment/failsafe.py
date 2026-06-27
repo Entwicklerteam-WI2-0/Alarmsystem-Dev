@@ -138,6 +138,9 @@ def check_flatline(
         window_start: measured_at des Fensterbeginns. None -> kein Fenster -> plausibel.
         current_measured_at: measured_at des aktuellen Readings (Fensterende).
         temp_span_c: max-min der Oberflaechentemperatur ueber das Fenster inkl. current.
+            VORBEDINGUNG: >= 0 (eine Spannweite max-min ist nie negativ). Ein negativer
+            Wert ist ein Aufrufer-Bug und wuerde einen falschen Flatline-Treffer ausloesen;
+            der einzige produktive Aufrufer (Poller._flatline_span_including) garantiert >= 0.
         thresholds: Parametrierbare Grenzwerte fuer Datenqualitaet (NF-05).
 
     Returns:
