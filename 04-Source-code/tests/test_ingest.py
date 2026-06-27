@@ -57,7 +57,7 @@ def quality_thresholds() -> DatenqualitaetSchwellen:
         stale_timeout_s=120.0,
         max_temp_jump_c_per_min=5.0,
         flatline_timeout_min=15.0,
-        flatline_epsilon_c=0.15,  # = config (DS18B20 12-Bit, ~2xLSB; Architekt 2026-06-27)
+        flatline_epsilon_c=0.15,  # wie config/thresholds.json (NF-05)
         max_clock_skew_s=5.0,
         min_plausible_dew_point_c=-50.0,
     )
@@ -705,8 +705,7 @@ def test_poll_stale_snapshot_does_not_save(
     # (FA-04, NF-01: keine veralteten Werte als aktuell speichern/GRUEN ausgeben).
     snapshot = {**valid_snapshot, "measured_at": "2026-06-23T09:55:00Z"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -721,8 +720,7 @@ def test_poll_snapshot_at_freshness_boundary_saves(
     # Wegen strikter "> 120 s"-Semantik gilt das noch als frisch -> gespeichert.
     snapshot = {**valid_snapshot, "measured_at": "2026-06-23T09:59:00Z"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -735,8 +733,7 @@ def test_poll_snapshot_just_over_boundary_does_not_save(
     # Grenze + 1 s: 121 s alt -> stale -> verworfen. Sichert die "> 120"-Kante gegen Regression.
     snapshot = {**valid_snapshot, "measured_at": "2026-06-23T09:58:59Z"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -751,8 +748,7 @@ def test_poll_future_timestamp_does_not_save(
     # -> fail-safe verworfen (NF-01; Schwellenwerte.md §3 unplausibler Wert).
     snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:02:00Z"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -767,8 +763,7 @@ def test_poll_minor_clock_skew_still_saves(
     # normale Uhren-Drift -> gespeichert.
     snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:01:03Z"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -781,8 +776,7 @@ def test_poll_clock_skew_exactly_at_limit_saves(
     # Genau am Limit (5 s in der Zukunft) -> noch akzeptiert.
     snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:01:05Z"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -795,8 +789,7 @@ def test_poll_clock_skew_just_over_limit_does_not_save(
     # 5,001 s in der Zukunft -> ueber der Toleranz -> verworfen.
     snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:01:05.001Z"}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
