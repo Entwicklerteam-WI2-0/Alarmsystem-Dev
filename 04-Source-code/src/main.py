@@ -1,10 +1,7 @@
 """FastAPI-Einstiegspunkt des G2-Backends (Vereisungserkennung ANR).
 
-DTB-64-SCAFFOLD (Laufzeit-Verdrahtung) — Start-Geruest fuer den Ausbau:
-Die fachlichen Bausteine sind fertig + unit-getestet
-(`AssessmentService.assess_reading`, `build_assessment_current`, Repositories,
-Poller). HIER fehlt nur die LAUFZEIT-Verdrahtung — als Skelett mit `TODO DTB-64`
-markiert:
+Laufzeit-Verdrahtung (DTB-64) der T0-Slice — Poller, Bewertung, Persistenz,
+Audit und Serving sind hier zu einem laufenden Dienst zusammengefuehrt:
 
   Poller --(poll alle poll_interval_s)--> AssessmentService.assess_reading
         --> AssessmentRepository.save + AuditRepository.append
@@ -14,15 +11,15 @@ Der Scheduler ist bewusst hinter `G2_ENABLE_SCHEDULER` gated (Default AUS), dami
 `uvicorn`/Tests ohne DB/G1 nicht crashen. Zum Scharfschalten: Env setzen +
 DB-/G1-Variablen bereitstellen (s. database.py / G1_BASE_URL).
 
-Erledigt:
+Endpoints (Contract v1):
+  - GET /v1/health (P0.3): Liveness-Probe -> 200 Health{status:"ok"}, sonst 503
+    (Error{code,message}) solange der Runtime-/DI-Graph fehlt (Startup/Ausfall).
   - GET /v1/assessment/current (DTB-43): liest runtime.assessment_repo.get_latest()
     + runtime.reading_repo.get_latest(sensor_id); 503 (Error{code,message}) bei
     DB-Ausfall / keinen Daten, sonst build_assessment_current(...) mit Serve-Zeit-NF-01.
-  - poll_interval_s aus Config geladen (betrieb.poll_interval_s, P0-a/DTB-27).
-  - Alarm-Generierung im Bewertungszyklus verdrahtet (run_assessment_cycle, DTB-27).
 
-Offene TODOs fuer den Ausbau:
-  - GET /v1/health auf Pydantic `Health` + 503-Pfad heben (Contract-Treue).
+poll_interval_s kommt aus Config (betrieb.poll_interval_s, P0-a/DTB-27); die
+Alarm-Generierung ist im Bewertungszyklus verdrahtet (run_assessment_cycle, DTB-27).
 """
 
 from __future__ import annotations
@@ -48,7 +45,7 @@ from src.assessment import AssessmentService, build_assessment_current
 from src.config.loader import load_thresholds
 from src.forecast.bridge import compute_forecast_for_cycle
 from src.ingest.poller import Poller
-from src.model.schemas import AssessmentCurrent, Error, Reading
+from src.model.schemas import AssessmentCurrent, Error, Health, Reading
 from src.storage import (
     MySqlAssessmentRepository,
     MySqlAuditRepository,
@@ -142,16 +139,13 @@ def run_assessment_cycle(
 
 
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
-    """Periodische Poll-/Bewertungs-Schleife.
+    """Periodische Poll-/Bewertungs-Schleife (Scheduler-Kern der T0-Slice, DTB-64).
 
     Poller holt Snapshot von G1, Prognose-Producer liest die T_s-Historie
     (DTB-33/FA-06), AssessmentService bewertet + persistiert. Fail-safe: ein
     Fehler in einem Zyklus beendet die Schleife NICHT; der naechste Zyklus
     versucht es erneut. Serve-Zeit-NF-01 (build_assessment_current) faengt
     derweil veraltete Daten ab (nie GRUEN).
-
-    Offene DTB-64-Ausbauten: GET /v1/assessment/current, poll_interval_s aus
-    Config statt Env, Pydantic-Health-Response.
     """
     logger.info("DTB-64: Scheduler gestartet (Intervall %.0fs).", interval_s)
     last_now: datetime | None = None
@@ -281,13 +275,36 @@ async def _runtime_not_ready_handler(_request: Request, exc: RuntimeNotReadyErro
     return service_unavailable("G2 momentan nicht lieferfaehig.")
 
 
-@app.get("/v1/health")
-def health() -> dict[str, str]:
-    """Liveness-Check (P0.3): bestätigt, dass der Server erreichbar ist.
+@app.get(
+    "/v1/health",
+    tags=["Health"],
+    response_model=Health,
+    dependencies=[Depends(get_runtime)],
+    responses={
+        503: {
+            "model": Error,
+            "description": (
+                "G2 (noch) nicht lieferfaehig (Startup vor dem DI-Graph / interner "
+                "Ausfall). Contract-Fehlerformat Error {code, message}, nie {detail}."
+            ),
+        }
+    },
+)
+def health(response: Response) -> Health:
+    """Liveness-Check (P0.3, Contract v1): bestaetigt, dass G2 erreichbar ist.
 
-    TODO DTB-64: auf Pydantic `Health` + 503-Pfad heben (Contract-Treue).
+    ``200`` ``Health{status:"ok"}`` sobald der Runtime-/DI-Graph (lifespan) steht;
+    ``503`` ``Error`` solange er fehlt: die ``get_runtime``-Dependency wirft dann
+    ``RuntimeNotReadyError``, der registrierte Exception-Handler bildet sie
+    contract-konform auf ``503`` ab (nie rohes ``500``/``{detail}``). ``get_runtime``
+    dient hier nur als Ready-Gate (Wert ungenutzt) -> als Route-Dependency
+    statt Endpoint-Parameter.
+
+    Cache-Control: no-store auch auf dem 200-Pfad: ein gecachter Momentan-Zustand
+    waere ein veraltetes Sicherheitssignal (NF-01).
     """
-    return {"status": "ok"}
+    response.headers.update(NO_STORE_HEADERS)
+    return Health(status="ok")
 
 
 @app.get(
