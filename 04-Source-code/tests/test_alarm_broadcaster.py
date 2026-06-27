@@ -319,11 +319,15 @@ def test_reserve_rejects_new_abo_at_capacity():
     # Endpoint kann das als 503 melden, statt den Broadcaster beliebig wachsen zu lassen.
     async def scenario() -> None:
         bc = AlarmBroadcaster(max_subscribers=2)
-        bc.reserve()
-        bc.reserve()
+        q1 = bc.reserve()
+        q2 = bc.reserve()
         assert bc.subscriber_count == 2
         with pytest.raises(StreamCapacityError):
             bc.reserve()  # 3. Verbindung -> abgelehnt
+        # Symmetrie zum reserve()/release()-Muster der uebrigen Tests (PR-Review).
+        bc.release(q1)
+        bc.release(q2)
+        assert bc.subscriber_count == 0
 
     asyncio.run(scenario())
 
