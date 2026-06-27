@@ -14,6 +14,7 @@ from src.main import app
 from src.model.enums import AlarmSeverity, AlarmState
 from src.model.schemas import Alarm
 from src.storage.alarm_repository import InMemoryAlarmRepository
+from src.storage.repository import RepositoryError
 
 client = TestClient(app)
 
@@ -137,6 +138,23 @@ def test_ack_double_ack_returns_409(
     assert "acknowledged" in body["message"]
 
 
+def test_ack_repository_error_returns_503(monkeypatch, runtime: Runtime):
+    monkeypatch.setenv(API_KEY_ENV, API_KEY)
+    app.dependency_overrides[get_runtime] = lambda: runtime
+    runtime.ack_repo.acknowledge = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        RepositoryError("DB weg")
+    )
+
+    resp = client.post(
+        "/v1/alarms/1/ack",
+        headers={"X-API-Key": API_KEY},
+        json={"operator": "tower-ops-01"},
+    )
+
+    assert resp.status_code == 503
+    assert resp.json()["code"] == "SERVICE_UNAVAILABLE"
+
+
 def test_ack_invalid_path_id_returns_validation_error(monkeypatch, runtime: Runtime):
     monkeypatch.setenv(API_KEY_ENV, API_KEY)
     app.dependency_overrides[get_runtime] = lambda: runtime
@@ -164,7 +182,7 @@ def test_config_update_happy_path(monkeypatch, tmp_path, runtime: Runtime):
     def _reload_runtime():
         return SimpleNamespace(thresholds=load_thresholds())
 
-    with patch("src.main.build_runtime", side_effect=_reload_runtime):
+    with patch("src.api.v1.build_runtime", side_effect=_reload_runtime):
         resp = client.post(
             "/v1/config",
             headers={"X-API-Key": API_KEY},

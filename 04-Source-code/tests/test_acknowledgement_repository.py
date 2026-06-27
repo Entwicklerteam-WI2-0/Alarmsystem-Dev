@@ -12,6 +12,8 @@ import pytest
 from src.model.enums import AlarmSeverity, AlarmState
 from src.model.schemas import Alarm
 from src.storage.acknowledgement_repository import (
+    AlarmAlreadyAcknowledgedError,
+    AlarmNotFoundError,
     InMemoryAcknowledgementRepository,
     MySqlAcknowledgementRepository,
 )
@@ -44,14 +46,15 @@ def test_in_memory_acknowledge_updates_state_and_returns_ack():
     assert ack.ts == _T0
     assert not hasattr(alarm_repo, "acknowledge")  # Repo bleibt save-only
     # Der Alarm im geteilten Speicher ist jetzt acknowledged:
-    alarm = next(a for a in alarm_repo._alarms if a.id == 1)
+    alarm = alarm_repo.get(1)
+    assert alarm is not None
     assert alarm.state is AlarmState.ACKNOWLEDGED
 
 
 def test_in_memory_acknowledge_unknown_alarm_raises():
     ack_repo = InMemoryAcknowledgementRepository()
 
-    with pytest.raises(ValueError, match="Alarm 99 nicht gefunden"):
+    with pytest.raises(AlarmNotFoundError, match="Alarm 99 nicht gefunden"):
         ack_repo.acknowledge(99, "op", None, _T0)
 
 
@@ -61,7 +64,7 @@ def test_in_memory_double_ack_raises():
     alarm_repo.save(_active_alarm())
     ack_repo.acknowledge(1, "op", None, _T0)
 
-    with pytest.raises(ValueError, match="bereits im Zustand 'acknowledged'"):
+    with pytest.raises(AlarmAlreadyAcknowledgedError, match="bereits im Zustand 'acknowledged'"):
         ack_repo.acknowledge(1, "op", None, _T0)
 
 
@@ -98,7 +101,7 @@ def test_mysql_acknowledge_alarm_not_found():
     tx, cursor = _mock_transaction()
     cursor.fetchone.return_value = None
     with patch("src.storage.acknowledgement_repository.transaction", return_value=tx):
-        with pytest.raises(ValueError, match="Alarm 1 nicht gefunden"):
+        with pytest.raises(AlarmNotFoundError, match="Alarm 1 nicht gefunden"):
             MySqlAcknowledgementRepository().acknowledge(1, "op", None, _T0)
 
 
@@ -112,8 +115,27 @@ def test_mysql_acknowledge_already_acknowledged():
         "state": "acknowledged",
     }
     with patch("src.storage.acknowledgement_repository.transaction", return_value=tx):
-        with pytest.raises(ValueError, match="bereits im Zustand 'acknowledged'"):
+        with pytest.raises(
+            AlarmAlreadyAcknowledgedError, match="bereits im Zustand 'acknowledged'"
+        ):
             MySqlAcknowledgementRepository().acknowledge(1, "op", None, _T0)
+
+
+def test_in_memory_acknowledge_with_own_alarms():
+    ack_repo = InMemoryAcknowledgementRepository()
+    ack_repo._own_alarms.append(_active_alarm())
+
+    ack = ack_repo.acknowledge(1, "op", None, _T0)
+
+    assert ack.alarm_id == 1
+    assert ack_repo._own_alarms[0].state is AlarmState.ACKNOWLEDGED
+
+
+def test_in_memory_acknowledge_rejects_foreign_repo_type():
+    ack_repo = InMemoryAcknowledgementRepository(alarm_repo="not-a-repo")
+
+    with pytest.raises(TypeError, match="InMemoryAlarmRepository"):
+        ack_repo.acknowledge(1, "op", None, _T0)
 
 
 def test_mysql_acknowledge_db_error_becomes_repository_error():
@@ -124,4 +146,19 @@ def test_mysql_acknowledge_db_error_becomes_repository_error():
         side_effect=DatabaseConnectionError("DB weg"),
     ):
         with pytest.raises(RepositoryError):
+            MySqlAcknowledgementRepository().acknowledge(1, "op", None, _T0)
+
+
+def test_mysql_acknowledge_missing_row_id_raises_repository_error():
+    tx, cursor = _mock_transaction()
+    cursor.fetchone.return_value = {
+        "id": 1,
+        "assessment_id": 42,
+        "severity": "warning",
+        "raised_at": _T0.replace(tzinfo=None),
+        "state": "active",
+    }
+    cursor.lastrowid = 0
+    with patch("src.storage.acknowledgement_repository.transaction", return_value=tx):
+        with pytest.raises(RepositoryError, match="ohne gueltige ID"):
             MySqlAcknowledgementRepository().acknowledge(1, "op", None, _T0)

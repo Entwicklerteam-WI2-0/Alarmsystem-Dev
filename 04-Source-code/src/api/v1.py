@@ -1,9 +1,9 @@
 """v1-API-Router des G2-Backends (Serving zu G3).
 
-Sammelt die versionierten `/v1/`-Endpoints (AE-03). Aktuell: `GET /v1/thresholds`
-(DTB-62) — liefert die aktuell konfigurierten Schwellenwerte fuer das G3-Menue.
-Alle Endpoints hier sind **rein lesend** (RB-01-neutral): keine
-Steuerung.
+Sammelt die versionierten `/v1/`-Endpoints (AE-03). Lesend:
+`GET /v1/thresholds` (DTB-62). Schreibend (API-Key-geschuetzt, NF-07):
+`POST /v1/alarms/{id}/ack` (DTB-63) und `POST /v1/config` (DTB-63).
+Alle Endpoints sind informations- oder konfigurationsbezogen (RB-01-neutral).
 """
 
 import logging
@@ -16,9 +16,14 @@ from fastapi.responses import JSONResponse
 from src.api.responses import NO_STORE_HEADERS
 from src.api.runtime import Runtime, get_runtime
 from src.api.security import require_api_key
-from src.config.loader import ConfigError, Thresholds
+from src.app_factory import build_runtime
+from src.config.loader import ConfigError, Thresholds, save_thresholds
 from src.model.enums import AuditEventType
 from src.model.schemas import Acknowledgement, AckRequest, AuditLogEntry, Error
+from src.storage.acknowledgement_repository import (
+    AlarmAlreadyAcknowledgedError,
+    AlarmNotFoundError,
+)
 from src.storage.repository import RepositoryError
 
 logger = logging.getLogger(__name__)
@@ -96,22 +101,21 @@ def acknowledge_alarm(
     runtime: Annotated[Runtime, Depends(get_runtime)],
     response: Response,
 ) -> Acknowledgement | JSONResponse:
-    """Quittiert einen Alarm. RB-01: rein dokumentierend, keine Steuer-Aktion."""
+    """Quittiert einen Alarm. RB-01: rein dokumentierend, keine Rueckkopplung zur Anlage."""
     response.headers.update(NO_STORE_HEADERS)
     now = datetime.now(UTC)
     try:
         ack = runtime.ack_repo.acknowledge(id, request.operator, request.note, now)
-    except ValueError as exc:
-        message = str(exc)
-        if "nicht gefunden" in message:
-            code = "NOT_FOUND"
-            status = 404
-        else:
-            code = "ALARM_ALREADY_ACKNOWLEDGED"
-            status = 409
+    except AlarmNotFoundError as exc:
         return JSONResponse(
-            status_code=status,
-            content=Error(code=code, message=message).model_dump(),
+            status_code=404,
+            content=Error(code="NOT_FOUND", message=str(exc)).model_dump(),
+            headers=NO_STORE_HEADERS,
+        )
+    except AlarmAlreadyAcknowledgedError as exc:
+        return JSONResponse(
+            status_code=409,
+            content=Error(code="ALARM_ALREADY_ACKNOWLEDGED", message=str(exc)).model_dump(),
             headers=NO_STORE_HEADERS,
         )
     except RepositoryError as exc:
@@ -177,11 +181,9 @@ def update_config(
 ) -> Thresholds | JSONResponse:
     """Schreibt neue Schwellenwerte und laedt die Runtime neu (NF-05/NF-07).
 
-    RB-01: reine Konfiguration, keine Steuer-Aktion.
+    RB-01: reine Konfiguration, keine Rueckkopplung zur physischen Anlage.
     """
     response.headers.update(NO_STORE_HEADERS)
-    from src.config.loader import save_thresholds
-    from src.main import build_runtime
 
     try:
         save_thresholds(thresholds)
@@ -202,6 +204,11 @@ def update_config(
         )
 
     try:
+        # [DEVIATION] M3-Prototyp: Kein Locking fuer parallele POST /v1/config.
+        # Zwei gleichzeitige Requests koennen sich bei app.state.runtime ueberschreiben;
+        # fuer den Prototypen akzeptabel, weil Schreibzugriff API-Key-geschuetzt und
+        # Bedienperson koordiniert. Echte Serialisierung noetig, falls automatisierte
+        # Config-Updates parallel eingehen (s. ADR E-40 Schicht 4).
         request.app.state.runtime = build_runtime()
     except Exception as exc:  # noqa: BLE001
         logger.error("Runtime konnte nach Config-Update nicht neu geladen werden: %s", exc)

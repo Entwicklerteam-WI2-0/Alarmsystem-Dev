@@ -82,6 +82,19 @@ class InMemoryAlarmRepository(AlarmRepository):
         """
         return [alarm.model_copy() for alarm in self._alarms]
 
+    def get(self, alarm_id: int) -> Alarm | None:
+        """Liest einen einzelnen Alarm anhand seiner ID (Original, keine Kopie).
+
+        Nur fuer In-Memory-Doubles; das MySQL-Repository bietet keinen Lesepfad,
+        weil Alarme save-only persistiert werden (DTB-27). Rueckgabe des Originals
+        ist bewusst: Zustandswechsel (acknowledge) sollen denselben Alarm treffen,
+        der in der In-Memory-Liste liegt.
+        """
+        for alarm in self._alarms:
+            if alarm.id == alarm_id:
+                return alarm
+        return None
+
 
 class MySqlAlarmRepository(AlarmRepository):
     """Alarm-Persistenz auf MariaDB/MySQL via rohem PyMySQL (DTB-27, E-35).

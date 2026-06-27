@@ -12,9 +12,10 @@ from datetime import UTC, datetime, timedelta
 
 from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator
+from src.app_factory import build_runtime
 from src.assessment.service import AssessmentService
 from src.config.loader import load_thresholds
-from src.main import build_runtime, run_assessment_cycle
+from src.main import run_assessment_cycle
 from src.model.enums import AlarmSeverity, RiskLevel, SensorStatus
 from src.model.schemas import Reading
 from src.storage.alarm_repository import InMemoryAlarmRepository

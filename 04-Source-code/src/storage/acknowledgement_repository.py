@@ -13,6 +13,7 @@ import pymysql
 
 from src.model.enums import AlarmState
 from src.model.schemas import Acknowledgement, Alarm
+from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.database import (
     DatabaseConfig,
     DatabaseConfigError,
@@ -39,6 +40,14 @@ _INSERT_ACK_SQL = """
 """
 
 
+class AlarmNotFoundError(ValueError):
+    """Alarm mit der angegebenen ID existiert nicht."""
+
+
+class AlarmAlreadyAcknowledgedError(ValueError):
+    """Alarm ist nicht mehr aktiv (bereits quittiert oder geschlossen)."""
+
+
 class AcknowledgementRepository(ABC):
     """Abstrakte Persistenz fuer Alarm-Quittierungen."""
 
@@ -49,7 +58,8 @@ class AcknowledgementRepository(ABC):
         """Quittiert einen aktiven Alarm.
 
         Raises:
-            ValueError: Alarm nicht vorhanden oder nicht mehr aktiv.
+            AlarmNotFoundError: Alarm nicht vorhanden.
+            AlarmAlreadyAcknowledgedError: Alarm nicht mehr aktiv.
             RepositoryError: DB-Fehler.
         """
         ...
@@ -73,9 +83,11 @@ class InMemoryAcknowledgementRepository(AcknowledgementRepository):
     ) -> Acknowledgement:
         alarm = self._find_alarm(alarm_id)
         if alarm is None:
-            raise ValueError(f"Alarm {alarm_id} nicht gefunden")
+            raise AlarmNotFoundError(f"Alarm {alarm_id} nicht gefunden")
         if alarm.state is not AlarmState.ACTIVE:
-            raise ValueError(f"Alarm {alarm_id} ist bereits im Zustand '{alarm.state.value}'")
+            raise AlarmAlreadyAcknowledgedError(
+                f"Alarm {alarm_id} ist bereits im Zustand '{alarm.state.value}'"
+            )
         alarm.state = AlarmState.ACKNOWLEDGED
         self._next_ack_id += 1
         ack = Acknowledgement(
@@ -89,8 +101,14 @@ class InMemoryAcknowledgementRepository(AcknowledgementRepository):
         return ack.model_copy()
 
     def _find_alarm(self, alarm_id: int) -> Alarm | None:
-        alarms = self._alarm_repo._alarms if self._alarm_repo is not None else self._own_alarms
-        for alarm in alarms:
+        if self._alarm_repo is not None:
+            if isinstance(self._alarm_repo, InMemoryAlarmRepository):
+                return self._alarm_repo.get(alarm_id)
+            raise TypeError(
+                "InMemoryAcknowledgementRepository erwartet InMemoryAlarmRepository "
+                f"oder None, erhielt {type(self._alarm_repo).__name__}"
+            )
+        for alarm in self._own_alarms:
             if alarm.id == alarm_id:
                 return alarm
         return None
@@ -116,10 +134,12 @@ class MySqlAcknowledgementRepository(AcknowledgementRepository):
                 cursor.execute(_SELECT_ALARM_SQL, (alarm_id,))
                 row = cursor.fetchone()
                 if row is None:
-                    raise ValueError(f"Alarm {alarm_id} nicht gefunden")
+                    raise AlarmNotFoundError(f"Alarm {alarm_id} nicht gefunden")
                 state = AlarmState(row["state"])
                 if state is not AlarmState.ACTIVE:
-                    raise ValueError(f"Alarm {alarm_id} ist bereits im Zustand '{state.value}'")
+                    raise AlarmAlreadyAcknowledgedError(
+                        f"Alarm {alarm_id} ist bereits im Zustand '{state.value}'"
+                    )
                 cursor.execute(_UPDATE_STATE_SQL, (AlarmState.ACKNOWLEDGED.value, alarm_id))
                 cursor.execute(_INSERT_ACK_SQL, params)
                 row_id = cursor.lastrowid

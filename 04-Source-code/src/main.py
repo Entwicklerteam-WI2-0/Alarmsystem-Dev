@@ -38,71 +38,23 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator, AuditError
 from src.api.exceptions import ContractError
 from src.api.responses import NO_STORE_HEADERS, service_unavailable
 from src.api.runtime import Runtime, get_runtime
 from src.api.v1 import router as v1_router
+from src.app_factory import build_runtime
 from src.assessment import AssessmentService, build_assessment_current
-from src.config.loader import load_thresholds
-from src.ingest.poller import Poller
 from src.model.schemas import AssessmentCurrent, Error, Reading
-from src.storage import (
-    MySqlAssessmentRepository,
-    MySqlAuditRepository,
-    ReadingRepository,
-    RepositoryError,
-)
-from src.storage.acknowledgement_repository import MySqlAcknowledgementRepository
-from src.storage.alarm_repository import MySqlAlarmRepository
+from src.storage import RepositoryError
 
 logger = logging.getLogger(__name__)
-
-# Bewusster Default: http:// im abgeschlossenen Projekt-/Intranet (G1 ist ein
-# Prototyp ohne TLS). Fuer realen Betrieb HTTPS NICHT hier hart erzwingen — ein
-# https://-Default wuerde die Verbindung zu einem HTTP-only-G1 brechen (eingefrorene
-# Naht). Stattdessen pro Umgebung per Env umstellen: G1_BASE_URL=https://g1-sensorik.local
-# (dokumentiert in .env.example). Architektenentscheidung, falls HTTPS-Default + HTTP-Opt-in
-# gewuenscht wird.
-_DEFAULT_G1_BASE_URL = "http://g1-sensorik.local"
 
 # Single-Sensor-Betrieb (anr-rwy-01). Bewusst eine benannte Konstante statt eines
 # inline-Strings. TODO F24/Geo: Sensor-/Standort-Liste aus config/ laden statt hier
 # zu fixieren — das get_latest()-Assessment ist ohnehin noch global (nicht pro Sensor),
 # daher ist die ID hier nur die Reading-Auswahl fuer den Aktualitaets-/Status-Check.
 _SENSOR_ID = "anr-rwy-01"
-
-
-def build_runtime() -> Runtime:
-    """Baut den DI-Graph (ohne DB/G1 zu kontaktieren — Repos verbinden erst pro Query)."""
-    thresholds = load_thresholds()
-    reading_repo = ReadingRepository()
-    assessment_repo = MySqlAssessmentRepository()
-    audit_repo = MySqlAuditRepository()
-    poller = Poller(
-        base_url=os.environ.get("G1_BASE_URL", _DEFAULT_G1_BASE_URL),
-        repository=reading_repo,
-        data_quality_thresholds=thresholds.datenqualitaet,
-        plausibility_thresholds=thresholds.plausibilitaet,
-    )
-    service = AssessmentService(thresholds, assessment_repo, audit_repo)
-    # DTB-27: Alarm-Generierung als Konsument der Bewertung. AlarmHysterese ist pro Sensor
-    # zustandsbehaftet (On-Delay) -> gehört in den langlebigen DI-Graph (eine Instanz je
-    # laufende Instanz; aktuell genau ein Sensor). Audit-Log wird mit dem Service geteilt.
-    alarm_repo = MySqlAlarmRepository()
-    alarm_generator = AlarmGenerator(AlarmHysterese(thresholds.hysterese), alarm_repo, audit_repo)
-    ack_repo = MySqlAcknowledgementRepository()
-    return Runtime(
-        thresholds=thresholds,
-        reading_repo=reading_repo,
-        assessment_repo=assessment_repo,
-        audit_repo=audit_repo,
-        ack_repo=ack_repo,
-        poller=poller,
-        service=service,
-        alarm_generator=alarm_generator,
-    )
 
 
 def run_assessment_cycle(

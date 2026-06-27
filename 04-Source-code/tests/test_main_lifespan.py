@@ -17,9 +17,10 @@ from collections.abc import Callable, Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from src.app_factory import build_runtime
 from src.assessment.service import AssessmentService
 from src.ingest.poller import Poller
-from src.main import Runtime, app, build_runtime
+from src.main import Runtime, app
 from src.storage.assessment_repository import AssessmentRepository
 from src.storage.audit_repository import AuditRepository
 from src.storage.repository import Repository
