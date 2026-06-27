@@ -1,0 +1,120 @@
+# =============================================================================
+# G1 (Sensorik) — von G2 KONSUMIERTER Vertrag (Client-Sicht)
+# DTB-19 (P1.2) · OpenAPI 3.0.3
+#
+# WICHTIG: Dies ist KEINE von G2 bereitgestellte API. G2 ist hier CLIENT und
+# POLLT diese Endpoints bei G1. Separat gehalten, weil eine OpenAPI-Spec genau
+# eine API/einen Server beschreibt (die G2-API steht in openapi.yaml).
+#
+# Quelle: Backend-Konzept.md §9.1 + API_FROZEN_v1.md (Feld-Freeze).
+# G1 liefert NUR Rohwerte. KEIN ice_indicator, KEIN Taupunkt, KEIN ΔT —
+# dew_point_c und delta_t berechnet G2 selbst (RB-01, Bewertung = G2-Hoheit).
+#
+# Naht-Parameter (interne G2-Poller-Logik, KEIN G1-API-Parameter):
+#   Poll-Intervall 30 s · Stale-Timeout 120 s (measured_at aelter -> unknown).
+#
+# Verhandlungsposition ggue. G1: measured_at und /health sind NICHT verhandelbar;
+# Feldnamen/Einheiten/optionale Felder per Team-Sync (DTB-26) abstimmbar, solange
+# die Pflicht-Trias (surface_temp_c, air_temp_c, humidity_pct) erhalten bleibt.
+# Status: FINAL — G1-Lead-Sign-off 2026-06-23 (Label team-sync-confirmed); Teil von API-Contract v1.0.
+# =============================================================================
+
+openapi: 3.0.3
+
+info:
+  title: G1 Sensorik-API — von G2 konsumiert (Client-Sicht)
+  version: 1.0.0
+  description: |
+    Vertrag der G1-Sensorik-API, **wie G2 sie erwartet und pollt**. G2 ist
+    Client. Dokumentiert im Rahmen von DTB-19, damit Ingest/Poller (G2) sauber
+    dagegen baut. G1 stellt diese Endpoints bereit (nicht G2).
+
+servers:
+  - url: http://g1-sensorik.local
+    description: G1-Sensor-API (Adresse per Team-Sync final, DTB-26)
+
+tags:
+  - name: G1-Pull
+    description: Von G2 gepollte G1-Endpoints.
+
+paths:
+  /current:
+    get:
+      tags: [G1-Pull]
+      operationId: g1GetCurrent
+      summary: Aktueller Messwert-Snapshot (von G2 gepollt)
+      description: |
+        Liefert alle aktuellen Messwerte als **ein** Snapshot mit **einem**
+        gemeinsamen Mess-Zeitstempel (`measured_at`). G2 pollt im Intervall (30 s)
+        und prueft `measured_at` gegen den Stale-Timeout (120 s).
+      responses:
+        "200":
+          description: Aktueller Snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/G1Current"
+              example:
+                sensor_id: anr-rwy-01
+                measured_at: "2026-06-22T14:03:05Z"
+                surface_temp_c: -0.4
+                air_temp_c: 1.2
+                humidity_pct: 96
+                pressure_hpa: 1013
+                status: ok
+        "503":
+          description: |
+            G1 nicht betriebsbereit / Fehlerzustand (z. B. interner Sensorausfall).
+            G2 wertet jede Nicht-200-Antwort wie "nicht erreichbar" und greift den
+            Fail-safe (kein frischer Snapshot -> `risk_level=unknown`, NF-01).
+
+  /health:
+    get:
+      tags: [G1-Pull]
+      operationId: g1GetHealth
+      summary: Verfuegbarkeit der G1-API
+      description: |
+        Verfuegbarkeits-Check von G1. `200` = erreichbar, `503` = nicht
+        betriebsbereit. G2 prueft Erreichbarkeit **getrennt** von der
+        Datenaktualitaet (Stale).
+      responses:
+        "200":
+          description: G1 erreichbar.
+        "503":
+          description: G1 nicht betriebsbereit / Fehlerzustand.
+
+components:
+  schemas:
+    G1Current:
+      type: object
+      description: |
+        Snapshot aus G1s `GET /current`. Feld-Freeze gemaess API_FROZEN_v1.md;
+        deckt sich mit den G1-Feldern der `Reading`-Schema (src/model/schemas.py).
+      required: [sensor_id, measured_at, surface_temp_c, air_temp_c, humidity_pct, status]
+      properties:
+        sensor_id:
+          type: string
+          description: Sensor-Kennung.
+          example: anr-rwy-01
+        measured_at:
+          type: string
+          format: date-time
+          description: Mess-Zeitstempel (ISO-8601, UTC), gemeinsam fuer alle Werte. PFLICHT, nicht verhandelbar.
+        surface_temp_c:
+          type: number
+          description: Oberflaechentemperatur T_s (°C). Pflicht-Trias.
+        air_temp_c:
+          type: number
+          description: Lufttemperatur T_a (°C). Pflicht-Trias.
+        humidity_pct:
+          type: number
+          description: Luftfeuchte (%). Pflicht-Trias. (Von G1 zu bestaetigen.)
+        pressure_hpa:
+          type: number
+          nullable: true
+          description: Luftdruck (hPa), optional/Kontext.
+        status:
+          type: string
+          # Muss mit SensorStatus in openapi.yaml synchron bleiben (getrennte Specs -> kein $ref moeglich).
+          description: Sensor-/Lieferstatus. Wertemenge identisch zu `SensorStatus` in openapi.yaml.
+          enum: [ok, fault]
