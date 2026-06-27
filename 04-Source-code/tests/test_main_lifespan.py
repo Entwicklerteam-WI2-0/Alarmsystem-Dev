@@ -154,6 +154,6 @@ def test_scheduler_prognose_fehler_blockt_bewertung_nicht(
         asyncio.run(run_scheduler(runtime, 0.0))
 
     assert len(calls) == 1, "run_assessment_cycle muss trotz Prognose-Fehler laufen"
-    # Positionsargumente: (service, alarm_generator, reading, now, forecast)
-    forecast_arg = calls[0][0][4]
+    # forecast wird als Keyword uebergeben (forecast_surface_temp_c=...), nicht positional.
+    forecast_arg = calls[0][1]["forecast_surface_temp_c"]
     assert forecast_arg is None, "Bei Prognose-Fehler muss forecast=None an die Bewertung gehen"

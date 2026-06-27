@@ -215,7 +215,9 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                 runtime.alarm_generator,
                 reading,
                 now,
-                forecast,
+                # Keyword (nicht 5. Positionsarg): konsistent zum inneren assess_reading-Aufruf,
+                # damit eine Signaturreihenfolgen-Aenderung die Argumente nicht still vertauscht.
+                forecast_surface_temp_c=forecast,
             )
         except AuditError as exc:
             # Alarm IST gespeichert + Engine aktiv (KEIN Re-Arm), aber OHNE Audit-Trail -> ERROR
