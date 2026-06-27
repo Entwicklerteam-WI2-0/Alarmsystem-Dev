@@ -474,6 +474,71 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+        "503":
+          description: Schreibzugriff nicht konfiguriert (G2_API_KEY fehlt) oder G2 nicht lieferfaehig.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: SERVICE_UNAVAILABLE
+                message: "Schreibzugriff nicht konfiguriert."
+
+  /v1/config:
+    post:
+      tags: [Thresholds]
+      operationId: updateThresholds
+      summary: Schwellenwerte aktualisieren (DTB-63)
+      description: |
+        Schreibt einen neuen Satz parametrierbarer Schwellenwerte. Erfordert einen
+        gueltigen `X-API-Key`-Header (DTB-63, NF-07). Die neue Config wird in
+        `config/thresholds.json` gespeichert und die Runtime neu geladen, sodass
+        `GET /v1/thresholds` und die Bewertungslogik sofort die neuen Werte verwenden.
+
+        RB-01: reine Konfiguration, keine Steuer-Aktion.
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Thresholds"
+      responses:
+        "200":
+          description: Gespeicherte Schwellenwerte.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Thresholds"
+        "401":
+          description: Fehlender oder ungueltiger API-Key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: UNAUTHORIZED
+                message: "Ungueltiger oder fehlender API-Key."
+        "422":
+          description: Ungueltige Schwellenwerte (Body-Validierung).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: UNPROCESSABLE_ENTITY
+                message: "Config-Inkonsistenz: ..."
+        "503":
+          description: G2 nicht lieferfaehig (Config nicht schreibbar / Runtime-Reload fehlgeschlagen).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: SERVICE_UNAVAILABLE
+                message: "G2 momentan nicht lieferfaehig."
+
 components:
   securitySchemes:
     ApiKeyAuth:

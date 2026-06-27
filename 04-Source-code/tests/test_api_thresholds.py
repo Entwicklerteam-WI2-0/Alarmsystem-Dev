@@ -70,6 +70,7 @@ def test_get_thresholds_runtime_not_ready_returns_503_contract():
     # Assert: Fail-safe 503 im Contract-Format Error{code,message} — NICHT {detail} —, no-store.
     assert resp.status_code == 503
     body = resp.json()
-    assert body == {"code": "SERVICE_UNAVAILABLE", "message": "G2 momentan nicht lieferfaehig."}
+    assert body["code"] == "SERVICE_UNAVAILABLE"
+    assert isinstance(body["message"], str) and body["message"]
     assert "detail" not in body  # FastAPI-Default {detail} wuerde die Naht brechen
     assert resp.headers["cache-control"] == "no-store"

@@ -8,7 +8,19 @@ auf 503 `Error {code, message}` ab (NF-01: nie GRUEN, auch nicht bei Startup-Feh
 """
 
 
-class RuntimeNotReadyError(RuntimeError):
+class ContractError(RuntimeError):
+    """Basisklasse fuer API-Fehler, die contract-konform als `{code, message}`
+    gemeldet werden. Traegt HTTP-Status, maschinenlesbaren Code und Meldung.
+    """
+
+    def __init__(self, status_code: int, code: str, message: str) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+        self.message = message
+
+
+class RuntimeNotReadyError(ContractError):
     """`app.state.runtime` fehlt — lifespan hat den DI-Graph (noch) nicht gesetzt.
 
     Eigene Exception statt rohem AttributeError: faengt `build_runtime()` im lifespan
@@ -18,3 +30,20 @@ class RuntimeNotReadyError(RuntimeError):
     registrierte Exception-Handler bildet diese Exception contract-konform auf
     503 `{code, message}` ab (NF-01: nie GRUEN, auch nicht bei Startup-Fehlern).
     """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(503, "SERVICE_UNAVAILABLE", message)
+
+
+class APIKeyMissingError(ContractError):
+    """Serverseitiger API-Key nicht konfiguriert — Schreibzugriff fail-safe gesperrt."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(503, "SERVICE_UNAVAILABLE", message)
+
+
+class AuthenticationError(ContractError):
+    """Fehlender oder ungueltiger API-Key fuer einen geschuetzten Endpoint."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(401, "UNAUTHORIZED", message)

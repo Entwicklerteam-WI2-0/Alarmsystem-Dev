@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from src.config.loader import Thresholds
     from src.ingest.poller import Poller
     from src.storage import AssessmentRepository, AuditRepository, Repository
+    from src.storage.acknowledgement_repository import AcknowledgementRepository
 
 
 @dataclass(frozen=True)
@@ -36,6 +37,7 @@ class Runtime:
     reading_repo: Repository
     assessment_repo: AssessmentRepository
     audit_repo: AuditRepository
+    ack_repo: AcknowledgementRepository
     poller: Poller
     service: AssessmentService
     alarm_generator: AlarmGenerator

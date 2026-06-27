@@ -20,6 +20,7 @@ from src.assessment.service import AssessmentService
 from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
 from src.main import Runtime
+from src.storage.acknowledgement_repository import InMemoryAcknowledgementRepository
 from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
@@ -78,12 +79,26 @@ def poller(reading_repo: InMemoryReadingRepository, thresholds: Thresholds) -> P
 
 
 @pytest.fixture
-def alarm_generator(thresholds: Thresholds, audit_repo: InMemoryAuditRepository) -> AlarmGenerator:
-    # In-Memory-AlarmGenerator (DTB-27): Hysterese aus echter Config, In-Memory-Alarm-Repo,
-    # geteiltes audit_repo — analog build_runtime, aber ohne DB.
-    return AlarmGenerator(
-        AlarmHysterese(thresholds.hysterese), InMemoryAlarmRepository(), audit_repo
-    )
+def alarm_repo() -> InMemoryAlarmRepository:
+    return InMemoryAlarmRepository()
+
+
+@pytest.fixture
+def ack_repo(alarm_repo: InMemoryAlarmRepository) -> InMemoryAcknowledgementRepository:
+    # Teilt den Alarm-Speicher mit alarm_repo, damit Quittierungs-Tests den Zustand
+    # des zuvor gespeicherten Alarms veraendern koennen.
+    return InMemoryAcknowledgementRepository(alarm_repo)
+
+
+@pytest.fixture
+def alarm_generator(
+    thresholds: Thresholds,
+    alarm_repo: InMemoryAlarmRepository,
+    audit_repo: InMemoryAuditRepository,
+) -> AlarmGenerator:
+    # In-Memory-AlarmGenerator (DTB-27): Hysterese aus echter Config, geteiltes
+    # In-Memory-Alarm-Repo, geteiltes audit_repo — analog build_runtime, aber ohne DB.
+    return AlarmGenerator(AlarmHysterese(thresholds.hysterese), alarm_repo, audit_repo)
 
 
 @pytest.fixture
@@ -92,6 +107,7 @@ def runtime(
     reading_repo: InMemoryReadingRepository,
     assessment_repo: InMemoryAssessmentRepository,
     audit_repo: InMemoryAuditRepository,
+    ack_repo: InMemoryAcknowledgementRepository,
     poller: Poller,
     assessment_service: AssessmentService,
     alarm_generator: AlarmGenerator,
@@ -104,6 +120,7 @@ def runtime(
         reading_repo=reading_repo,
         assessment_repo=assessment_repo,
         audit_repo=audit_repo,
+        ack_repo=ack_repo,
         poller=poller,
         service=assessment_service,
         alarm_generator=alarm_generator,

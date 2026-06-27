@@ -7,9 +7,12 @@ Enabler für das Bewertungsmodul DTB-38. DB-frei (NF-05; DB-Secrets gehören NIC
 
 from __future__ import annotations
 
+import contextlib
 import json
 import math
-from dataclasses import dataclass, fields
+import os
+import tempfile
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +20,12 @@ from typing import Any
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "thresholds.json"
 
 
-class ConfigError(Exception):
-    """Konfiguration fehlt oder ist ungültig — bewusst lautes Scheitern statt stiller Defaults."""
+class ConfigError(ValueError):
+    """Konfiguration fehlt oder ist ungültig — bewusst lautes Scheitern statt stiller Defaults.
+
+    Subklasse von `ValueError`, damit Pydantic/FastAPI ungueltige Request-Bodies
+    automatisch als 422 melden (NF-07/DTPB-63).
+    """
 
 
 # Obergrenze für Hysterese-Zeitkonstanten (Sekunden). Ein absurd großer Wert würde sonst
@@ -362,3 +369,48 @@ def _require_non_negative(value: float, name: str, upper: float) -> None:
         raise ConfigError(f"{name} darf nicht negativ sein")
     if value > upper:
         raise ConfigError(f"{name} darf nicht groesser als {upper} sein")
+
+
+def save_thresholds(thresholds: Thresholds, path: Path | str | None = None) -> None:
+    """Schreibt einen `Thresholds`-Satz atomisch in die JSON-Config.
+
+    Bewahrt bestehende `_`-praefixierte Metadaten (z. B. Warnhinweise) und
+    ersetzt nur die bekannten Schwellen-Sektionen. Scheitert laut bei
+    Schreib-/Konsistenzfehlern.
+    """
+    config_path = Path(path) if path is not None else DEFAULT_CONFIG_PATH
+    if config_path.is_file():
+        try:
+            raw = json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ConfigError(
+                f"Konfigurationsdatei ist kein gueltiges JSON: {config_path} ({exc})"
+            ) from exc
+        if not isinstance(raw, dict):
+            raise ConfigError(f"Konfiguration muss ein JSON-Objekt sein: {config_path}")
+    else:
+        raw = {}
+
+    updated = asdict(thresholds)
+    for section, values in updated.items():
+        raw[section] = values
+
+    _write_json_atomic(config_path, raw)
+
+
+def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
+    """Schreibt `data` als JSON in eine temporaere Datei und benennt sie um.
+
+    So ist die aktuelle Config bei einem Crash nie halb ueberschrieben.
+    """
+    payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+            tmp_file.write(payload)
+        os.replace(tmp_name, path)
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_name)
+        raise

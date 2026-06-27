@@ -2,18 +2,26 @@
 
 Sammelt die versionierten `/v1/`-Endpoints (AE-03). Aktuell: `GET /v1/thresholds`
 (DTB-62) — liefert die aktuell konfigurierten Schwellenwerte fuer das G3-Menue.
-Alle Endpoints hier sind **rein lesend** (RB-01-neutral): kein Aktor, keine
-Runway-Steuerung.
+Alle Endpoints hier sind **rein lesend** (RB-01-neutral): keine
+Steuerung.
 """
 
+import logging
+from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Path, Request, Response
+from fastapi.responses import JSONResponse
 
 from src.api.responses import NO_STORE_HEADERS
 from src.api.runtime import Runtime, get_runtime
-from src.config.loader import Thresholds
-from src.model.schemas import Error
+from src.api.security import require_api_key
+from src.config.loader import ConfigError, Thresholds
+from src.model.enums import AuditEventType
+from src.model.schemas import Acknowledgement, AckRequest, AuditLogEntry, Error
+from src.storage.repository import RepositoryError
+
+logger = logging.getLogger(__name__)
 
 # Kein Router-weiter Tag: jeder Endpoint deklariert seinen Ressourcen-Tag selbst
 # (wie assessment/current -> "Assessment" in main.py), damit die FastAPI-Auto-Docs
@@ -64,3 +72,146 @@ def read_thresholds(
     """
     response.headers.update(NO_STORE_HEADERS)
     return thresholds
+
+
+@router.post(
+    "/alarms/{id}/ack",
+    dependencies=[Depends(require_api_key)],
+    response_model=Acknowledgement,
+    summary="Alarm quittieren",
+    tags=["Alarms"],
+    responses={
+        401: {"model": Error, "description": "Fehlender oder ungueltiger API-Key."},
+        404: {"model": Error, "description": "Alarm mit dieser ID existiert nicht."},
+        409: {
+            "model": Error,
+            "description": "Alarm ist bereits quittiert/geschlossen.",
+        },
+        503: {"model": Error, "description": "G2 momentan nicht lieferfaehig."},
+    },
+)
+def acknowledge_alarm(
+    id: Annotated[int, Path(ge=1)],
+    request: AckRequest,
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+    response: Response,
+) -> Acknowledgement | JSONResponse:
+    """Quittiert einen Alarm. RB-01: rein dokumentierend, keine Steuer-Aktion."""
+    response.headers.update(NO_STORE_HEADERS)
+    now = datetime.now(UTC)
+    try:
+        ack = runtime.ack_repo.acknowledge(id, request.operator, request.note, now)
+    except ValueError as exc:
+        message = str(exc)
+        if "nicht gefunden" in message:
+            code = "NOT_FOUND"
+            status = 404
+        else:
+            code = "ALARM_ALREADY_ACKNOWLEDGED"
+            status = 409
+        return JSONResponse(
+            status_code=status,
+            content=Error(code=code, message=message).model_dump(),
+            headers=NO_STORE_HEADERS,
+        )
+    except RepositoryError as exc:
+        logger.error("Quittierung fuer Alarm %s fehlgeschlagen: %s", id, exc)
+        return JSONResponse(
+            status_code=503,
+            content=Error(
+                code="SERVICE_UNAVAILABLE", message="G2 momentan nicht lieferfaehig."
+            ).model_dump(),
+            headers=NO_STORE_HEADERS,
+        )
+    except Exception:  # noqa: BLE001 - Serving darf nie als 500 brechen
+        logger.exception("Unerwarteter Fehler bei Quittierung von Alarm %s", id)
+        return JSONResponse(
+            status_code=503,
+            content=Error(
+                code="SERVICE_UNAVAILABLE", message="G2 momentan nicht lieferfaehig."
+            ).model_dump(),
+            headers=NO_STORE_HEADERS,
+        )
+
+    # Audit-Trail (NF-09). Ein Audit-Fehl nach erfolgreicher Quittierung wird geloggt,
+    # aendert aber den bereits persistierten Zustand nicht.
+    try:
+        runtime.audit_repo.append(_build_ack_audit_entry(id, request.operator, request.note, now))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Audit-Eintrag fuer Alarm-Quittierung %s fehlgeschlagen: %s", id, exc)
+
+    return ack
+
+
+def _build_ack_audit_entry(
+    alarm_id: int, operator: str, note: str | None, ts: datetime
+) -> AuditLogEntry:
+    """Baut den Audit-Log-Eintrag fuer eine Quittierung."""
+    return AuditLogEntry(
+        ts=ts,
+        event_type=AuditEventType.ALARM_ACKNOWLEDGED,
+        entity_type="alarm",
+        entity_id=alarm_id,
+        actor=operator,
+        detail={"note": note},
+    )
+
+
+@router.post(
+    "/config",
+    dependencies=[Depends(require_api_key)],
+    response_model=Thresholds,
+    summary="Schwellenwerte aktualisieren",
+    tags=["Thresholds"],
+    responses={
+        401: {"model": Error, "description": "Fehlender oder ungueltiger API-Key."},
+        422: {"model": Error, "description": "Ungueltige Schwellenwerte."},
+        503: {"model": Error, "description": "G2 momentan nicht lieferfaehig."},
+    },
+)
+def update_config(
+    thresholds: Thresholds,
+    request: Request,
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+    response: Response,
+) -> Thresholds | JSONResponse:
+    """Schreibt neue Schwellenwerte und laedt die Runtime neu (NF-05/NF-07).
+
+    RB-01: reine Konfiguration, keine Steuer-Aktion.
+    """
+    response.headers.update(NO_STORE_HEADERS)
+    from src.config.loader import save_thresholds
+    from src.main import build_runtime
+
+    try:
+        save_thresholds(thresholds)
+    except ConfigError as exc:
+        return JSONResponse(
+            status_code=422,
+            content=Error(code="UNPROCESSABLE_ENTITY", message=str(exc)).model_dump(),
+            headers=NO_STORE_HEADERS,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Schwellenwerte konnten nicht geschrieben werden")
+        return JSONResponse(
+            status_code=503,
+            content=Error(
+                code="SERVICE_UNAVAILABLE", message="G2 momentan nicht lieferfaehig."
+            ).model_dump(),
+            headers=NO_STORE_HEADERS,
+        )
+
+    try:
+        request.app.state.runtime = build_runtime()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Runtime konnte nach Config-Update nicht neu geladen werden: %s", exc)
+        return JSONResponse(
+            status_code=503,
+            content=Error(
+                code="SERVICE_UNAVAILABLE",
+                message="Config gespeichert, aber Runtime-Reload fehlgeschlagen.",
+            ).model_dump(),
+            headers=NO_STORE_HEADERS,
+        )
+
+    return request.app.state.runtime.thresholds

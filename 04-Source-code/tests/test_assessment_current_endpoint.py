@@ -27,8 +27,9 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from src.api.exceptions import RuntimeNotReadyError
 from src.config.loader import load_thresholds
-from src.main import RuntimeNotReadyError, app, get_runtime
+from src.main import app, get_runtime
 from src.model.enums import RiskLevel, SensorStatus
 from src.model.schemas import Assessment, Reading
 from src.storage.repository import RepositoryError

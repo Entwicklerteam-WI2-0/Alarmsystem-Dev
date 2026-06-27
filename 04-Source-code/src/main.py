@@ -40,7 +40,7 @@ from fastapi.responses import JSONResponse
 
 from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator, AuditError
-from src.api.exceptions import RuntimeNotReadyError
+from src.api.exceptions import ContractError
 from src.api.responses import NO_STORE_HEADERS, service_unavailable
 from src.api.runtime import Runtime, get_runtime
 from src.api.v1 import router as v1_router
@@ -54,6 +54,7 @@ from src.storage import (
     ReadingRepository,
     RepositoryError,
 )
+from src.storage.acknowledgement_repository import MySqlAcknowledgementRepository
 from src.storage.alarm_repository import MySqlAlarmRepository
 
 logger = logging.getLogger(__name__)
@@ -89,14 +90,15 @@ def build_runtime() -> Runtime:
     # DTB-27: Alarm-Generierung als Konsument der Bewertung. AlarmHysterese ist pro Sensor
     # zustandsbehaftet (On-Delay) -> gehört in den langlebigen DI-Graph (eine Instanz je
     # laufende Instanz; aktuell genau ein Sensor). Audit-Log wird mit dem Service geteilt.
-    alarm_generator = AlarmGenerator(
-        AlarmHysterese(thresholds.hysterese), MySqlAlarmRepository(), audit_repo
-    )
+    alarm_repo = MySqlAlarmRepository()
+    alarm_generator = AlarmGenerator(AlarmHysterese(thresholds.hysterese), alarm_repo, audit_repo)
+    ack_repo = MySqlAcknowledgementRepository()
     return Runtime(
         thresholds=thresholds,
         reading_repo=reading_repo,
         assessment_repo=assessment_repo,
         audit_repo=audit_repo,
+        ack_repo=ack_repo,
         poller=poller,
         service=service,
         alarm_generator=alarm_generator,
@@ -228,11 +230,24 @@ app = FastAPI(
 app.include_router(v1_router)
 
 
-@app.exception_handler(RuntimeNotReadyError)
-async def _runtime_not_ready_handler(_request: Request, exc: RuntimeNotReadyError) -> JSONResponse:
-    """Fehlt der Runtime-Graph, contract-konform als 503 melden (nie rohes 500/{detail})."""
-    logger.error("Runtime nicht verfuegbar: %s", exc)
-    return service_unavailable("G2 momentan nicht lieferfaehig.")
+async def contract_error_handler(_request: Request, exc: ContractError) -> JSONResponse:
+    """Contract-konforme Fehlerantwort `{code, message}` statt FastAPI-Default `{detail}`.
+
+    Deckt RuntimeNotReadyError (503), APIKeyMissingError (503) und
+    AuthenticationError (401) ab.
+    """
+    if exc.status_code == 503:
+        logger.error("Contract-Fehler 503: %s", exc)
+    else:
+        logger.warning("Contract-Fehler %s: %s", exc.status_code, exc)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=Error(code=exc.code, message=exc.message).model_dump(),
+        headers=NO_STORE_HEADERS,
+    )
+
+
+app.add_exception_handler(ContractError, contract_error_handler)
 
 
 @app.get("/v1/health")
