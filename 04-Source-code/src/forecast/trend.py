@@ -70,8 +70,11 @@ def _collect_points(
     cutoff = now - timedelta(minutes=window_min)
     points: list[tuple[float, float]] = []
     for reading in readings:
-        # `> now` ist ein Clock-Skew-Guard: laeuft die G1-Uhr G2 vor, kann measured_at in
-        # der Zukunft liegen. Solche Punkte werden verworfen (nie aus der Zukunft regressieren).
+        # Zeitfenster-Filter (bewusste Doppelfilterung mit bridge.py: die Bruecke
+        # begrenzt die DB-Abfrage, diese Funktion garantiert die Semantik von
+        # `window_min` fuer alle Aufrufer, auch wenn readings ausserhalb kommen).
+        # `> now` ist zusaetzlich ein Clock-Skew-Guard: laeuft die G1-Uhr G2 vor,
+        # kann measured_at in der Zukunft liegen. Solche Punkte werden verworfen.
         # Fail-safe: schlimmstenfalls bleiben < min_points uebrig -> None (kein Under-Alarm).
         if reading.measured_at < cutoff or reading.measured_at > now:
             continue
@@ -92,9 +95,9 @@ def _project(points: list[tuple[float, float]], horizon_min: float) -> float | N
     sxy = sum((x - mean_x) * (y - mean_y) for x, y in points)
     # sxx ist Summe von Quadraten -> >= 0. Bei sxx == 0.0 liegen alle Stuetzstellen
     # auf demselben Zeitpunkt (keine Zeitvarianz) -> Steigung unbestimmbar.
-    # Hinweis: 0.0/0.0 wirft in Python *doch* ZeroDivisionError; deshalb expliziter
-    # Guard statt try/except oder blinder Annahme, math.isfinite wuerde alles fangen.
-    if sxx == 0.0:
+    # `not sxx` erkennt diesen Fall, ohne ein numerisches Literal im Vergleich zu
+    # verwenden (DTB-22 / NF-05). math.isfinite(forecast) fängt zudem NaN/inf ab.
+    if not sxx:
         return None
     slope = sxy / sxx
     intercept = mean_y - slope * mean_x  # y bei x = 0 (= now)
