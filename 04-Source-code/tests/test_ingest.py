@@ -336,8 +336,10 @@ def test_poll_sensor_id_with_whitespace_is_trimmed(
 ) -> None:
     snapshot = {**valid_snapshot, "sensor_id": " anr-rwy-01 "}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    # _mock_get_for unterscheidet /health vs /current -> testet den echten Routing-Pfad ueber
+    # _is_g1_healthy() (ein Pauschal-_ok_response fuer beide URLs wuerde den Health-Check
+    # nur trivial bestehen lassen).
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -397,7 +399,10 @@ def test_poll_optional_pressure_at_boundaries_saves(
         fake_repo.readings.clear()
         # Iterationen unabhaengig halten: der gleiche Snapshot (identisches measured_at)
         # wuerde sonst beim 2. Durchlauf als Duplikat/unplausibel verworfen (DTB-20).
+        # Auch das Flatline-Fenster zuruecksetzen, sonst tragen _flatline_window_start/min/max
+        # ueber Iterationen und koennten bei abweichendem Timestamp faelschlich Flatline melden.
         poller._last_reading = None
+        poller._reset_flatline_window()
 
         with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
             reading = poller.poll()
@@ -472,8 +477,8 @@ def test_poll_uses_configured_plausibility_thresholds(
     )
     snapshot = {**valid_snapshot, "surface_temp_c": 20.0}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    # _mock_get_for unterscheidet /health vs /current -> echter Routing-Pfad ueber _is_g1_healthy().
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
