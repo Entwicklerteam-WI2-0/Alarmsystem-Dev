@@ -259,6 +259,20 @@ def test_max_gap_kleiner_als_stale_timeout_scheitert_laut(tmp_path):
         load_thresholds(datei)
 
 
+def test_horizon_groesser_als_trendfenster_scheitert_laut(tmp_path):
+    # Cross-Section (FA-06/NF-01): horizon_min darf nicht groesser als trend_window_min sein.
+    # Eine Extrapolation weit ausserhalb des Datenfensters liefert unbelastbare Prognosen
+    # und wuerde die 30-min-Vorwarnung praktisch entwerten (stiller Under-Alarm moeglich).
+    daten = _minimal_config()
+    daten["prognose"]["trend_window_min"] = 10.0
+    daten["prognose"]["horizon_min"] = 60.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
 @pytest.mark.parametrize("ungueltig", [True, float("nan"), float("inf"), 0.0, -1.0, 86_401.0])
 def test_betrieb_parameter_direktkonstruktion_validiert(ungueltig):
     # Direktkonstruktion (greift unabhängig vom Loader-Loop): bool/NaN/inf/<=0/zu-groß

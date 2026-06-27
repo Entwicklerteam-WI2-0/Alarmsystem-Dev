@@ -93,10 +93,11 @@ def _project(points: list[tuple[float, float]], horizon_min: float) -> float | N
     mean_y = sum(y for _, y in points) / n
     sxx = sum((x - mean_x) ** 2 for x, _ in points)
     sxy = sum((x - mean_x) * (y - mean_y) for x, y in points)
-    # sxx ist Summe von Quadraten -> >= 0. Bei sxx == 0.0 liegen alle Stuetzstellen
-    # auf demselben Zeitpunkt (keine Zeitvarianz) -> Steigung unbestimmbar.
-    # `not sxx` erkennt diesen Fall, ohne ein numerisches Literal im Vergleich zu
-    # verwenden (DTB-22 / NF-05). math.isfinite(forecast) fängt zudem NaN/inf ab.
+    # sxx ist Summe von Quadraten -> >= 0. Liegt es exakt bei 0.0, haben alle
+    # Stuetzstellen denselben Zeitpunkt (keine Zeitvarianz) -> Steigung unbestimmbar.
+    # `not sxx` ist der idiomatische Python-Null-Check fuer Numerics (0.0 ist falsy);
+    # ein Literal-Vergleich wuerde DTB-22 (hartcodierte Schwellen) triggern.
+    # math.isfinite(forecast) fängt zudem NaN/inf bei entarteten Zahlen ab.
     if not sxx:
         return None
     slope = sxy / sxx

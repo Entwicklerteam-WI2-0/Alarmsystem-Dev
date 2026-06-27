@@ -77,3 +77,17 @@ def test_leere_zeitreihe_ist_failsafe_none():
     result = compute_forecast_for_cycle(_reading(0, 1.0), repo, _PROGNOSE, _NOW)
     assert result is None
     assert len(repo.calls) == 1  # DB wurde abgefragt (kein Kurzschluss)
+
+
+def test_naives_now_propagiert_value_error():
+    # Ein naives `now` (ohne tzinfo) ist ein Programmierfehler, kein transienter Datenfehler.
+    # Die Bruecke propagiert ihn bewusst (dokumentiert in bridge.py:46-49), damit der
+    # Scheduler ihn sichtbar macht statt als "keine Prognose" zu maskieren.
+    naive_now = datetime(2026, 6, 27, 12, 0, 0)  # kein tzinfo
+    with pytest.raises(ValueError, match="zeitzonenbewusst"):
+        compute_forecast_for_cycle(
+            _reading(0, 1.0),
+            _FakeReadingRepo([]),
+            _PROGNOSE,
+            naive_now,
+        )

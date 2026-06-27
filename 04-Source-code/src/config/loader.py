@@ -342,6 +342,14 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
         )
     _require_positive(schwellen.trend_window_min, "prognose.trend_window_min", upper=1_440)
     _require_positive(schwellen.horizon_min, "prognose.horizon_min", upper=1_440)
+    # Cross-Section (FA-06/NF-01): horizon_min darf nicht groesser als trend_window_min sein.
+    # Eine Extrapolation weit ausserhalb des Datenfensters liefert unbelastbare Prognosen
+    # und wuerde die 30-min-Vorwarnung praktisch entwerten (stiller Under-Alarm moeglich).
+    if schwellen.horizon_min > schwellen.trend_window_min:
+        raise ConfigError(
+            "prognose.horizon_min darf nicht groesser als prognose.trend_window_min sein "
+            f"({schwellen.horizon_min!r} > {schwellen.trend_window_min!r})"
+        )
     # Ganzzahl- und Bereichspruefung fuer min_points/max_readings_limit.
     # isinstance(int) ist bereits in _baue_sektion erledigt (L-3); hier bleiben nur
     # die sektionsspezifischen semantischen Grenzen.
