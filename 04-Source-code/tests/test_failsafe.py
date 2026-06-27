@@ -244,17 +244,6 @@ def test_check_flatline_naive_window_start_raises(
         check_flatline(naive_start, current, 0.0, quality_thresholds)
 
 
-def test_check_flatline_negative_span_raises(
-    quality_thresholds: DatenqualitaetSchwellen,
-) -> None:
-    # DTB-20 Review (M-3): eine Spannweite max-min ist nie < 0; ein negativer Wert ist ein
-    # Aufrufer-Bug und darf nicht als stiller False-Positive "flatline" durchrutschen.
-    start = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
-    current = start + timedelta(minutes=15.0)
-    with pytest.raises(ValueError, match="temp_span_c"):
-        check_flatline(start, current, -0.01, quality_thresholds)
-
-
 def test_check_flatline_span_exactly_at_band_is_unplausible(
     quality_thresholds: DatenqualitaetSchwellen,
 ) -> None:

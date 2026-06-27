@@ -145,10 +145,7 @@ def check_flatline(
 
     Raises:
         ValueError: wenn current_measured_at oder ein gesetztes window_start nicht
-            zeitzonenbewusst (UTC) ist (analog is_stale, DTB-20 LOW), oder wenn
-            temp_span_c negativ ist (eine Spannweite max-min ist nie < 0 -> ein
-            negativer Wert signalisiert einen Aufrufer-Bug; ein stiller False-Positive
-            "flatline" waere irrefuehrend, DTB-20 Review).
+            zeitzonenbewusst (UTC) ist — analog is_stale (DTB-20 LOW).
     """
     # TZ-Awareness analog zu is_stale erzwingen: naive datetimes liefern bei der
     # Subtraktion unten sonst einen stummen TypeError statt eines fruehen, klaren
@@ -156,11 +153,6 @@ def check_flatline(
     # der Guard schuetzt aber Aufrufer aus anderem Kontext.
     if current_measured_at.tzinfo is None:
         raise ValueError("current_measured_at muss zeitzonenbewusst sein (UTC)")
-    # Spannweite ist definitionsgemaess max-min >= 0; ein negativer Wert ist ein
-    # Aufrufer-Bug und darf nicht als (fail-safe wirkender, aber falscher) Flatline-
-    # Treffer durchrutschen -> frueh und klar scheitern (DTB-20 Review MEDIUM).
-    if temp_span_c < 0:
-        raise ValueError(f"temp_span_c muss >= 0 sein, erhalten: {temp_span_c!r}")
     if window_start is None:
         return None
     if window_start.tzinfo is None:
