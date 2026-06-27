@@ -2,6 +2,24 @@
 
 > Stand: 2026-06-25 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
 
+## 2026-06-27 — DB real finalisiert (Branch `feat/db-finalisierung-real-mariadb`, gepusht)
+**Problem:** DTB-53/54/55/56 standen Jira-„Erledigt", aber eine reale MariaDB war nie hochgezogen
+(Hardware) → der einzige Real-DB-Integrationstest (DTB-27 T4) skippte immer; **kein SQL lief je gegen
+eine echte DB**. Nur InMemory war verifiziert.
+**Gemacht:**
+- Lokale **MariaDB 11.4.12** (portable, `127.0.0.1:3306`) statt Docker — Docker auf dem Rechner defekt
+  (Container ohne Netz-Endpoint) → bewusste Abweichung von DTB-53 („native, kein Docker").
+- Schlummernden Bug gefixt: Schema-Lader `ddl.split(';')` zerschnitt einen Kommentar mit `;` → SQL-1064.
+  Echter Splitter `tests/_sql_splitter.py` (Spiegel #119); 2 Integrationstest-Lader umgestellt.
+- **Alle 4 MySql-Repos real-DB-verifiziert** (reading/alarm/assessment/audit); assessment+audit-Real-DB-
+  Lücke mit neuen Roundtrip-Tests geschlossen (`tests/test_assessment_repository_integration.py`).
+- **NF-09 append-only via Grants real bewiesen** (Least-Priv `alarm`: INSERT ok; UPDATE/DELETE auf
+  audit_log/reading/assessment → ERROR 1142). Gotcha: grants.sql `@'localhost'` → bei TCP `@'%'` nötig.
+- Volle Suite **546 grün** (mit DB-Env), ruff check+format clean. Setup-Anleitung:
+  `04-Source-code/docs/dev-db-setup.md`.
+**Offen (Lucas):** PR-Review/Merge des Branches; Jira reconcilen (DTB-53/54 sind Papier-„Done");
+E-Eintrag im Entscheidungslog (Docker→portable MariaDB); dauerhafter Team-/Demo-DB-Weg (M3/DTB-17/23).
+
 ## Woran wir gerade arbeiten
 - **DTB-13 (Plausibilität + Stale-Erkennung, Andreas/Petzold):** Umgesetzt auf
   `feat/dtb-13-stale-erkennung`. Stale (>120 s), Sprung (> 5 °C/min), Flatline (>= 15 min)
