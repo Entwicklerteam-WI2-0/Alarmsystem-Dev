@@ -57,6 +57,12 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
+      - name: Format-Check (ruff)
+        # Prueft Formatierung, ohne zu schreiben. ruff ist in requirements-dev.txt exakt
+        # gepinnt -> lokal == CI, damit dieser Gate deterministisch ist (kein spontanes
+        # Rot durch eine neue ruff-Version). Lokal beheben mit: ruff format .
+        run: ruff format --check .
+
       - name: Tests mit Coverage
         run: pytest --cov=src --cov-report=term-missing --cov-fail-under=80
 
