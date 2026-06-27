@@ -98,6 +98,27 @@ class Acknowledgement(_Base):
     ts: datetime
 
 
+class ReadingResponse(_Base):
+    """Wire-Schema fuer GET /v1/readings (DTB-34, Contract v1).
+
+    Spiegelt das interne Reading-Modell, erzwingt aber eine gueltige ID
+    (Readings aus der DB haben immer eine id). Trennung internes Modell /
+    aussen-Schnittstelle, analog AssessmentCurrent.
+    """
+
+    id: int
+    sensor_id: str
+    measured_at: datetime
+    surface_temp_c: float
+    air_temp_c: float
+    humidity_pct: float
+    pressure_hpa: float | None = None
+    status: SensorStatus
+    received_at: datetime
+    dew_point_c: float | None = None
+    source: Source
+
+
 class ThresholdSet(_Base):
     """Versionierter Satz parametrierbarer Schwellenwerte (NF-05)."""
 

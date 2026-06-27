@@ -9,7 +9,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 import pymysql
 from pymysql.cursors import DictCursor
@@ -96,6 +96,38 @@ class Repository(ABC):
         """
         ...
 
+    @abstractmethod
+    def get_between(
+        self,
+        sensor_id: str,
+        from_dt: datetime | None = None,
+        to_dt: datetime | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        order: Literal["asc", "desc"] = "desc",
+    ) -> Sequence[Reading]:
+        """Liefert Readings eines Sensors in einem Zeitfenster (inklusiv, UTC).
+
+        Args:
+            sensor_id: Sensor-ID, fuer die die Readings gesucht werden.
+            from_dt: Untere Zeitschranke (inklusiv) fuer measured_at. None = unbeschraenkt.
+            to_dt: Obere Zeitschranke (inklusiv) fuer measured_at. None = unbeschraenkt.
+            limit: Maximale Anzahl zurueckzugebender Readings (Default: 100).
+            offset: Anzahl zu ueberspringender Zeilen (Default: 0).
+            order: Sortierung nach measured_at ('asc' oder 'desc', Default: 'desc').
+
+        Returns:
+            Sequenz der Readings, sortiert nach `order`.
+            Leere Sequenz, wenn keine vorhanden sind.
+
+        Raises:
+            RepositoryError: Bei Datenbankfehlern.
+            ValueError: Wenn from_dt/to_dt nicht zeitzonenbewusst sind,
+                from_dt nach to_dt liegt, limit nicht positiv ist
+                oder offset negativ ist.
+        """
+        ...
+
 
 class InMemoryReadingRepository(Repository):
     """In-Memory-Double fuer Tests und lokale Laeufe (keine DB noetig).
@@ -135,6 +167,36 @@ class InMemoryReadingRepository(Repository):
         # ORDER BY measured_at ASC, id ASC).
         ordered = sorted(candidates, key=lambda r: (r.measured_at, r.id or 0))
         return tuple(ordered[:limit])
+
+    def get_between(
+        self,
+        sensor_id: str,
+        from_dt: datetime | None = None,
+        to_dt: datetime | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        order: Literal["asc", "desc"] = "desc",
+    ) -> Sequence[Reading]:
+        if from_dt is not None and from_dt.tzinfo is None:
+            raise ValueError("from_dt muss zeitzonenbewusst sein (UTC)")
+        if to_dt is not None and to_dt.tzinfo is None:
+            raise ValueError("to_dt muss zeitzonenbewusst sein (UTC)")
+        if from_dt is not None and to_dt is not None and from_dt > to_dt:
+            raise ValueError("from_dt darf nicht nach to_dt liegen")
+        if limit <= 0:
+            raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
+        if offset < 0:
+            raise ValueError(f"offset darf nicht negativ sein, erhalten: {offset}")
+
+        candidates = [r for r in self._items if r.sensor_id == sensor_id]
+        if from_dt is not None:
+            candidates = [r for r in candidates if r.measured_at >= from_dt]
+        if to_dt is not None:
+            candidates = [r for r in candidates if r.measured_at <= to_dt]
+
+        reverse = order == "desc"
+        ordered = sorted(candidates, key=lambda r: (r.measured_at, r.id or 0), reverse=reverse)
+        return tuple(ordered[offset : offset + limit])
 
 
 class ReadingRepository(Repository):
@@ -182,6 +244,14 @@ class ReadingRepository(Repository):
         WHERE sensor_id = %s AND measured_at >= %s
         ORDER BY measured_at ASC, id ASC
         LIMIT %s
+    """
+
+    _SELECT_SQL = """
+        SELECT
+            id, sensor_id, measured_at, received_at,
+            surface_temp_c, air_temp_c, humidity_pct,
+            pressure_hpa, dew_point_c, source, status
+        FROM reading
     """
 
     def __init__(self, connection: pymysql.Connection | None = None) -> None:
@@ -248,6 +318,53 @@ class ReadingRepository(Repository):
         if limit <= 0:
             raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
         return self._execute_read(self._SINCE_SQL, (sensor_id, since, limit))
+
+    def get_between(
+        self,
+        sensor_id: str,
+        from_dt: datetime | None = None,
+        to_dt: datetime | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        order: Literal["asc", "desc"] = "desc",
+    ) -> Sequence[Reading]:
+        """Liefert Readings eines Sensors in einem Zeitfenster (inklusiv, UTC).
+
+        Raises:
+            RepositoryError: Bei Datenbankfehlern.
+            ValueError: Bei ungueltigen Zeitstempeln, from_dt > to_dt,
+                nicht-positivem limit oder negativem offset.
+        """
+        if from_dt is not None and from_dt.tzinfo is None:
+            raise ValueError("from_dt muss zeitzonenbewusst sein (UTC)")
+        if to_dt is not None and to_dt.tzinfo is None:
+            raise ValueError("to_dt muss zeitzonenbewusst sein (UTC)")
+        if from_dt is not None and to_dt is not None and from_dt > to_dt:
+            raise ValueError("from_dt darf nicht nach to_dt liegen")
+        if limit <= 0:
+            raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
+        if offset < 0:
+            raise ValueError(f"offset darf nicht negativ sein, erhalten: {offset}")
+
+        conditions = ["sensor_id = %s"]
+        params: list[Any] = [sensor_id]
+        if from_dt is not None:
+            conditions.append("measured_at >= %s")
+            params.append(from_dt)
+        if to_dt is not None:
+            conditions.append("measured_at <= %s")
+            params.append(to_dt)
+
+        order_clause = (
+            "ORDER BY measured_at DESC, id DESC"
+            if order == "desc"
+            else "ORDER BY measured_at ASC, id ASC"
+        )
+        # WHERE-Fragmente sind feste Strings; nur Werte kommen aus params -> parametrisiert.
+        where_clause = " AND ".join(conditions)
+        sql = f"{self._SELECT_SQL} WHERE {where_clause} {order_clause} LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+        return self._execute_read(sql, tuple(params))
 
     def _execute_read(self, sql: str, params: tuple) -> Sequence[Reading]:
         """Fuehrt eine Lese-Query aus und mappt Zeilen auf Reading-Objekte."""
