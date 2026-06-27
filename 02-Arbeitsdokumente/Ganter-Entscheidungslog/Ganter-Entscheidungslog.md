@@ -1,6 +1,6 @@
 # Persönliches Entscheidungslog — Luca Ganter (G2)
 
-> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-25 · **Zeitraum:** 2026-06-23 bis 2026-06-25
+> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-27 · **Zeitraum:** 2026-06-23 bis 2026-06-27
 > **Autor:** Luca Ganter · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
@@ -190,3 +190,94 @@
   Coverage `assessment` 100 %, ruff sauber. **Direkt auf PR #79** (`feat/dtb-32-taupunkt-magnus`, `96bfb26`)
   ergänzt, nachdem die ältere Dublette #75 (geschlossen) den Fix nicht trug — #79 ist damit die vollständige,
   aktuelle DTB-32-Version.
+
+## 2026-06-27 — Flatline-Erkennung als Fenster-/Spannweiten-Logik im Poller (DTB-20)
+- **Kontext/Task:** DTB-20 (Sensor-Defekt-Erkennung Flatline/Sprung im G1-Poller verdrahten) · FA-04 ·
+  NF-01 (Fail-safe) · `Schwellenwerte.md §3` (Sensor defekt: Bereich/Flatline/Sprung/Timeout). `check_plausibility`
+  (Sprung + Zeitstempelordnung) existierte schon; meine Aufgabe war die **Flatline**-Erkennung zu ergänzen und
+  beides im Poller (`src/ingest/poller.py`) gegen den G1-Snapshot-Strom zu verdrahten.
+- **Entscheidung:** Flatline **nicht** als Vergleich „Reading vs. unmittelbarer Vorgänger", sondern als
+  **Zeitfenster + Spannweite**. Neue reine Funktion `check_flatline(window_start, current_measured_at,
+  temp_span_c, thresholds)`; den **Fenster-Zustand** (`window_start`, `temp_min`/`temp_max`) hält der Poller
+  **pro Sensor**. `check_plausibility` habe ich um den Flatline-Teil entschlackt (jetzt nur noch Sprung +
+  Zeitstempelordnung). `flatline_epsilon_c` von Dummy `0,01` auf **`0,15`** kalibriert.
+- **Begründung:** Das Design ist über **drei `santa-loop`-Runden** gereift — jede Runde fand einen echten Defekt,
+  den ich geschlossen habe:
+  - *Runde 1 (CRITICAL):* Die naive „Vergleich mit unmittelbarem Vorgänger"-Logik ist bei **30-s-Polling tot** —
+    der Abstand zwischen zwei aufeinanderfolgenden Polls erreicht nie die 15-min-Flatline-Dauer, die Erkennung
+    würde **nie feuern**. Lösung: ein **Fenster**. `window_start` = ältestes Reading, seit dem die Temperatur das
+    Band nicht verlassen hat; Flatline feuert, wenn `jetzt − window_start ≥ 15 min` **und** die Spannweite ≤ ε
+    bleibt. So werden ~30 Readings über 15 min ausgewertet, nicht zwei 15 min auseinanderliegende Punkte.
+  - *Runde 2 (CRITICAL):* Punkt-Anker + ε=0,01 → **Dither-Escape**: ein klemmender, leicht zappelnder Sensor
+    (±1 LSB) entkommt, weil der Abstand zu **einem** Ankerpunkt das schmale Band ständig überschreitet und das
+    Fenster zurücksetzt. Lösung: **Spannweite (max − min) über das Fenster** statt Abstand zu einem Punkt, **plus
+    ε an die Sensorauflösung kalibriert**. Der DS18B20 ist 12-bit (LSB 0,0625 °C); ±1-LSB-Rauschen ⇒ ε ≈ 2×LSB
+    ≈ **0,15** (vom Architekten autorisiert).
+  - *Schicht-Trennung:* `check_flatline` bleibt **rein/zustandslos** (in Isolation testbar), der Fenster-Zustand
+    gehört in den Poller, weil nur er den Messstrom **pro Sensor** hält — konsistent zu `_now()`/`_last_reading`.
+- **Alternativen:**
+  - **Reading-vs-Vorgänger (`delta_min`):** verworfen — Runde-1-CRITICAL, bei 30-s-Polling funktionslos.
+  - **Punkt-Anker + festes ε=0,01:** verworfen — Runde-2-CRITICAL, Dither-Escape eines zappelnden Stuck-Sensors.
+  - **Fenster-Zustand IN die reine Funktion legen:** verworfen — würde sie zustandsbehaftet und schwer testbar
+    machen und die Schichtgrenze (Berechnung vs. Stream-Haltung) durchbrechen.
+  - **ε frei wählen:** verworfen — Schwellen kommen aus der Quelle, nicht aus der Luft; ε ist an die
+    DS18B20-Auflösung gekoppelt und mit dem Architekten plausibilisiert. **Offen:** Bit-Auflösung mit G1 final
+    bestätigen (rein Config, falls abweichend).
+- **Ergebnis/Status:** umgesetzt + 3× `santa-loop`-geprüft, **beide CRITICALs geschlossen**. Tests decken die
+  Fenster-/Dither-/Recovery-Fälle ab, u. a. „30 flache Polls → flatline", „±1-LSB-Dither über 40 Polls →
+  flatline" und „Erholung, sobald die Temperatur sich real bewegt". **533 passed / 16 skipped**, Coverage
+  `poller.py` 99 % / `failsafe.py` 98 %, ruff sauber. Commit `3b78d56` auf `feat/dtb-20-defekt-erkennung`, auf
+  `origin/main` gemergt (`a9a7f4e`) und gepusht. PR/Merge offen (Lucas-Freigabe).
+
+## 2026-06-27 — `flatline_timeout_min` bei 15 belassen statt lockern (DTB-20, Option 1)
+- **Kontext/Task:** Aus der Fenster-Logik (Eintrag oben) folgt eine **Designspannung**, die ein `santa-loop`-Prüfer
+  in Runde 3 sauber benannte (**kein Bug**, Suite grün): ε=0,15 erzeugt eine Fehlalarm-Schwelle
+  `ε / Timeout = 0,15 / 15 min = 0,6 °C/h` — eine **gesunde**, real *langsam* driftende Oberflächentemperatur
+  (< 0,6 °C/h) bewegt sich über 15 min weniger als ε und wird als „eingefroren → `unknown`" verworfen.
+  Stuck-Sensor und Schleich-Drift sehen über das Fenster gleich aus. Der Architekt (Lucas) bestätigte den
+  Trade-off und stellte zwei Wege zur Wahl: **(1)** 15 lassen + akzeptieren, **(2)** Timeout 15 → 30 (Schwelle
+  dann 0,3 °C/h). NF-01 · K1 (Fehlalarm ↔ Auslassung) · `Schwellenwerte.md §3`.
+- **Entscheidung:** **Option 1** — `flatline_timeout_min` bei **15** belassen, den Fehlalarm bei gesunder
+  Schleich-Drift **bewusst akzeptieren** (er ist fail-safe-Richtung: nie GRÜN, nur `unknown`), den Trade-off
+  dokumentieren und ein **Tuning-Ticket** anlegen. Die eigentliche Wurzel (ε=0,15 vs. tatsächliche
+  Sensorauflösung) wird später mit den **G1-Finalwerten** kalibriert — **nicht** jetzt über die Fensterbreite
+  verbogen.
+- **Begründung:** `flatline_timeout_min` ist nicht nur die Fehlalarm-Schwelle, sondern auch die **Zeit, die ein
+  klemmender Sensor unentdeckt falsche Werte liefern darf**. Ein bei z. B. +2 °C eingefrorener Sensor schiebt
+  mit **frischen Zeitstempeln** (der Stale-Timeout greift nicht, weil `measured_at` weiterläuft) ein **falsches
+  GRÜN**, bis die Flatline-Erkennung nach `timeout` greift. Option 2 (30) **verdoppelt** dieses Zeitfenster — sie
+  verringert die *harmlose* Fehlersorte (false-`unknown`, fail-safe) und erkauft das mit der **doppelten Zeit in
+  der gefährlichen Richtung (falsches GRÜN)**. Das läuft gegen die Projekt-Maxime „lieber zehn Fehlalarme als ein
+  vereistes Flugzeug" (NF-01): sichere Fehler sind vorzuziehen ⇒ **kürzere** Flatline-Zeit ist das sichere
+  Verhalten. Zudem deckt sich **15** exakt mit `Schwellenwerte.md §3` („keine Änderung > 15 min") → **null
+  Doc-Drift**; Option 2 wäre eine Abweichung von der Schwellen-Quelle und müsste die Doc mitziehen. Die offene
+  empirische Frage — wie häufig reale Drift < 0,6 °C/h nahe 0 °C ist und ob das Alarm-Müdigkeit (K1) erzeugt —
+  lässt sich **vom Schreibtisch nicht** beantworten; der sichere Default ist **enge Erkennung jetzt +
+  Nachkalibrierung per Ticket mit echten Daten**.
+- **Alternativen:**
+  - **Option 2 (`flatline_timeout_min` = 30):** verworfen — verdoppelt die Zeit, in der ein Stuck-Sensor ein
+    falsches GRÜN halten kann (gefährliche Fehlerrichtung), und weicht von `Schwellenwerte.md §3` ab. Nur
+    verteidigbar, **wenn** häufige reale Schleich-Drift nahe 0 °C → Alarm-Müdigkeit belegt ist — das ist es nicht.
+  - **ε wieder senken (statt am Timeout zu drehen):** verworfen — öffnet den Dither-Escape (Runde-2-CRITICAL)
+    erneut.
+  - **Trade-off ignorieren / DTB-20 einfach „done" melden:** verworfen — sicherheitsrelevant; muss bewusst
+    entschieden **und** dokumentiert sein, bevor die Task abschließbar ist.
+- **Ergebnis/Status:** **Option 1 entschieden**; **keine Code-Änderung nötig** (Config steht bereits auf 15,
+  doc-konsistent). Ich habe mich dazu **bewusst mit dem Architekten (Lucas) beraten** und mich nach Abwägung der
+  beiden Fehlerrichtungen **bewusst für 15 statt 30 Minuten entschieden** — gerade *weil* es eine
+  **sicherheitsrelevante** Entscheidung ist: das kürzere Fenster erkennt einen klemmenden Sensor, der sonst mit
+  frischen Zeitstempeln ein falsches GRÜN halten könnte, doppelt so schnell. Den damit in Kauf genommenen
+  Fehlalarm bei gesunder Schleich-Drift (fail-safe-Richtung, nur `unknown`) trage ich bewusst mit. Trade-off hier
+  dokumentiert; **Tuning-Ticket angelegt** (**DTB-69**, Lucas zugewiesen — ε und `flatline_timeout_min` gegen die
+  finale G1-Sensorauflösung + reale Drift-Statistik nachkalibrieren; G1-Anfrage als Kommentar). Konsens mit dem
+  Architekten (Lucas).
+- **Offene Koordination (Stand 2026-06-27, ehrlich festgehalten):** Beim Sync auf `main` ist aufgefallen, dass
+  DTB-20 **parallel** über **PR #120** (`fix/dtb-20-flatline-epsilon-ds18b20`, bereits gemergt) gelöst wurde —
+  dort als reine **ε-Kalibrierung (0,15) + Dither-Regressionstest** auf der bestehenden DTB-13-Logik (Flatline
+  bleibt **in** `check_plausibility`, Vergleich gegen *ein* Vorgänger-Reading). Mein Branch geht weiter: Ich
+  ziehe die Flatline in eine **fenster-/spannweitenbasierte** `check_flatline` und verdrahte sie in den Poller —
+  weil der Single-Point-Vergleich bei 30-s-Polling nicht zuverlässig die 15-min-Dauer erreicht und gegen Dither
+  anfälliger ist. Dadurch bricht der von #120 gemergte Regressionstest `test_check_plausibility_lsb_dither_is_flatline`.
+  **Bewusste Entscheidung:** ich pushe meinen Code-Branch **nicht** eigenmächtig und überschreibe die fremde,
+  gemergte Arbeit nicht, sondern kläre zuerst mit Lucas + dem #120-Autor, welches Design gewinnt (mein Fenster
+  vs. mains Single-Point). Dieser Log-Eintrag dokumentiert meine Variante + Begründung als Diskussionsgrundlage.
