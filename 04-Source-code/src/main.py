@@ -51,6 +51,7 @@ from src.storage import (
     MySqlAssessmentRepository,
     MySqlAuditRepository,
     ReadingRepository,
+    Repository,
     RepositoryError,
 )
 from src.storage.alarm_repository import MySqlAlarmRepository
@@ -81,7 +82,10 @@ class Runtime:
     der Graph wird in `build_runtime` einmal zusammengebaut und danach nie mutiert."""
 
     thresholds: Thresholds
-    reading_repo: ReadingRepository
+    # ABC-Typ (nicht die konkrete ReadingRepository): konsistent mit assessment_repo/
+    # audit_repo und erlaubt In-Memory-Doubles (Tests/lokal) ohne Type-Bruch. build_runtime
+    # injiziert weiterhin die konkrete PyMySQL-ReadingRepository (DTB-41 Option A).
+    reading_repo: Repository
     assessment_repo: AssessmentRepository
     audit_repo: AuditRepository
     poller: Poller

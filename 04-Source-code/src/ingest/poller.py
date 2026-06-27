@@ -116,7 +116,11 @@ class Poller:
             reading.sensor_id,
             reading.measured_at.isoformat(),
         )
-        return reading
+        # Reading MIT vergebener id zurueckgeben (copy-on-write, keine Mutation): der
+        # Scheduler reicht diese Rueckgabe direkt an assess_reading weiter, das auf dem
+        # Gutfall-Pfad reading.id != None verlangt (DTB-28-Invariante, service.py). Ohne
+        # die id wuerde der Happy-Path des Schedulers mit ValueError brechen.
+        return reading.model_copy(update={"id": reading_id})
 
     def _is_g1_healthy(self) -> bool:
         """Ruft GET /health ab; gibt True bei 200 OK, sonst False."""
