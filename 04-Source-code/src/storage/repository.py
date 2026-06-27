@@ -97,6 +97,46 @@ class Repository(ABC):
         ...
 
 
+class InMemoryReadingRepository(Repository):
+    """In-Memory-Double fuer Tests und lokale Laeufe (keine DB noetig).
+
+    Gegenstueck zu InMemoryAssessmentRepository: vergibt fortlaufende IDs ab 1 und
+    legt eine Kopie MIT id ab (model_copy), damit das gespeicherte Objekt nicht mit
+    dem uebergebenen aliased (copy-on-write, keine Mutation). Spiegelt die Sortier-
+    Semantik der PyMySQL-Implementierung (ReadingRepository): get_latest absteigend
+    nach (measured_at, id), get_since aufsteigend.
+    """
+
+    def __init__(self) -> None:
+        self._items: list[Reading] = []
+
+    def save(self, reading: Reading) -> int:
+        new_id = len(self._items) + 1
+        # Kopie MIT id ablegen; das uebergebene Original bleibt unveraendert.
+        self._items.append(reading.model_copy(update={"id": new_id}))
+        return new_id
+
+    def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+        if limit <= 0:
+            raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
+        candidates = [r for r in self._items if r.sensor_id == sensor_id]
+        # Absteigend nach measured_at, bei Gleichstand nach id (analog _LATEST_SQL:
+        # ORDER BY measured_at DESC, id DESC).
+        ordered = sorted(candidates, key=lambda r: (r.measured_at, r.id or 0), reverse=True)
+        return tuple(ordered[:limit])
+
+    def get_since(self, sensor_id: str, since: datetime, limit: int = 1000) -> Sequence[Reading]:
+        if since.tzinfo is None:
+            raise ValueError("since muss zeitzonenbewusst sein (UTC)")
+        if limit <= 0:
+            raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
+        candidates = [r for r in self._items if r.sensor_id == sensor_id and r.measured_at >= since]
+        # Aufsteigend nach measured_at, bei Gleichstand nach id (analog _SINCE_SQL:
+        # ORDER BY measured_at ASC, id ASC).
+        ordered = sorted(candidates, key=lambda r: (r.measured_at, r.id or 0))
+        return tuple(ordered[:limit])
+
+
 class ReadingRepository(Repository):
     """PyMySQL-Implementierung des Reading-Repositories.
 

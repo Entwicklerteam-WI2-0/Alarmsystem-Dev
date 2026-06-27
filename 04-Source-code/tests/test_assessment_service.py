@@ -55,9 +55,7 @@ def _reading(
 
 def _make_service(thresholds) -> AssessmentService:
     """Service mit frischen In-Memory-Repos (fuer Tests ohne Repo-Inspektion)."""
-    return AssessmentService(
-        thresholds, InMemoryAssessmentRepository(), InMemoryAuditRepository()
-    )
+    return AssessmentService(thresholds, InMemoryAssessmentRepository(), InMemoryAuditRepository())
 
 
 # ---------------------------------------------------------------------------

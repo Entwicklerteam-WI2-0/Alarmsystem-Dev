@@ -8,6 +8,7 @@ Enabler für das Bewertungsmodul DTB-38. DB-frei (NF-05; DB-Secrets gehören NIC
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,17 @@ DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "threshol
 
 class ConfigError(Exception):
     """Konfiguration fehlt oder ist ungültig — bewusst lautes Scheitern statt stiller Defaults."""
+
+
+# Obergrenze für Hysterese-Zeitkonstanten (Sekunden). Ein absurd großer Wert würde sonst
+# entweder `timedelta` sprengen (OverflowError beim Engine-Bau) oder den Alarm faktisch nie
+# auslösen (stiller Under-Alarm). 24 h ist für jede Vereisungs-Entprellung mehr als genug.
+_MAX_ZEIT_S = 86_400.0
+
+# Plausibilitäts-Obergrenze für die Rückstufungs-Marge (°C/K). Ein zu großer Deadband würde
+# eine Rückstufung faktisch nie bestätigen (Anzeige bliebe dauerhaft auf der höheren Stufe).
+# Generös bemessen, fängt Tippfehler ab (NF-05-Geist); der reale G1-Wert liegt weit darunter.
+_MAX_UNDERSHOOT_C = 10.0
 
 
 @dataclass(frozen=True)
@@ -36,6 +48,81 @@ class PrognoseSchwellen:
     horizon_min: float  # Prognosehorizont in Minuten (FA-06: 30)
     min_points: int  # Mindestanzahl Stuetzstellen fuer eine Regression (>= 2)
     max_readings_limit: int  # Obergrenze fuer gelesene Historien-Readings (DB-Last)
+
+
+@dataclass(frozen=True)
+class HystereseParameter:
+    """Entprellung/Hysterese der Alarm-Generierung (DTB-27, Schwellenwerte.md §2).
+
+    Zeitkonstanten in Sekunden, Temperatur-Marge in °C. Gegen Chattering (ISA-18.2):
+    Hochstufung (Auslösen) erst nach `on_delay_s` anhaltender Bedingung — von der
+    Engine umgesetzt. `max_continuity_gap_s` begrenzt, wie lange eine Unsicherheits-
+    /Stale-Phase (UNKNOWN) die laufende Eskalation einfrieren darf, ohne die Kontinuität
+    zu brechen (Default = Stale-Timeout 120 s); danach ist ein frischer On-Delay nötig.
+    Invariante: `max_continuity_gap_s >= on_delay_s` (erzwungen) UND
+    `>= betrieb.poll_interval_s` (seit P0-a in der Config -> querschnittlich von `Thresholds`
+    erzwungen) — sonst bricht jeder Poll die Kontinuität und es feuert nie ein Alarm.
+    Die Rückstufung (`downgrade_undershoot_c` um 0,5 °C unterschritten UND
+    `downgrade_stable_s` stabil) gehört NICHT zum Alarm-On-Delay: sie ist eine
+    temperaturgekoppelte **Anzeige-Hysterese** (Stabilisierung der gemeldeten Risikostufe
+    für die Ampel) — umgesetzt in `src/alarm/riskhysterese.py` (`RiskHysterese`, Konsument
+    DTB-43). Damit hat JEDE Hysterese-Zeitkonstante genau einen Wohnort. KEIN Auto-Clear (RB-01).
+    """
+
+    on_delay_s: float
+    max_continuity_gap_s: float
+    downgrade_stable_s: float  # Rückstufungs-Stabilität -> RiskHysterese (Anzeige)
+    downgrade_undershoot_c: float  # Rückstufungs-Deadband -> RiskHysterese (Anzeige)
+
+    def __post_init__(self) -> None:
+        # Ungültige Werte würden den Debounce aushebeln (Sicherheitsparameter still
+        # ignoriert) -> laut scheitern statt klaglos laden. NaN/inf sind besonders
+        # tückisch: `nan < 0` ist False, also separat über isfinite abfangen.
+        for feld, wert in (
+            ("on_delay_s", self.on_delay_s),
+            ("max_continuity_gap_s", self.max_continuity_gap_s),
+            ("downgrade_stable_s", self.downgrade_stable_s),
+            ("downgrade_undershoot_c", self.downgrade_undershoot_c),
+        ):
+            # bool ist ein int-Subtyp -- als Zeit/Marge nicht zulassen (Defense-in-Depth
+            # zum Loader, der bool ebenfalls ablehnt; greift bei direkter Konstruktion).
+            if isinstance(wert, bool):
+                raise ConfigError(
+                    f"Hysterese-Parameter '{feld}' darf kein bool sein, ist aber {wert!r}"
+                )
+            if not math.isfinite(wert):
+                raise ConfigError(
+                    f"Hysterese-Parameter '{feld}' muss endlich sein, ist aber {wert!r}"
+                )
+            if wert < 0:
+                raise ConfigError(f"Hysterese-Parameter '{feld}' muss >= 0 sein, ist aber {wert!r}")
+        # Obergrenze für die Zeitkonstanten (Sekunden): absurd große Werte sprengen timedelta
+        # oder deaktivieren den Alarm faktisch.
+        for feld, wert in (
+            ("on_delay_s", self.on_delay_s),
+            ("max_continuity_gap_s", self.max_continuity_gap_s),
+            ("downgrade_stable_s", self.downgrade_stable_s),
+        ):
+            if wert > _MAX_ZEIT_S:
+                raise ConfigError(
+                    f"Hysterese-Parameter '{feld}' muss <= {_MAX_ZEIT_S} s (24 h) sein, "
+                    f"ist aber {wert!r}"
+                )
+        # Plausibilitäts-Obergrenze für die °C-Marge: ein zu großer Deadband würde eine
+        # Rückstufung faktisch nie bestätigen (Anzeige bliebe dauerhaft auf der höheren Stufe).
+        if self.downgrade_undershoot_c > _MAX_UNDERSHOOT_C:
+            raise ConfigError(
+                f"Hysterese-Parameter 'downgrade_undershoot_c' muss <= {_MAX_UNDERSHOOT_C} °C "
+                f"sein, ist aber {self.downgrade_undershoot_c!r}"
+            )
+        # Cross-Field: die Kontinuitäts-Lücke muss mindestens den On-Delay abdecken —
+        # sonst bricht jeder Poll die Kontinuität, der On-Delay akkumuliert nie und es
+        # feuert NIE ein Alarm (Under-Alarm). Laut scheitern statt still nie alarmieren.
+        if self.max_continuity_gap_s < self.on_delay_s:
+            raise ConfigError(
+                "Hysterese-Parameter 'max_continuity_gap_s' muss >= 'on_delay_s' sein, ist "
+                f"aber {self.max_continuity_gap_s!r} < {self.on_delay_s!r}"
+            )
 
 
 @dataclass(frozen=True)
@@ -59,22 +146,81 @@ class PlausibilitaetSchwellen:
 
 
 @dataclass(frozen=True)
+class BetriebParameter:
+    """Laufzeit-/Betriebsparameter (P0-a): Poll-Kadenz des Schedulers.
+
+    `poll_interval_s` = Intervall, in dem der Scheduler G1 pollt und neu bewertet (Contract:
+    G1 ≤ 30 s). Parametrierbar (NF-05), nicht hardcodiert. Muss > 0 und endlich sein; die
+    Kopplung an die Alarm-Hysterese (poll_interval_s <= max_continuity_gap_s) prüft
+    `Thresholds` querschnittlich.
+    """
+
+    poll_interval_s: float
+
+    def __post_init__(self) -> None:
+        if isinstance(self.poll_interval_s, bool):
+            raise ConfigError("Betriebs-Parameter 'poll_interval_s' darf kein bool sein")
+        if not math.isfinite(self.poll_interval_s):
+            raise ConfigError(
+                f"Betriebs-Parameter 'poll_interval_s' muss endlich sein, "
+                f"ist aber {self.poll_interval_s!r}"
+            )
+        if self.poll_interval_s <= 0:
+            raise ConfigError(
+                f"Betriebs-Parameter 'poll_interval_s' muss > 0 sein, "
+                f"ist aber {self.poll_interval_s!r}"
+            )
+        if self.poll_interval_s > _MAX_ZEIT_S:
+            raise ConfigError(
+                f"Betriebs-Parameter 'poll_interval_s' muss <= {_MAX_ZEIT_S} s sein, "
+                f"ist aber {self.poll_interval_s!r}"
+            )
+
+
+@dataclass(frozen=True)
 class Thresholds:
     vereisung: VereisungsSchwellen
     prognose: PrognoseSchwellen
+    hysterese: HystereseParameter
     datenqualitaet: DatenqualitaetSchwellen
     plausibilitaet: PlausibilitaetSchwellen
+    betrieb: BetriebParameter
+
+    def __post_init__(self) -> None:
+        # Cross-Section (NF-01): pollt das System langsamer als die Kontinuitäts-Lücke der
+        # Alarm-Hysterese, bricht jeder Poll die Eskalations-Kontinuität -> es feuert nie ein
+        # Alarm (stiller Under-Alarm). Erst mit poll_interval_s in der Config (P0-a) ist dieser
+        # zuvor unprüfbare Invariant (HystereseParameter-Doc) erzwingbar.
+        if self.betrieb.poll_interval_s > self.hysterese.max_continuity_gap_s:
+            raise ConfigError(
+                "Config-Inkonsistenz: betrieb.poll_interval_s "
+                f"({self.betrieb.poll_interval_s!r}) > hysterese.max_continuity_gap_s "
+                f"({self.hysterese.max_continuity_gap_s!r}) -> Alarm-Kontinuität bricht je Poll"
+            )
+        # Cross-Section (NF-01): max_continuity_gap_s muss mindestens eine Stale-Phase (bis
+        # stale_timeout_s) abdecken, damit eine einzelne Stale-Episode die Eskalations-
+        # Kontinuität nicht bricht. (Ein REALER Ausfall, dessen Lücke max_gap übersteigt, setzt
+        # den On-Delay bewusst zurück -> K1-Anti-Chattering, fail-safe: Anzeige bleibt UNKNOWN,
+        # nie GRÜN. Diese Grenze bindet die Config-Größe, nicht die reale Ausfalldauer.)
+        if self.hysterese.max_continuity_gap_s < self.datenqualitaet.stale_timeout_s:
+            raise ConfigError(
+                "Config-Inkonsistenz: hysterese.max_continuity_gap_s "
+                f"({self.hysterese.max_continuity_gap_s!r}) < datenqualitaet.stale_timeout_s "
+                f"({self.datenqualitaet.stale_timeout_s!r}) -> Stale-Phase bricht Alarm-Kontinuität"
+            )
 
 
 # Pflicht-Abschnitte der Config und ihr jeweiliger Zieltyp.
-# Bewusst auf die echten Vereisungs-Schwellen begrenzt (Enabler für DTB-38).
-# Weitere Parameter (Taupunkt-Konstanten, Hysterese, Datenstatus) gehören in ihre
-# eigenen Tasks und werden dort von den jeweils Zuständigen ergänzt.
+# Vereisungs-/Prognose-Schwellen (DTB-38) + Hysterese-Parameter (DTB-27) + Datenqualitaet/
+# Plausibilitaet (DTB-13/58/60). Taupunkt-Konstanten gehören in ihre eigenen Tasks und
+# werden dort von den jeweils Zuständigen ergänzt.
 _SECTIONS: dict[str, type[Any]] = {
     "vereisung": VereisungsSchwellen,
     "prognose": PrognoseSchwellen,
+    "hysterese": HystereseParameter,
     "datenqualitaet": DatenqualitaetSchwellen,
     "plausibilitaet": PlausibilitaetSchwellen,
+    "betrieb": BetriebParameter,
 }
 
 
@@ -101,7 +247,7 @@ def load_thresholds(path: Path | str | None = None) -> Thresholds:
     return Thresholds(**sektionen)
 
 
-def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
+def _baue_sektion[T](name: str, cls: type[T], raw: dict[str, Any]) -> T:
     """Validiert Struktur + numerische Werte eines Abschnitts und baut das Dataclass-Objekt."""
     if name not in raw:
         raise ConfigError(f"Pflicht-Abschnitt fehlt in Konfiguration: '{name}'")
@@ -114,11 +260,15 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
     fehlend = erwartet - daten.keys()
     if fehlend:
         raise ConfigError(f"Abschnitt '{name}': fehlende Pflicht-Schlüssel {sorted(fehlend)}")
-    # Ueberzaehlige Keys (z. B. Tippfehler 'min_poitns') wuerden sonst still wirkungslos
-    # bleiben -> laut scheitern, damit eine falsch geschriebene Schwelle auffaellt (NF-05).
-    unbekannt = daten.keys() - erwartet
-    if unbekannt:
-        raise ConfigError(f"Abschnitt '{name}': unbekannte Schlüssel {sorted(unbekannt)}")
+    # Unbekannte/vertippte Schlüssel laut ablehnen (NF-05: eine Safety-Config darf einen
+    # vertippten Key nicht still verwerfen -> Operator glaubt sonst, eine Schwelle geändert
+    # zu haben, der Default bleibt aktiv). Spiegelt extra='forbid' der Pydantic-Modelle.
+    # Ausnahme: '_'-praefixierte Keys sind Kommentar-/Metadaten-Konvention (wie auf Top-Level)
+    # und werden auch im Abschnitt toleriert; echte Schwellen-Keys beginnen nie mit '_', der
+    # Tippfehler-Schutz fuer reale Keys (z. B. 'off_delay_s') bleibt erhalten.
+    unerwartet = {k for k in daten.keys() - erwartet if not k.startswith("_")}
+    if unerwartet:
+        raise ConfigError(f"Abschnitt '{name}': unbekannte Schlüssel {sorted(unerwartet)}")
     werte = {feld: daten[feld] for feld in erwartet}
     for feld, wert in werte.items():
         # bool ist in Python ein int-Subtyp, soll aber keine gültige Schwelle sein.
@@ -126,6 +276,13 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict) -> T:
             raise ConfigError(
                 f"Abschnitt '{name}', Schlüssel '{feld}': Schwellenwert muss eine Zahl sein, "
                 f"ist aber {type(wert).__name__} ({wert!r})"
+            )
+        # NaN/inf unterlaufen jeden Vergleich (NaN < x ist immer False -> fail-open in der
+        # Bewertung) -> für ALLE Schwellen-Sektionen ablehnen, nicht nur Hysterese.
+        if not math.isfinite(wert):
+            raise ConfigError(
+                f"Abschnitt '{name}', Schlüssel '{feld}': Schwellwert muss endlich sein, "
+                f"ist aber {wert!r}"
             )
 
     obj = cls(**werte)
