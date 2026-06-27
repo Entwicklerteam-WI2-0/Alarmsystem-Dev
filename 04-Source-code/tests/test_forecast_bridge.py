@@ -14,19 +14,25 @@ import pytest
 from src.config.loader import load_thresholds
 from src.forecast.bridge import compute_forecast_for_cycle
 from src.model.schemas import Reading
-from src.storage.repository import RepositoryError
+from src.storage.repository import Repository, RepositoryError
 
 _PROGNOSE = load_thresholds().prognose
 _NOW = datetime(2026, 6, 27, 12, 0, 0, tzinfo=UTC)
 
 
-class _FakeReadingRepo:
+class _FakeReadingRepo(Repository):
     """Minimaler Repo-Stub mit get_since; merkt sich die Aufrufe."""
 
     def __init__(self, readings: Sequence[Reading], *, raises: bool = False) -> None:
         self._readings = readings
         self._raises = raises
         self.calls: list[tuple[str, datetime, int]] = []
+
+    def save(self, reading: Reading) -> int:
+        raise NotImplementedError
+
+    def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+        raise NotImplementedError
 
     def get_since(self, sensor_id: str, since: datetime, limit: int = 1000) -> Sequence[Reading]:
         self.calls.append((sensor_id, since, limit))

@@ -147,7 +147,7 @@ WHERE TABLE_SCHEMA = DATABASE()
 
 SET @add_forecast_surface_temp_col_sql = IF(
     @forecast_surface_temp_col_exists = 0,
-    'ALTER TABLE assessment ADD COLUMN forecast_surface_temp_c DOUBLE NULL COMMENT \'DTB-33/FA-06: 30-min-Prognose-T_s (Nachvollziehbarkeit FA-05)\'',
+    'ALTER TABLE assessment ADD COLUMN forecast_surface_temp_c DOUBLE NULL',
     'SELECT 1'
 );
 

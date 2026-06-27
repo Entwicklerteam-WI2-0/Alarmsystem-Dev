@@ -1,6 +1,7 @@
 """Minimaler SQL-Statement-Splitter fuer migrations/schema.sql.
 
-Beruecksichtigt einfache SQL-String-Literale (', ") sowie Zeilen- und Blockkommentare.
+Beruecksichtigt einfache SQL-String-Literale (', ") sowie Zeilenkommentare
+(-- und MySQL-spezifisch #) und Blockkommentare (/* */).
 DELIMITER-Aenderungen werden NICHT unterstuetzt.
 
 Notwendig, seit schema.sql Praeparde-Statements (PREPARE/EXECUTE/DEALLOCATE) enthaelt,
@@ -55,6 +56,9 @@ def split_sql_statements(ddl: str) -> list[str]:
                 current.append(char)
                 current.append(next_char)
                 i += 1
+            elif char == "#":
+                in_line_comment = True
+                current.append(char)
             elif char in ("'", '"'):
                 in_string = True
                 string_char = char

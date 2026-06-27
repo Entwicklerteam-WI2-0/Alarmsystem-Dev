@@ -32,6 +32,13 @@ class TestSplitSqlStatements:
             "-- das ist ein; kommentar\nSELECT 2",
         ]
 
+    def test_ignoriert_semicolon_in_mysql_hash_kommentar(self) -> None:
+        ddl = "SELECT 1; # das ist ein; kommentar\nSELECT 2;"
+        assert split_sql_statements(ddl) == [
+            "SELECT 1",
+            "# das ist ein; kommentar\nSELECT 2",
+        ]
+
     def test_ignoriert_semicolon_in_blockkommentar(self) -> None:
         ddl = "SELECT 1; /* a; b */ SELECT 2;"
         assert split_sql_statements(ddl) == [
