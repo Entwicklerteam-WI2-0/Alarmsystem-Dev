@@ -18,6 +18,7 @@ from src.api.exceptions import RuntimeNotReadyError
 
 if TYPE_CHECKING:
     from src.alarm.service import AlarmGenerator
+    from src.api.broadcaster import AlarmBroadcaster
     from src.assessment import AssessmentService
     from src.config.loader import Thresholds
     from src.ingest.poller import Poller
@@ -39,6 +40,9 @@ class Runtime:
     poller: Poller
     service: AssessmentService
     alarm_generator: AlarmGenerator
+    # DTB-61: In-Process Pub/Sub fuer den Live-Alarm-Stream. run_scheduler (Producer) pusht
+    # ausgeloeste Alarme hinein, GET /v1/alarms/stream (Consumer) abonniert daraus.
+    alarm_broadcaster: AlarmBroadcaster
 
 
 def get_runtime(request: Request) -> Runtime:

@@ -52,11 +52,16 @@ class AlarmGenerator:
         self._alarm_repo = alarm_repo
         self._audit_repo = audit_repo
 
-    def verarbeite(self, risk_level: RiskLevel, assessment_id: int, jetzt: datetime) -> int | None:
+    def verarbeite(
+        self, risk_level: RiskLevel, assessment_id: int, jetzt: datetime
+    ) -> Alarm | None:
         """Verarbeitet eine Bewertung; persistiert + auditiert einen ausgelösten Alarm.
 
         Returns:
-            Die vergebene Alarm-ID, wenn ein Alarm ausgelöst und gespeichert wurde; sonst `None`.
+            Den persistierten `Alarm` (mit vergebener `id`), wenn ein Alarm ausgelöst und
+            gespeichert wurde; sonst `None`. Den vollständigen Alarm (statt nur der id)
+            braucht der Live-Push-Seam (DTB-61): `run_scheduler` reicht ihn an den
+            `AlarmBroadcaster` weiter, der ihn als SSE-Event an G3 streamt.
 
         Raises:
             ValueError: wenn `jetzt` kein zeitzonenbewusstes Datetime ist (Contract §2a D;
@@ -113,4 +118,6 @@ class AlarmGenerator:
             raise AuditError(
                 "Alarm gespeichert, aber Audit-Eintrag fehlgeschlagen", alarm_id=alarm_id
             ) from exc
-        return alarm_id
+        # Persistierten Alarm MIT vergebener id zurueckgeben (Push-Seam DTB-61); das Original
+        # bleibt unangetastet (model_copy), die zurueckgegebene Kopie traegt die DB-id.
+        return alarm.model_copy(update={"id": alarm_id})

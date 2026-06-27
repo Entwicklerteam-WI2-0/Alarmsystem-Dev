@@ -40,6 +40,7 @@ from fastapi.responses import JSONResponse
 
 from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator, AuditError
+from src.api.broadcaster import AlarmBroadcaster
 from src.api.exceptions import RuntimeNotReadyError
 from src.api.responses import NO_STORE_HEADERS, service_unavailable
 from src.api.runtime import Runtime, get_runtime
@@ -47,7 +48,7 @@ from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
 from src.config.loader import load_thresholds
 from src.ingest.poller import Poller
-from src.model.schemas import AssessmentCurrent, Error, Reading
+from src.model.schemas import Alarm, AssessmentCurrent, Error, Reading
 from src.storage import (
     MySqlAssessmentRepository,
     MySqlAuditRepository,
@@ -92,6 +93,9 @@ def build_runtime() -> Runtime:
     alarm_generator = AlarmGenerator(
         AlarmHysterese(thresholds.hysterese), MySqlAlarmRepository(), audit_repo
     )
+    # DTB-61: ein Broadcaster pro laufende Instanz — geteilt zwischen run_scheduler (Producer)
+    # und GET /v1/alarms/stream (Consumer). Haelt nur In-Memory-Abos, kontaktiert nichts.
+    alarm_broadcaster = AlarmBroadcaster()
     return Runtime(
         thresholds=thresholds,
         reading_repo=reading_repo,
@@ -100,6 +104,7 @@ def build_runtime() -> Runtime:
         poller=poller,
         service=service,
         alarm_generator=alarm_generator,
+        alarm_broadcaster=alarm_broadcaster,
     )
 
 
@@ -108,13 +113,17 @@ def run_assessment_cycle(
     alarm_generator: AlarmGenerator,
     reading: Reading | None,
     now: datetime,
-) -> None:
+) -> Alarm | None:
     """Ein vollständiger Zyklus: Bewertung (DTB-64) -> Alarm-Generierung (DTB-27).
 
     `assess_reading` erzwingt das Laufzeit-NF-01 (stale/fault/keine Daten -> unknown) und
     liefert das persistierte Assessment; dessen `risk_level` speist die Alarm-Generierung.
     Bei `unknown` löst der Generator keinen Alarm aus und die On-Delay-Hysterese friert ein —
     die in DTB-27 dokumentierte Vorbedingung (Stale -> UNKNOWN, nicht GELB) erfüllt DTB-64 hier.
+
+    Returns:
+        Den ausgelösten `Alarm` (mit id), wenn dieser Zyklus einen Alarm erzeugt hat; sonst
+        `None`. `run_scheduler` reicht ihn an den `AlarmBroadcaster` weiter (DTB-61, Live-Push).
 
     Bewusst KEIN eigenes try/except: Persistenz-/Audit-Fehler propagieren in die Fail-safe-
     Schleife des Schedulers (NF-01: ein Zyklus-Fehler beendet den Betrieb nicht).
@@ -127,7 +136,7 @@ def run_assessment_cycle(
         raise ValueError(
             "assessment.id ist None trotz Persistenz (assess_reading-Invariante verletzt)"
         )
-    alarm_generator.verarbeite(assessment.risk_level, assessment.id, now)
+    return alarm_generator.verarbeite(assessment.risk_level, assessment.id, now)
 
 
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
@@ -156,13 +165,21 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                 )
                 now = last_now
             last_now = now
-            await asyncio.to_thread(
+            raised = await asyncio.to_thread(
                 run_assessment_cycle,
                 runtime.service,
                 runtime.alarm_generator,
                 reading,
                 now,
             )
+            if raised is not None:
+                # DTB-61: Live-Push BEWUSST auf dem Event-Loop (nicht im to_thread-Worker) ->
+                # der Broadcaster greift direkt auf asyncio.Queues zu, das ist nur loop-seitig
+                # safe (kein cross-thread put). publish ist best-effort und wirft nie (NF-01).
+                # Hinweis: Auf dem AuditError-Pfad (Alarm gespeichert, Audit fehlgeschlagen)
+                # wird hier NICHT gepusht (verarbeite wirft, kein Return) -> G3 bekommt den
+                # Alarm ueber den Resync GET /v1/alarms (DTB-31, E-37).
+                runtime.alarm_broadcaster.publish(raised)
         except AuditError as exc:
             # Alarm IST gespeichert + Engine aktiv (KEIN Re-Arm), aber OHNE Audit-Trail -> ERROR
             # (nicht WARNING): ein persistierter Alarm ohne Audit-Eintrag ist eine Luecke in der

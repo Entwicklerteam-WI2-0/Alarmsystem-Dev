@@ -8,15 +8,19 @@ Belegt: anhaltendes ORANGE löst nach `on_delay_s` genau einen (entprellten) Ala
 eine UNKNOWN-Lage (Sensor fault -> Fail-safe) löst keinen Alarm aus (NF-01).
 """
 
+import asyncio
+import contextlib
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator
+from src.api.broadcaster import AlarmBroadcaster
 from src.assessment.service import AssessmentService
 from src.config.loader import load_thresholds
-from src.main import build_runtime, run_assessment_cycle
-from src.model.enums import AlarmSeverity, RiskLevel, SensorStatus
-from src.model.schemas import Reading
+from src.main import build_runtime, run_assessment_cycle, run_scheduler
+from src.model.enums import AlarmSeverity, AlarmState, RiskLevel, SensorStatus
+from src.model.schemas import Alarm, Reading
 from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
@@ -189,3 +193,104 @@ def test_build_runtime_verdrahtet_alarm_generator():
     assert isinstance(runtime.alarm_generator, AlarmGenerator)
     # Teilt das Audit-Log mit dem AssessmentService (eine gemeinsame Append-only-Quelle).
     assert runtime.alarm_generator._audit_repo is runtime.audit_repo  # noqa: SLF001
+
+
+def test_build_runtime_verdrahtet_alarm_broadcaster():
+    # DTB-61: der Live-Push-Broadcaster haengt im Runtime, damit run_scheduler (Producer) und
+    # GET /v1/alarms/stream (Consumer) dieselbe Instanz teilen.
+    runtime = build_runtime()
+    assert isinstance(runtime.alarm_broadcaster, AlarmBroadcaster)
+
+
+# ---------------------------------------------------------------------------
+# run_assessment_cycle gibt den ausgeloesten Alarm zurueck (Push-Seam DTB-61)
+# ---------------------------------------------------------------------------
+
+
+def test_zyklus_gibt_ausgeloesten_alarm_zurueck():
+    service, generator, _, _ = _wiring()
+
+    # Erste ORANGE-Beobachtung: On-Delay startet -> kein Alarm -> None.
+    assert run_assessment_cycle(service, generator, _orange_reading(_T0, rid=1), _T0) is None
+
+    # 60 s später anhaltend ORANGE: Alarm feuert -> der Zyklus reicht ihn (mit id) durch,
+    # damit run_scheduler ihn an den Broadcaster pushen kann.
+    t60 = _T0 + timedelta(seconds=60)
+    raised = run_assessment_cycle(service, generator, _orange_reading(t60, rid=2), t60)
+    assert raised is not None
+    assert raised.id is not None
+    assert raised.severity is AlarmSeverity.WARNING
+
+
+def test_zyklus_ohne_alarm_gibt_none_zurueck():
+    service, generator, _, _ = _wiring()
+    # UNKNOWN (Sensor fault) -> kein Alarm -> None (nichts zu pushen).
+    assert (
+        run_assessment_cycle(
+            service, generator, _orange_reading(_T0, rid=1, status=SensorStatus.FAULT), _T0
+        )
+        is None
+    )
+
+
+# ---------------------------------------------------------------------------
+# run_scheduler pusht den ausgeloesten Alarm an den Broadcaster (DTB-61)
+# ---------------------------------------------------------------------------
+
+
+def test_scheduler_pusht_ausgeloesten_alarm_an_broadcaster(monkeypatch):
+    raised = Alarm(
+        id=99,
+        assessment_id=1,
+        severity=AlarmSeverity.CRITICAL,
+        raised_at=_T0,
+        state=AlarmState.ACTIVE,
+    )
+
+    async def scenario() -> None:
+        broadcaster = AlarmBroadcaster()
+        runtime = SimpleNamespace(
+            poller=SimpleNamespace(poll=lambda: None),  # Reading-Inhalt egal (cycle gepatcht)
+            service=object(),
+            alarm_generator=object(),
+            alarm_broadcaster=broadcaster,
+        )
+        # Den Zyklus auf einen festen Alarm patchen -> der Scheduler-Test prueft NUR die
+        # Push-Verdrahtung (run_assessment_cycle ist separat getestet), ohne On-Delay-Timing.
+        monkeypatch.setattr("src.main.run_assessment_cycle", lambda *a, **k: raised)
+
+        async with broadcaster.subscribe() as queue:
+            task = asyncio.create_task(run_scheduler(runtime, interval_s=0.01))
+            try:
+                got = await asyncio.wait_for(queue.get(), timeout=1)
+            finally:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+        assert got.id == 99
+        assert got.severity is AlarmSeverity.CRITICAL
+
+    asyncio.run(scenario())
+
+
+def test_scheduler_pusht_nicht_wenn_kein_alarm(monkeypatch):
+    async def scenario() -> None:
+        broadcaster = AlarmBroadcaster()
+        runtime = SimpleNamespace(
+            poller=SimpleNamespace(poll=lambda: None),
+            service=object(),
+            alarm_generator=object(),
+            alarm_broadcaster=broadcaster,
+        )
+        # Kein Alarm im Zyklus -> kein publish -> der Abo-Queue bleibt leer.
+        monkeypatch.setattr("src.main.run_assessment_cycle", lambda *a, **k: None)
+
+        async with broadcaster.subscribe() as queue:
+            task = asyncio.create_task(run_scheduler(runtime, interval_s=0.01))
+            await asyncio.sleep(0.05)  # mehrere Zyklen laufen lassen
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            assert queue.empty()
+
+    asyncio.run(scenario())

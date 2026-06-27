@@ -1,0 +1,122 @@
+"""In-Process Pub/Sub + SSE-Frame-Formatierung fuer den Live-Alarm-Stream (DTB-61, E-37).
+
+`GET /v1/alarms/stream` (api/v1.py) pusht Alarme live an G3, statt sie pollen zu lassen.
+Der Bewertungszyklus (`run_scheduler` in main.py, auf dem Event-Loop) ruft bei jedem neu
+ausgeloesten Alarm `AlarmBroadcaster.publish(alarm)`; jeder offene SSE-Client haelt ueber
+`subscribe()` ein Abo (eine `asyncio.Queue`) und konsumiert daraus via `sse_alarm_frames`.
+
+Bewusste Scope-Grenzen:
+- **Kein Replay-Puffer.** Nach einem Reconnect (Last-Event-ID) macht G3 den Resync ueber
+  `GET /v1/alarms` (DTB-31, Sicherheits-Backstop, E-37) — der Stream ist Live-Push, nicht
+  die Quelle der Wahrheit. Ein verpasstes Event holt der Resync, nicht der Stream.
+- **Bounded Queue + Drop-oldest.** Ein langsamer/haengender Client darf den Broadcaster
+  nicht unbegrenzt Speicher kosten; bei vollem Puffer faellt der AELTESTE Alarm raus
+  (der neueste = relevanteste Lage ueberlebt). Der Resync deckt die Luecke.
+
+RB-01: reiner Push/Lese-Pfad, kein Aktor. Thread: `publish` wird auf dem Event-Loop
+aufgerufen (run_scheduler nach `asyncio.to_thread`) -> direkter `asyncio.Queue`-Zugriff
+ist safe (kein cross-thread Put).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
+
+from src.model.schemas import Alarm
+
+logger = logging.getLogger(__name__)
+
+# Alarme pro Client-Puffer, bevor Drop-oldest greift. Grosszuegig: ein gesunder Client
+# leert die Queue sofort; der Puffer faengt nur kurze Lastspitzen / langsame Verbraucher ab.
+_DEFAULT_MAX_QUEUE = 100
+
+# Heartbeat-Intervall (s): Contract ~15 s SSE-Kommentarzeile, damit G3 einen still
+# gestorbenen Stream von einem nur ruhigen unterscheidet.
+_HEARTBEAT_S = 15.0
+_HEARTBEAT_FRAME = ":keep-alive\n\n"
+
+
+class AlarmBroadcaster:
+    """Verteilt ausgeloeste Alarme an alle offenen SSE-Abos (In-Process Pub/Sub)."""
+
+    def __init__(self, max_queue: int = _DEFAULT_MAX_QUEUE) -> None:
+        self._subscribers: set[asyncio.Queue[Alarm]] = set()
+        self._max_queue = max_queue
+
+    @property
+    def subscriber_count(self) -> int:
+        """Anzahl aktuell offener Abos (fuer Tests/Diagnose)."""
+        return len(self._subscribers)
+
+    def publish(self, alarm: Alarm) -> None:
+        """Verteilt einen Alarm an alle Abos — best-effort, NIE werfend (NF-01).
+
+        Ein Fehler im Push darf den Bewertungszyklus nicht beenden: jede Exception wird
+        geloggt, nicht propagiert. Bei vollem Client-Puffer wird der aelteste Alarm
+        verworfen (Drop-oldest; der Resync via DTB-31 schliesst die Luecke).
+        """
+        for queue in self._subscribers:
+            try:
+                if queue.full():
+                    # Platz fuer den neuesten Alarm schaffen: aeltesten verwerfen.
+                    with contextlib.suppress(asyncio.QueueEmpty):
+                        queue.get_nowait()
+                    logger.warning(
+                        "SSE-Client-Puffer voll -> aeltesten Alarm verworfen "
+                        "(Client zu langsam; Resync via GET /v1/alarms deckt ab)."
+                    )
+                queue.put_nowait(alarm)
+            except Exception:  # noqa: BLE001 - Push best-effort (NF-01): nie den Zyklus stoppen
+                logger.exception("Alarm-Push an einen Abonnenten fehlgeschlagen (uebersprungen).")
+
+    @contextlib.asynccontextmanager
+    async def subscribe(self) -> AsyncIterator[asyncio.Queue[Alarm]]:
+        """Registriert ein Abo und baut es bei Verbindungsende garantiert wieder ab.
+
+        Die `finally`-Abmeldung verhindert, dass die Queue eines getrennten Clients im
+        Broadcaster zurueckbleibt (Leak) und bei jedem `publish` weiter befuellt wird.
+        """
+        queue: asyncio.Queue[Alarm] = asyncio.Queue(maxsize=self._max_queue)
+        self._subscribers.add(queue)
+        try:
+            yield queue
+        finally:
+            self._subscribers.discard(queue)
+
+
+def _frame(alarm: Alarm) -> str:
+    """Ein SSE-Event: `id:` = Alarm-ID (Reconnect via Last-Event-ID), `data:` = Alarm-JSON.
+
+    `data:` traegt exakt das eingefrorene `Alarm`-Schema (openapi.yaml: id, assessment_id,
+    severity, raised_at, state) — `model_dump_json` ist die eine Serialisierung dieses
+    Pydantic-Modells. Leerzeile (`\\n\\n`) schliesst das Event ab (SSE-Framing).
+    """
+    return f"id: {alarm.id}\ndata: {alarm.model_dump_json()}\n\n"
+
+
+async def sse_alarm_frames(
+    queue: asyncio.Queue[Alarm],
+    is_disconnected: Callable[[], Awaitable[bool]],
+    heartbeat_s: float = _HEARTBEAT_S,
+) -> AsyncIterator[str]:
+    """Erzeugt SSE-Frames aus einem Abo-Queue, bis der Client die Verbindung trennt.
+
+    Wartet je Runde bis `heartbeat_s` auf den naechsten Alarm; bleibt er aus, geht eine
+    `:keep-alive`-Kommentarzeile raus (Liveness-Signal). `is_disconnected` wird zwischen
+    den Frames geprueft, damit ein getrennter Client sauber beendet wird (das Abo raeumt
+    der `subscribe()`-Kontextmanager im Aufrufer ab).
+
+    Entkoppelt von FastAPIs `Request` (nimmt nur ein `is_disconnected`-Callable) -> ohne
+    HTTP-Stack unit-testbar.
+    """
+    while not await is_disconnected():
+        try:
+            alarm = await asyncio.wait_for(queue.get(), timeout=heartbeat_s)
+        except TimeoutError:  # asyncio.wait_for wirft ab 3.11 die builtin TimeoutError
+            # Leerlauf: Heartbeat statt Stille -> G3 erkennt eine lebende Verbindung.
+            yield _HEARTBEAT_FRAME
+            continue
+        yield _frame(alarm)

@@ -16,6 +16,7 @@ import pytest
 
 from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator
+from src.api.broadcaster import AlarmBroadcaster
 from src.assessment.service import AssessmentService
 from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
@@ -87,6 +88,12 @@ def alarm_generator(thresholds: Thresholds, audit_repo: InMemoryAuditRepository)
 
 
 @pytest.fixture
+def alarm_broadcaster() -> AlarmBroadcaster:
+    # Live-Alarm-Broadcaster (DTB-61): In-Memory Pub/Sub, kontaktiert nichts.
+    return AlarmBroadcaster()
+
+
+@pytest.fixture
 def runtime(
     thresholds: Thresholds,
     reading_repo: InMemoryReadingRepository,
@@ -95,6 +102,7 @@ def runtime(
     poller: Poller,
     assessment_service: AssessmentService,
     alarm_generator: AlarmGenerator,
+    alarm_broadcaster: AlarmBroadcaster,
 ) -> Runtime:
     # Vollstaendiger Runtime-Graph mit In-Memory-Repos; teilt alle Instanzen mit den
     # Einzelfixtures, sodass poller.poll() + service.assess_reading() und die spaetere
@@ -107,6 +115,7 @@ def runtime(
         poller=poller,
         service=assessment_service,
         alarm_generator=alarm_generator,
+        alarm_broadcaster=alarm_broadcaster,
     )
 
 
