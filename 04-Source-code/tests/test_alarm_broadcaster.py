@@ -19,6 +19,7 @@ import asyncio
 import inspect
 import json
 import logging
+import threading
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
@@ -226,6 +227,29 @@ def test_default_queue_is_bounded():
             return queue.maxsize
 
     assert asyncio.run(scenario()) == _DEFAULT_MAX_QUEUE
+
+
+def test_publish_off_event_loop_is_logged_and_skipped(caplog):
+    # Thread-Safety-Enforcement (PR-Review MEDIUM): publish() greift direkt auf asyncio.Queue
+    # zu (NICHT thread-safe) und MUSS auf dem Event-Loop laufen. Aus einem Thread-Kontext (kein
+    # laufender Loop) aufgerufen = Programmierfehler -> best-effort loggen + NICHT zustellen
+    # (statt stiller Races), ohne zu werfen (NF-01). Laufzeit-Guard statt nur Docstring.
+    bc = AlarmBroadcaster()
+    caplog.set_level(logging.ERROR, logger="src.api.broadcaster")
+    escaped: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            bc.publish(_alarm(1))  # kein laufender Event-Loop in diesem Thread
+        except BaseException as exc:  # noqa: BLE001 - der Test prueft GERADE, dass nichts entkommt
+            escaped.append(exc)
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join()
+
+    assert escaped == []  # publish wirft nie (NF-01)
+    assert any("Event-Loop" in record.getMessage() for record in caplog.records)
 
 
 def test_publish_skips_and_logs_alarm_without_id(caplog):

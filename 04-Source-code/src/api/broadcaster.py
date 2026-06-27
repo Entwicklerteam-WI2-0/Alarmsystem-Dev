@@ -79,6 +79,19 @@ class AlarmBroadcaster:
         geloggt, nicht propagiert. Bei vollem Client-Puffer wird der aelteste Alarm
         verworfen (Drop-oldest; der Resync via DTB-31 schliesst die Luecke).
         """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            # Thread-Safety-Guard (Laufzeit-Enforcement, nicht nur Docstring): publish() greift
+            # direkt auf asyncio.Queue zu (NICHT thread-safe) und MUSS auf dem Event-Loop laufen
+            # (run_scheduler ruft es NACH asyncio.to_thread dort auf). Kein laufender Loop im
+            # aktuellen Thread -> aus einem Thread-Kontext aufgerufen (Programmierfehler) ->
+            # best-effort: loggen + NICHT zustellen (statt stiller Races), nicht werfen (NF-01).
+            logger.error(
+                "publish() ausserhalb des Event-Loops aufgerufen — Alarm NICHT zugestellt "
+                "(asyncio.Queue ist nicht thread-safe)."
+            )
+            return
         if alarm.id is None:
             # Invariante am Ingress (Bug-Guard): nur persistierte Alarme (mit DB-id) duerfen
             # gestreamt werden. Best-effort (NF-01: nie werfend) -> an der Quelle loggen +
@@ -185,9 +198,12 @@ async def sse_alarm_frames(
     Disconnect-Latenz: `is_disconnected` wird erst NACH dem `wait_for` geprueft -> ein nur
     per Poll als getrennt erkannter Client haelt seinen Subscriber-Slot bis zu `heartbeat_s`
     (~15 s) weiter. Im Normalbetrieb (G3 = 1 Verbindung, Cap 64) unkritisch; falls der Cap je
-    nahe ausgeschoepft wird, koennte er bei vielen gleichzeitigen Disconnects kurz blockieren
-    (dann engeren Disconnect-Poll erwaegen). Bei echtem HTTP-Disconnect raeumt Starlettes
-    Task-Cancel sofort ab — diese Latenz betrifft nur den `is_disconnected`-Poll-Pfad.
+    nahe ausgeschoepft wird (z. B. G3-Neustart bei 63/64 aktiven), halten die "Zombie"-Slots
+    bis zu ~15 s -> neue Verbindungen erhalten in dem Fenster kurzzeitig 503, bis sich die Slots
+    selbst raeumen (Ops-Hinweis; `subscriber_count` ist fuer Monitoring abrufbar, ein Metrik-
+    Endpoint waere ein M3-Ausbau). Dann ggf. engeren Disconnect-Poll erwaegen. Bei echtem
+    HTTP-Disconnect raeumt Starlettes Task-Cancel sofort ab — die Latenz betrifft nur den
+    `is_disconnected`-Poll-Pfad.
 
     Entkoppelt von FastAPIs `Request` (nimmt nur ein `is_disconnected`-Callable) -> ohne
     HTTP-Stack unit-testbar.
