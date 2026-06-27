@@ -332,6 +332,49 @@ def test_stream_sanitizes_last_event_id_in_log(caplog):
     asyncio.run(scenario())
 
 
+def test_stream_warns_when_last_event_id_was_sanitized(caplog):
+    # Security-Observability (PR-Review): enthielt der client-kontrollierte Last-Event-ID-Header
+    # nicht-druckbare Zeichen (moegl. Injection-/Log-Forging-Versuch), MUSS das als WARNING
+    # sichtbar sein — nicht nur stillschweigend bereinigt. Sonst sieht ein Ops-/Security-Team
+    # einen Angriffsversuch nicht.
+    async def scenario() -> None:
+        broadcaster = AlarmBroadcaster()
+        runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
+        request = SimpleNamespace(
+            is_disconnected=never_disconnected,
+            headers=Headers({"last-event-id": "7\r\nINJECT"}),
+        )
+        with caplog.at_level(logging.WARNING, logger="src.api.v1"):
+            response = await stream_alarms(runtime=runtime, request=request)
+            await response.body_iterator.aclose()
+        assert any(
+            record.levelno == logging.WARNING and "Injection" in record.getMessage()
+            for record in caplog.records
+        )
+
+    asyncio.run(scenario())
+
+
+def test_stream_does_not_warn_on_clean_last_event_id(caplog):
+    # Negativ: ein sauberer (druckbarer) Last-Event-ID erzeugt KEINE Injection-Warnung
+    # (sonst Alarm-Muedigkeit -> echte Angriffsversuche gehen unter).
+    async def scenario() -> None:
+        broadcaster = AlarmBroadcaster()
+        runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
+        request = SimpleNamespace(
+            is_disconnected=never_disconnected, headers=Headers({"last-event-id": "42"})
+        )
+        with caplog.at_level(logging.WARNING, logger="src.api.v1"):
+            response = await stream_alarms(runtime=runtime, request=request)
+            await response.body_iterator.aclose()
+        assert not any(
+            record.levelno == logging.WARNING and "Injection" in record.getMessage()
+            for record in caplog.records
+        )
+
+    asyncio.run(scenario())
+
+
 def test_stream_runtime_not_ready_returns_503():
     # Runtime nicht bereit (lifespan unvollstaendig) -> get_runtime wirft -> Exception-Handler
     # liefert 503 mit dem Contract-Fehlerformat {code, message}, nie ein rohes 500/{detail}.

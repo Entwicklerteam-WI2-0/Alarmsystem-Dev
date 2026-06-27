@@ -132,7 +132,8 @@ class AlarmBroadcaster:
 
     @contextlib.asynccontextmanager
     async def subscribe(self) -> AsyncIterator[asyncio.Queue[Alarm]]:
-        """Registriert ein Abo (via reserve) und baut es bei Verbindungsende garantiert ab.
+        """TEST-ONLY: registriert ein Abo (via reserve) + baut es garantiert ab — NICHT im
+        Produktionspfad (der Endpoint nutzt reserve()/release() direkt, s. u.).
 
         Dieselbe Kapazitaetsgrenze + Leak-Schutz wie reserve()/release(): die `finally`-
         Abmeldung verhindert, dass die Queue eines getrennten Clients zurueckbleibt und bei

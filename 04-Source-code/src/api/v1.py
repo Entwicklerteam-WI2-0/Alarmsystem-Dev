@@ -151,6 +151,13 @@ async def stream_alarms(
     """
     last_event_id = request.headers.get("last-event-id")
     if last_event_id:
+        if any(not ch.isprintable() for ch in last_event_id):
+            # Nicht-druckbare Zeichen im client-kontrollierten Header -> moeglicher Injection-/
+            # Log-Forging-Versuch (G3-Bug oder MitM). Fuer proaktives Security-Monitoring als
+            # WARNING sichtbar machen (NF-09-Geist), statt nur still zu bereinigen.
+            logger.warning(
+                "Last-Event-ID enthielt nicht-druckbare Zeichen — moeglicher Injection-Versuch."
+            )
         logger.info(
             "SSE-Reconnect mit Last-Event-ID=%s — G3 sollte via GET /v1/alarms resyncen "
             "(DTB-31); G2 liefert keine Historie nach.",
