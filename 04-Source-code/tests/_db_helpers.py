@@ -101,7 +101,7 @@ def database(db_available: bool) -> str:
     finally:
         root.close()
     schema_path = Path(__file__).parent.parent / "migrations" / "schema.sql"
-    if not schema_path.exists():
+    if not schema_path.is_file():
         pytest.fail(f"schema.sql fuer Test-DB-Setup nicht gefunden: {schema_path}")
     ddl = schema_path.read_text(encoding="utf-8")
     conn = pymysql.connect(**conn_params(database=name, autocommit=False))

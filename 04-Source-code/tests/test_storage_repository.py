@@ -5,6 +5,7 @@ erreichbar ist. Schema wird idempotent aus migrations/schema.sql aufgebaut.
 """
 
 import logging
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
@@ -21,7 +22,7 @@ from tests._db_helpers import conn_params
 # Fixtures (db_available/database kommen aus conftest -> tests/_db_helpers, DTB-21)
 # ---------------------------------------------------------------------------
 @pytest.fixture
-def db_connection(database: str) -> pymysql.Connection:
+def db_connection(database: str) -> Generator[pymysql.Connection, None, None]:
     """Frische Verbindung zur Test-DB (aus conftest); raeumt die reading-Tabelle."""
     conn = pymysql.connect(**conn_params(database=database, autocommit=False))
     try:
