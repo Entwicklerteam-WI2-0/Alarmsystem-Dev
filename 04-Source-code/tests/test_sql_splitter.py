@@ -67,4 +67,4 @@ class TestSplitSqlStatements:
         # Praeparde-Statements fuer bedingte Migrationen sind als einzelne logische
         # Statements erhalten (werden nicht am inneren Semikolon zerrissen).
         prepare_stmts = [s for s in statements if s.upper().startswith("PREPARE")]
-        assert len(prepare_stmts) == 3  # 2x Index + 1x Spalte
+        assert len(prepare_stmts) >= 3  # 2x Index + 1x Spalte

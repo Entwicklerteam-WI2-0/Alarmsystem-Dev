@@ -6,6 +6,7 @@ erreichbar ist. Schema wird idempotent aus migrations/schema.sql aufgebaut.
 
 import logging
 import os
+import re
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +23,12 @@ from src.storage.repository import (
 )
 from tests._sql_splitter import split_sql_statements
 
+# DDL-Identifier koennen in MySQL NICHT parametrisiert werden; der aus Env-Vars stammende
+# DB-Name wird daher vor der Interpolation in CREATE DATABASE auf [A-Za-z0-9_] geweisslistet
+# (verhindert DDL-Injection ueber manipulierte Env-Vars im CI-Kontext). fullmatch statt match,
+# weil `$` in Python auch vor einem abschliessenden \n matcht (Trailing-Newline aus Env-Dateien).
+_DB_NAME_RE = re.compile(r"[A-Za-z0-9_]+")
+
 
 # ---------------------------------------------------------------------------
 # Test-DB Konfiguration
@@ -35,9 +42,14 @@ def _test_db_name() -> str:
         3. Fallback "alarmsystem_test"
     """
     if "DB_NAME_TEST" in os.environ:
-        return os.environ["DB_NAME_TEST"]
-    base = os.environ.get("DB_NAME", "alarmsystem")
-    return f"{base}_test"
+        name = os.environ["DB_NAME_TEST"]
+    else:
+        name = f"{os.environ.get('DB_NAME', 'alarmsystem')}_test"
+    if not _DB_NAME_RE.fullmatch(name):
+        raise ValueError(
+            f"Ungueltiger Test-DB-Name (nur [A-Za-z0-9_] erlaubt): {name!r}"
+        )
+    return name
 
 
 def _root_connection() -> pymysql.Connection:
