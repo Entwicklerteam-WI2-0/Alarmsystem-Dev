@@ -371,6 +371,27 @@ def test_frame_rejects_alarm_without_id():
         _frame(alarm_ohne_id)
 
 
+def test_sse_skips_malformed_alarm_and_keeps_stream_alive(caplog):
+    # Resilienz (PR-Review MEDIUM): ein einzelner malformed Alarm (id=None, der publish() am
+    # Ingress umgangen hat — z. B. direkter queue.put_nowait) darf den LIVE-Stream NICHT
+    # abreissen. sse_alarm_frames ueberspringt ihn + loggt; die FOLGENDEN Alarme erreichen G3
+    # weiter (NF-01-Geist: ein kaputtes Item kippt nicht den ganzen Feed). publish() + _frame()
+    # bleiben die vorgelagerten Guards.
+    async def scenario() -> list[str]:
+        queue: asyncio.Queue[Alarm] = asyncio.Queue()
+        queue.put_nowait(_alarm(1).model_copy(update={"id": None}))  # malformed (umgeht publish)
+        queue.put_nowait(_alarm(2))  # gueltig
+        gen = sse_alarm_frames(queue, disconnect_after(2), heartbeat_s=5)
+        return await _drain(gen)
+
+    with caplog.at_level(logging.ERROR, logger="src.api.broadcaster"):
+        frames = asyncio.run(scenario())
+    # Nur der gueltige Alarm (id=2) wird zugestellt; der malformed wurde uebersprungen.
+    assert len(frames) == 1
+    assert frames[0].startswith("id: 2\n")
+    assert any("malformed" in record.getMessage().lower() for record in caplog.records)
+
+
 def test_sse_frame_carries_alarm_as_json_with_event_id():
     async def scenario() -> list[str]:
         queue: asyncio.Queue[Alarm] = asyncio.Queue()

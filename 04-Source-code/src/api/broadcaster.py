@@ -192,4 +192,13 @@ async def sse_alarm_frames(
             # Leerlauf: Heartbeat statt Stille -> G3 erkennt eine lebende Verbindung.
             yield _HEARTBEAT_FRAME
             continue
-        yield _frame(alarm)
+        try:
+            frame = _frame(alarm)
+        except ValueError:
+            # Resilienz: ein einzelner malformed Alarm (id=None, der publish() umgangen hat)
+            # darf den LIVE-Stream nicht abreissen -> ueberspringen + loggen, damit G3 die
+            # FOLGENDEN Alarme weiter erhaelt (NF-01-Geist: ein kaputtes Item kippt nicht den
+            # ganzen Feed). publish() + _frame() bleiben die vorgelagerten Guards.
+            logger.error("Malformed Alarm (ohne DB-id) im Stream uebersprungen.")
+            continue
+        yield frame
