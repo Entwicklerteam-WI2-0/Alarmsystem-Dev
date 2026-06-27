@@ -15,7 +15,10 @@ from src.api.runtime import Runtime, get_runtime
 from src.config.loader import Thresholds
 from src.model.schemas import Error
 
-router = APIRouter(prefix="/v1", tags=["v1"])
+# Kein Router-weiter Tag: jeder Endpoint deklariert seinen Ressourcen-Tag selbst
+# (wie assessment/current -> "Assessment" in main.py), damit die FastAPI-Auto-Docs
+# (/docs, /openapi.json) dieselbe Gruppierung zeigen wie die eingefrorene openapi.yaml.
+router = APIRouter(prefix="/v1")
 
 
 def get_thresholds(runtime: Annotated[Runtime, Depends(get_runtime)]) -> Thresholds:
@@ -37,6 +40,7 @@ def get_thresholds(runtime: Annotated[Runtime, Depends(get_runtime)]) -> Thresho
     "/thresholds",
     response_model=Thresholds,
     summary="Aktuelle Schwellenwerte lesen",
+    tags=["Thresholds"],
     responses={
         503: {
             "model": Error,

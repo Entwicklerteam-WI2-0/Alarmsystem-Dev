@@ -7,6 +7,8 @@ DRY: nie `{"detail": ...}` (FastAPI-Default, bricht die eingefrorene Naht), nie 
 von einem Proxy gecachter, ueberholter Ausfall (NF-01-Geist).
 """
 
+from types import MappingProxyType
+
 from fastapi.responses import JSONResponse
 
 from src.model.schemas import Error
@@ -18,8 +20,9 @@ SERVICE_UNAVAILABLE_CODE = "SERVICE_UNAVAILABLE"
 # (503) ODER einen Momentan-/Konfig-Zustand (200) cachen. Ein gecachtes 503 (G2 laengst
 # wieder da), ein gecachtes "green" oder gecachte Alt-Schwellen waeren ein veraltetes
 # Sicherheitssignal (NF-01). Relevant erst hinter einem kuenftigen Reverse-Proxy, aber
-# billig + korrekt.
-NO_STORE_HEADERS = {"Cache-Control": "no-store"}
+# billig + korrekt. MappingProxyType = echte, read-only Konstante: faengt eine
+# versehentliche Mutation (z. B. NO_STORE_HEADERS["X-Foo"] = ...) zur Laufzeit ab.
+NO_STORE_HEADERS = MappingProxyType({"Cache-Control": "no-store"})
 
 
 def service_unavailable(message: str) -> JSONResponse:

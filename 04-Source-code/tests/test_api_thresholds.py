@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+from src.api.exceptions import RuntimeNotReadyError
 from src.api.runtime import get_runtime
 from src.api.v1 import get_thresholds
 from src.config.loader import (
@@ -22,7 +23,7 @@ from src.config.loader import (
     VereisungsSchwellen,
     load_thresholds,
 )
-from src.main import RuntimeNotReadyError, app
+from src.main import app
 
 client = TestClient(app)
 
