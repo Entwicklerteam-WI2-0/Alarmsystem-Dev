@@ -38,7 +38,7 @@ def test_db_name() -> str:
     return name
 
 
-def conn_params(**extra) -> dict:
+def conn_params(**extra: object) -> dict[str, object]:
     """PyMySQL-Verbindungsparameter aus den DB_*-Env-Variablen (DictCursor, utf8mb4)."""
     base = {
         "host": os.environ.get("DB_HOST", "localhost"),
@@ -89,11 +89,17 @@ def database(db_available: bool) -> str:
         pytest.skip("MariaDB-Test-DB nicht erreichbar (DB_HOST/DB_PORT/DB_USER/DB_PASSWORD).")
     name = test_db_name()
     root = pymysql.connect(**conn_params(autocommit=True))
-    with root.cursor() as cursor:
-        cursor.execute(
-            f"CREATE DATABASE IF NOT EXISTS {name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-        )
-    root.close()
+    # try/finally: wirft CREATE DATABASE (z. B. fehlende Rechte), wuerde root.close() sonst
+    # uebersprungen -> Connection-Leak ueber die session-scoped Fixture (gleiche Bug-Klasse
+    # wie der db_available-Leak, DTB-21-Review).
+    try:
+        with root.cursor() as cursor:
+            cursor.execute(
+                f"CREATE DATABASE IF NOT EXISTS {name} "
+                "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+            )
+    finally:
+        root.close()
     schema_path = Path(__file__).parent.parent / "migrations" / "schema.sql"
     if not schema_path.exists():
         pytest.fail(f"schema.sql fuer Test-DB-Setup nicht gefunden: {schema_path}")

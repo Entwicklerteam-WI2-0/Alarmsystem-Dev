@@ -10,6 +10,7 @@ Geteilte DB-Helfer + Fixtures (`db_available`/`database` via conftest, `conn_par
 """
 
 import json
+from collections.abc import Generator
 from datetime import UTC, datetime
 
 import pymysql
@@ -44,7 +45,7 @@ def clean_db(database: str) -> str:
 
 
 @pytest.fixture
-def db_connection(clean_db: str) -> pymysql.Connection:
+def db_connection(clean_db: str) -> Generator[pymysql.Connection, None, None]:
     """DictCursor-Verbindung zur Test-DB (fuer MySqlAssessmentRepository, das eine
     Connection erwartet)."""
     conn = pymysql.connect(**conn_params(database=clean_db, autocommit=False))
@@ -63,7 +64,7 @@ def db_config(clean_db: str) -> DatabaseConfig:
 # --- MySqlAssessmentRepository (DTB-64 / DTB-43): Serving-/Sicherheits-Persistenz ---
 
 
-def _assessment(**overrides) -> Assessment:
+def _assessment(**overrides: object) -> Assessment:
     base = dict(
         ts=_UTC_NOW,
         risk_level=RiskLevel.ORANGE,
@@ -78,7 +79,7 @@ def _assessment(**overrides) -> Assessment:
     return Assessment(**base)
 
 
-def test_assessment_save_and_get_latest_roundtrip(db_connection: pymysql.Connection):
+def test_assessment_save_and_get_latest_roundtrip(db_connection: pymysql.Connection) -> None:
     repo = MySqlAssessmentRepository(connection=db_connection)
     new_id = repo.save(_assessment())
     assert isinstance(new_id, int) and new_id > 0
@@ -98,12 +99,12 @@ def test_assessment_save_and_get_latest_roundtrip(db_connection: pymysql.Connect
     assert latest.ts.tzinfo is not None
 
 
-def test_assessment_get_latest_empty_returns_none(db_connection: pymysql.Connection):
+def test_assessment_get_latest_empty_returns_none(db_connection: pymysql.Connection) -> None:
     repo = MySqlAssessmentRepository(connection=db_connection)
     assert repo.get_latest() is None
 
 
-def test_assessment_get_latest_returns_highest_ts(db_connection: pymysql.Connection):
+def test_assessment_get_latest_returns_highest_ts(db_connection: pymysql.Connection) -> None:
     repo = MySqlAssessmentRepository(connection=db_connection)
     repo.save(
         _assessment(ts=datetime(2026, 6, 26, 11, 0, 0, tzinfo=UTC), risk_level=RiskLevel.GREEN)
@@ -117,7 +118,9 @@ def test_assessment_get_latest_returns_highest_ts(db_connection: pymysql.Connect
     assert latest.risk_level is RiskLevel.RED
 
 
-def test_assessment_unknown_with_nulled_measurements_roundtrip(db_connection: pymysql.Connection):
+def test_assessment_unknown_with_nulled_measurements_roundtrip(
+    db_connection: pymysql.Connection,
+) -> None:
     # Fail-safe-Form (NF-01): risk_level=unknown mit genullten Messwerten muss persistierbar
     # und exakt so wieder lesbar sein (NULL-Spalten -> None).
     repo = MySqlAssessmentRepository(connection=db_connection)
@@ -137,7 +140,7 @@ def test_assessment_unknown_with_nulled_measurements_roundtrip(db_connection: py
 # --- MySqlAuditRepository (DTB-29): append-only Audit-Trail (NF-09) ---
 
 
-def _entry(**overrides) -> AuditLogEntry:
+def _entry(**overrides: object) -> AuditLogEntry:
     base = dict(
         ts=_UTC_NOW,
         event_type=AuditEventType.ASSESSMENT_MADE,
@@ -150,7 +153,7 @@ def _entry(**overrides) -> AuditLogEntry:
     return AuditLogEntry(**base)
 
 
-def test_audit_append_and_readback(db_config: DatabaseConfig):
+def test_audit_append_and_readback(db_config: DatabaseConfig) -> None:
     repo = MySqlAuditRepository(db_config)
     new_id = repo.append(_entry())
     assert isinstance(new_id, int) and new_id > 0
@@ -170,7 +173,7 @@ def test_audit_append_and_readback(db_config: DatabaseConfig):
     assert json.loads(row["detail"]) == {"risk": "orange", "delta_t": -0.5}
 
 
-def test_audit_append_null_detail_roundtrip(db_config: DatabaseConfig):
+def test_audit_append_null_detail_roundtrip(db_config: DatabaseConfig) -> None:
     repo = MySqlAuditRepository(db_config)
     new_id = repo.append(_entry(event_type=AuditEventType.SENSOR_FAULT, detail=None))
     conn = pymysql.connect(**conn_params(database=db_config.name, autocommit=True))

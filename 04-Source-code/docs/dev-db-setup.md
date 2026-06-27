@@ -13,6 +13,13 @@
   Wegwerf-DB `<DB_NAME>_test` an und räumen Tabellen) — **nicht** der Least-Privilege-App-User.
 - Diese Umgebungsvariablen (siehe `.env.example`):
   `DB_HOST`, `DB_PORT` (3306), `DB_NAME` (z. B. `alarmsystem`), `DB_USER`, `DB_PASSWORD`.
+  Optional: `DB_NAME_TEST` überschreibt den Namen der Wegwerf-Test-DB (Default `<DB_NAME>_test`).
+
+> ⚠️ **`.env`-Falle:** Der `.env.example`-Default `DB_USER=alarm` ist der Least-Privilege-App-User
+> und darf **kein** `CREATE DATABASE`. Wer `.env.example` 1:1 nach `.env` kopiert und `pytest` ohne
+> Override startet, bekommt einen harten **`CREATE DATABASE ... denied`-Fehler** (keinen sauberen
+> Skip, weil `SELECT 1` als `alarm` noch durchgeht). Für die Tests `DB_USER=app` (GRANT ALL) setzen —
+> wie in den Kommandos unten.
 
 ## Schnellstart A — portable MariaDB unter Windows (kein Admin, kein Installer)
 
@@ -45,6 +52,7 @@ sudo mariadb -e "CREATE USER IF NOT EXISTS 'alarm'@'%' IDENTIFIED BY '<dev-pw>';
 ## Schema + Rechte einspielen
 
 ```bash
+cd 04-Source-code   # relative Pfade migrations/*.sql gelten ab hier
 # Schema (idempotent). Die Test-Fixtures laden es selbst in die _test-DB; fuer die "echte"
 # alarmsystem-DB (App-Betrieb) einmalig manuell:
 mariadb -h127.0.0.1 -P3306 -u app -p alarmsystem < migrations/schema.sql
