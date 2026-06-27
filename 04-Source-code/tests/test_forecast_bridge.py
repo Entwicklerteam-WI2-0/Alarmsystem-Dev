@@ -79,15 +79,16 @@ def test_leere_zeitreihe_ist_failsafe_none():
     assert len(repo.calls) == 1  # DB wurde abgefragt (kein Kurzschluss)
 
 
-def test_naives_now_propagiert_value_error():
-    # Ein naives `now` (ohne tzinfo) ist ein Programmierfehler, kein transienter Datenfehler.
-    # Die Bruecke propagiert ihn bewusst (dokumentiert in bridge.py:46-49), damit der
-    # Scheduler ihn sichtbar macht statt als "keine Prognose" zu maskieren.
-    naive_now = datetime(2026, 6, 27, 12, 0, 0)  # kein tzinfo
+def test_naives_now_propagiert_valueerror_statt_failsafe_none():
+    # bridge.py (Docstring + Inline-Kommentar) haelt fest: ein naives `now` ist ein
+    # Programmierfehler, kein transienter Datenlayer-Fehler. Der ValueError-Guard aus
+    # trend.py wird daher bewusst NICHT als "keine Prognose" (None) maskiert, sondern
+    # propagiert sichtbar -- nur RepositoryError ist fail-safe. Regressions-Guard fuer
+    # genau diese Intention (sonst koennte ein spaeteres try/except den Fehler still
+    # verschlucken und die Vorwarnung waere unbemerkt tot).
+    series = [_reading(20, 2.0), _reading(10, 1.0), _reading(0, 0.0)]
+    repo = _FakeReadingRepo(series)
+    naive_now = _NOW.replace(tzinfo=None)
+
     with pytest.raises(ValueError, match="zeitzonenbewusst"):
-        compute_forecast_for_cycle(
-            _reading(0, 1.0),
-            _FakeReadingRepo([]),
-            _PROGNOSE,
-            naive_now,
-        )
+        compute_forecast_for_cycle(series[-1], repo, _PROGNOSE, naive_now)

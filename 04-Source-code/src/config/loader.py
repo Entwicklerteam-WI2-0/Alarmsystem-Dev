@@ -342,9 +342,11 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
         )
     _require_positive(schwellen.trend_window_min, "prognose.trend_window_min", upper=1_440)
     _require_positive(schwellen.horizon_min, "prognose.horizon_min", upper=1_440)
-    # Cross-Section (FA-06/NF-01): horizon_min darf nicht groesser als trend_window_min sein.
-    # Eine Extrapolation weit ausserhalb des Datenfensters liefert unbelastbare Prognosen
-    # und wuerde die 30-min-Vorwarnung praktisch entwerten (stiller Under-Alarm moeglich).
+    # Cross-Field (NF-01): der Horizont darf nicht weiter reichen als das Datenfenster,
+    # aus dem die Regression gespeist wird. horizon_min > trend_window_min extrapoliert die
+    # T_s-Gerade um ein Vielfaches ueber den beobachteten Zeitraum hinaus (z. B. 60-min-Horizont
+    # aus 10-min-Daten) -> statistisch unbelastbar. Laut scheitern statt still eine fragwuerdige
+    # Vorwarnung liefern (der isfinite-Schutz am Ausgang bleibt, aber die Konfig ist falsch).
     if schwellen.horizon_min > schwellen.trend_window_min:
         raise ConfigError(
             "prognose.horizon_min darf nicht groesser als prognose.trend_window_min sein "
