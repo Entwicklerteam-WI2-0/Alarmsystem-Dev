@@ -12,7 +12,7 @@ Der Scheduler ist bewusst hinter `G2_ENABLE_SCHEDULER` gated (Default AUS), dami
 DB-/G1-Variablen bereitstellen (s. database.py / G1_BASE_URL).
 
 Endpoints (Contract v1):
-  - GET /v1/health (P0.3): Readiness-Probe -> 200 Health{status:"ok"}, sonst 503
+  - GET /v1/health (P0.3): Liveness-Probe -> 200 Health{status:"ok"}, sonst 503
     (Error{code,message}) solange der Runtime-/DI-Graph fehlt (Startup/Ausfall).
   - GET /v1/assessment/current (DTB-43): liest runtime.assessment_repo.get_latest()
     + runtime.reading_repo.get_latest(sensor_id); 503 (Error{code,message}) bei
@@ -29,7 +29,6 @@ import contextlib
 import logging
 import os
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -38,18 +37,18 @@ from fastapi.responses import JSONResponse
 
 from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator, AuditError
+from src.api.exceptions import RuntimeNotReadyError
 from src.api.responses import NO_STORE_HEADERS, service_unavailable
+from src.api.runtime import Runtime, get_runtime
+from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
-from src.config.loader import Thresholds, load_thresholds
+from src.config.loader import load_thresholds
 from src.ingest.poller import Poller
 from src.model.schemas import AssessmentCurrent, Error, Health, Reading
 from src.storage import (
-    AssessmentRepository,
-    AuditRepository,
     MySqlAssessmentRepository,
     MySqlAuditRepository,
     ReadingRepository,
-    Repository,
     RepositoryError,
 )
 from src.storage.alarm_repository import MySqlAlarmRepository
@@ -69,23 +68,6 @@ _DEFAULT_G1_BASE_URL = "http://g1-sensorik.local"
 # zu fixieren — das get_latest()-Assessment ist ohnehin noch global (nicht pro Sensor),
 # daher ist die ID hier nur die Reading-Auswahl fuer den Aktualitaets-/Status-Check.
 _SENSOR_ID = "anr-rwy-01"
-
-
-@dataclass(frozen=True)
-class Runtime:
-    """Zusammengebauter Dependency-Graph einer laufenden Instanz (DI). Unveränderlich:
-    der Graph wird in `build_runtime` einmal zusammengebaut und danach nie mutiert."""
-
-    thresholds: Thresholds
-    # ABC-Typ (nicht die konkrete ReadingRepository): konsistent mit assessment_repo/
-    # audit_repo und erlaubt In-Memory-Doubles (Tests/lokal) ohne Type-Bruch. build_runtime
-    # injiziert weiterhin die konkrete PyMySQL-ReadingRepository (DTB-41 Option A).
-    reading_repo: Repository
-    assessment_repo: AssessmentRepository
-    audit_repo: AuditRepository
-    poller: Poller
-    service: AssessmentService
-    alarm_generator: AlarmGenerator
 
 
 def build_runtime() -> Runtime:
@@ -143,36 +125,6 @@ def run_assessment_cycle(
             "assessment.id ist None trotz Persistenz (assess_reading-Invariante verletzt)"
         )
     alarm_generator.verarbeite(assessment.risk_level, assessment.id, now)
-
-
-class RuntimeNotReadyError(RuntimeError):
-    """`app.state.runtime` fehlt — lifespan hat den DI-Graph (noch) nicht gesetzt.
-
-    Eigene Exception statt rohem AttributeError: faengt `build_runtime()` im lifespan
-    vor dem yield eine unbehandelte Exception (oder ist `runtime` aus anderem Grund
-    nicht gesetzt), wuerde ein direkter `app.state.runtime`-Zugriff als FastAPI-
-    Standard-500 mit `{detail}` durchschlagen und den Fehler-Contract brechen. Der
-    registrierte Exception-Handler bildet diese Exception contract-konform auf
-    503 `{code, message}` ab (NF-01: nie GRUEN, auch nicht bei Startup-Fehlern).
-    """
-
-
-def get_runtime(request: Request) -> Runtime:
-    """DI-Zugriff auf den in `lifespan` zusammengebauten Runtime-Graph.
-
-    Eigene Dependency (kein direkter `app.state`-Zugriff im Endpoint), damit Tests
-    sie via `app.dependency_overrides` durch In-Memory-Fakes ersetzen koennen —
-    ohne DB, Lifespan oder Scheduler.
-
-    Raises:
-        RuntimeNotReadyError: Wenn `app.state.runtime` fehlt (lifespan nicht oder nur
-            teilweise durchlaufen). Der Exception-Handler liefert daraufhin 503
-            (`Error {code, message}`) statt eines rohen 500/`{detail}`.
-    """
-    runtime = getattr(request.app.state, "runtime", None)
-    if runtime is None:
-        raise RuntimeNotReadyError("Runtime nicht initialisiert (lifespan unvollstaendig).")
-    return runtime
 
 
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
@@ -268,6 +220,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Versionierte /v1-Endpoints (Serving zu G3), z. B. GET /v1/thresholds (DTB-62).
+app.include_router(v1_router)
 
 
 @app.exception_handler(RuntimeNotReadyError)
