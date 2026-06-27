@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from src.assessment.failsafe import check_flatline, check_plausibility
 from src.assessment.utils import calculate_dew_point
 from src.config.loader import DatenqualitaetSchwellen, PlausibilitaetSchwellen
 from src.model.enums import SensorStatus, Source
@@ -62,6 +63,19 @@ class Poller:
         self.plausibility_thresholds = plausibility_thresholds
         # Timeout fuer den HTTP-Request (Netzwerk/Sensor-Ausfall).
         self.timeout = timeout
+        # Letztes erfolgreich gespeichertes (plausibles) Reading desselben Sensors —
+        # In-Memory-Referenz fuer die SPRUNG-Erkennung (DTB-20). Geht bei Prozess-Neustart
+        # bewusst verloren (ein Zyklus ohne Sprung-Vergleich ist fail-safe unkritisch);
+        # Entscheidung (a) In-Memory statt DB-Read (s. Entscheidungslog).
+        self._last_reading: Reading | None = None
+        # Flatline-Fenster: Beginn (measured_at) der aktuellen Konstanz-Phase plus die ueber
+        # das Fenster laufende Min/Max der Oberflaechentemperatur. Flatline prueft die
+        # SPANNWEITE (max-min) ueber ein Zeitfenster (>= flatline_timeout_min), nicht den
+        # Abstand zum unmittelbaren Vorgaenger — sonst waere die Erkennung bei dichtem Polling
+        # wirkungslos und gegen Rauschen nicht robust (DTB-20 santa-loop, 2 Runden).
+        self._flatline_window_start: datetime | None = None
+        self._flatline_temp_min: float = 0.0
+        self._flatline_temp_max: float = 0.0
 
     def poll(self) -> Reading | None:
         """Holt Snapshot von G1, validiert ihn und speichert ein Reading.
@@ -103,12 +117,53 @@ class Poller:
         if reading is None:
             return None
 
-        # 5. Reading ueber das Repository-Interface speichern.
+        # 5. Sensor-Defekt-Erkennung (DTB-20, FA-04/NF-01): Sprung + Flatline gegen die
+        # bisherigen Referenzen DESSELBEN Sensors. Unplausibel -> fail-safe verwerfen (nicht
+        # speichern); die Referenzen bleiben die letzten GUTEN Werte, damit ein einzelner
+        # Ausreisser sie nicht vergiftet.
+        if self._last_reading is not None and self._last_reading.sensor_id != reading.sensor_id:
+            # Sensorwechsel: Referenzen verwerfen statt Cross-Sensor zu vergleichen (haelt den
+            # poll()-Contract 'Fehler -> None' ein; check_plausibility wuerfe sonst ValueError).
+            self._last_reading = None
+            self._reset_flatline_window()
+
+        if self._last_reading is not None and reading.measured_at == self._last_reading.measured_at:
+            # Identisches measured_at = G1 hat (noch) keinen neuen Wert geliefert (Poller pollt
+            # ggf. schneller als G1 aktualisiert). Kein Defekt -> still ueberspringen, NICHT als
+            # Fehler loggen (sonst Log-/Audit-Rauschen, vgl. santa-loop).
+            logger.debug(
+                "Kein neuer G1-Wert (gleiches measured_at=%s), uebersprungen",
+                reading.measured_at.isoformat(),
+            )
+            return None
+
+        # Sprung + Zeitstempelordnung gegen das unmittelbare Vorgaenger-Reading.
+        reason = check_plausibility(reading, self._last_reading, self.data_quality_thresholds)
+        if reason is None:
+            # Flatline gegen das Konstanz-FENSTER (Spannweite ueber >= flatline_timeout_min):
+            # bei dichtem Polling waechst der Abstand zum Vorgaenger nie auf das Timeout, und die
+            # Fenster-Spannweite ist gegen Rauschen robuster als der Abstand zu einem Punkt.
+            span = self._flatline_span_including(reading)
+            reason = check_flatline(
+                self._flatline_window_start,
+                reading.measured_at,
+                span,
+                self.data_quality_thresholds,
+            )
+        if reason is not None:
+            logger.error("Reading unplausibel, wird verworfen: %s", reason)
+            return None
+
+        # 6. Reading ueber das Repository-Interface speichern.
         try:
             reading_id = self.repository.save(reading)
         except RepositoryError as exc:
             logger.error("Speichern des Readings fehlgeschlagen: %s", exc)
             return None
+
+        # Save erfolgreich -> Referenzen fuer den naechsten Poll aktualisieren.
+        self._last_reading = reading
+        self._update_flatline_window(reading)
 
         logger.info(
             "Reading gespeichert: id=%s sensor=%s measured_at=%s",
@@ -121,6 +176,46 @@ class Poller:
         # Gutfall-Pfad reading.id != None verlangt (DTB-28-Invariante, service.py). Ohne
         # die id wuerde der Happy-Path des Schedulers mit ValueError brechen.
         return reading.model_copy(update={"id": reading_id})
+
+    def _reset_flatline_window(self) -> None:
+        """Setzt das Flatline-Konstanz-Fenster zurueck (z. B. bei Sensorwechsel)."""
+        self._flatline_window_start = None
+        self._flatline_temp_min = 0.0
+        self._flatline_temp_max = 0.0
+
+    def _flatline_span_including(self, reading: Reading) -> float:
+        """Spannweite (max-min) der Oberflaechentemperatur ueber das laufende Fenster INKL. des
+        aktuellen Readings. 0.0, wenn (noch) kein Fenster offen ist (-> check_flatline plausibel).
+        """
+        if self._flatline_window_start is None:
+            return 0.0
+        temp = reading.surface_temp_c
+        return max(self._flatline_temp_max, temp) - min(self._flatline_temp_min, temp)
+
+    def _update_flatline_window(self, reading: Reading) -> None:
+        """Aktualisiert das Konstanz-Fenster nach einem gespeicherten Reading.
+
+        Bleibt die Spannweite (max-min) inkl. des neuen Readings <= flatline_epsilon_c, waechst
+        das Fenster (gleicher Startzeitpunkt) -> der Abstand zum Fensterbeginn waechst, bis
+        flatline_timeout_min erreicht ist und check_flatline anschlaegt. Verlaesst die Temperatur
+        das Band (Spannweite > epsilon = reale Bewegung), beginnt das Fenster neu (DTB-20).
+        """
+        temp = reading.surface_temp_c
+        if self._flatline_window_start is None:
+            self._flatline_window_start = reading.measured_at
+            self._flatline_temp_min = temp
+            self._flatline_temp_max = temp
+            return
+        new_min = min(self._flatline_temp_min, temp)
+        new_max = max(self._flatline_temp_max, temp)
+        if new_max - new_min > self.data_quality_thresholds.flatline_epsilon_c:
+            # Temperatur hat das Band verlassen -> reale Bewegung -> Fenster neu starten.
+            self._flatline_window_start = reading.measured_at
+            self._flatline_temp_min = temp
+            self._flatline_temp_max = temp
+        else:
+            self._flatline_temp_min = new_min
+            self._flatline_temp_max = new_max
 
     def _is_g1_healthy(self) -> bool:
         """Ruft GET /health ab; gibt True bei 200 OK, sonst False."""

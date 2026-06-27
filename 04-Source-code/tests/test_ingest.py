@@ -8,7 +8,7 @@ import json
 import logging
 import math
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import httpx
@@ -57,7 +57,7 @@ def quality_thresholds() -> DatenqualitaetSchwellen:
         stale_timeout_s=120.0,
         max_temp_jump_c_per_min=5.0,
         flatline_timeout_min=15.0,
-        flatline_epsilon_c=0.01,
+        flatline_epsilon_c=0.15,  # = config (DS18B20 12-Bit, ~2xLSB; Architekt 2026-06-27)
         max_clock_skew_s=5.0,
         min_plausible_dew_point_c=-50.0,
     )
@@ -395,6 +395,9 @@ def test_poll_optional_pressure_at_boundaries_saves(
     for pressure in (800.0, 1100.0):
         snapshot = {**valid_snapshot, "pressure_hpa": pressure}
         fake_repo.readings.clear()
+        # Iterationen unabhaengig halten: der gleiche Snapshot (identisches measured_at)
+        # wuerde sonst beim 2. Durchlauf als Duplikat/unplausibel verworfen (DTB-20).
+        poller._last_reading = None
 
         with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
             reading = poller.poll()
@@ -1002,3 +1005,232 @@ def test_poll_health_ok_then_current_saves(
     assert reading is not None
     assert len(fake_repo.readings) == 1
     assert mock_get.call_count == 2
+
+
+# --- DTB-20: Sensor-Defekt-Erkennung (Sprung/Flatline) im Ingest-Pfad ------------------
+# Wiring von check_plausibility (Sprung) + check_flatline (Flatline gegen Anker) in poll():
+# ein unplausibles Reading wird fail-safe verworfen (nicht gespeichert, geloggt), damit ein
+# defekter Sensor (springender oder EINGEFRORENER Messwert) nicht still als gueltig durchlaeuft
+# (FA-04, NF-01). Sprung prueft gegen das unmittelbare Vorgaenger-Reading, Flatline gegen einen
+# Anker (aeltestes Reading mit konstanter Temperatur) — sonst waere Flatline bei dichtem Polling
+# wirkungslos (santa-loop Befund DTB-20).
+
+
+def _previous_reading(
+    measured_at: datetime, surface_temp_c: float, sensor_id: str = "anr-rwy-01"
+) -> Reading:
+    """Minimal-Reading als 'vorheriges' Reading fuer die Plausibilitaets-Wiring-Tests."""
+    return Reading(
+        sensor_id=sensor_id,
+        measured_at=measured_at,
+        surface_temp_c=surface_temp_c,
+        air_temp_c=surface_temp_c + 1.0,
+        humidity_pct=90.0,
+        received_at=measured_at,
+    )
+
+
+def _poll_snapshot(
+    poller: Poller, valid_snapshot: dict, measured_at: datetime, surface_temp_c: float
+) -> Reading | None:
+    """Fuehrt EINEN poll() mit Uhr frisch relativ zu measured_at aus (umgeht das autouse
+    frozen_now, damit Snapshots ueber > 2 min Spanne nicht faelschlich als stale gelten)."""
+    iso = measured_at.isoformat().replace("+00:00", "Z")
+    snapshot = {**valid_snapshot, "measured_at": iso, "surface_temp_c": surface_temp_c}
+    fresh_now = measured_at + timedelta(seconds=1)
+    with (
+        patch("src.ingest.poller._now", return_value=fresh_now),
+        patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)),
+    ):
+        return poller.poll()
+
+
+def test_poll_temperature_jump_is_rejected_and_not_saved(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Erster Poll: Basis-Reading (-0.4 C @ 10:00:00) wird gespeichert und wird zum Vergleich.
+    first = {**valid_snapshot, "measured_at": "2026-06-23T10:00:00Z", "surface_temp_c": -0.4}
+    # Zweiter Poll 30 s spaeter mit +6.0 C -> ~12.8 C/min, ueber max_temp_jump_c_per_min (5.0).
+    second = {**valid_snapshot, "measured_at": "2026-06-23T10:00:30Z", "surface_temp_c": 6.0}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(first)):
+        assert poller.poll() is not None
+    with (
+        caplog.at_level(logging.ERROR),
+        patch("src.ingest.poller.httpx.get", _mock_get_for(second)),
+    ):
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 1  # nur das erste (plausible) Reading
+    assert "jump" in caplog.text.lower()
+
+
+def test_poll_jump_exactly_at_threshold_is_saved(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Grenzwert: jump_rate == max_temp_jump_c_per_min (5.0) ist NICHT > Schwelle (strikt >)
+    # -> akzeptiert. +2.5 C in 0.5 min = genau 5.0 C/min.
+    poller._last_reading = _previous_reading(
+        datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC), surface_temp_c=-0.4
+    )
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:00:30Z", "surface_temp_c": 2.1}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_jump_just_above_threshold_is_rejected(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Knapp ueber dem Grenzwert: +2.6 C in 0.5 min = 5.2 C/min > 5.0 -> verworfen.
+    poller._last_reading = _previous_reading(
+        datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC), surface_temp_c=-0.4
+    )
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:00:30Z", "surface_temp_c": 2.2}
+
+    with (
+        caplog.at_level(logging.ERROR),
+        patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)),
+    ):
+        reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    assert "jump" in caplog.text.lower()
+
+
+def test_poll_flatline_detected_over_continuous_polls(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Kernfall FA-04/NF-01 (santa-loop CRITICAL): ein eingefrorener Sensor mit konstanter
+    # Oberflaechentemperatur, aber laufendem Zeitstempel, alle 30 s gepollt. Nach
+    # >= flatline_timeout_min (15 min) muss Flatline greifen. Mit einer gleitenden
+    # Einzel-Referenz wuerde das NIE erkannt (delta_min bliebe ~0.5 min); der Anker macht
+    # die ueber das Fenster akkumulierte Konstanz sichtbar.
+    base = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    last: Reading | None = None
+    with caplog.at_level(logging.ERROR):
+        for k in range(32):  # 32 Polls * 30 s = 15.5 min
+            last = _poll_snapshot(poller, valid_snapshot, base + timedelta(seconds=30 * k), -0.4)
+
+    assert last is None  # der letzte Poll (>= 15 min konstant) wird als Flatline verworfen
+    assert "flatline" in caplog.text.lower()
+    assert len(fake_repo.readings) == 30  # k=0..29 gespeichert; ab k=30 (>= 15 min) Flatline
+
+
+def test_poll_plausible_change_is_saved(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Kleine, physikalisch plausible Aenderung (0.1 C in 30 s) darf NICHT verworfen werden.
+    first = {**valid_snapshot, "measured_at": "2026-06-23T10:00:00Z", "surface_temp_c": -0.4}
+    second = {**valid_snapshot, "measured_at": "2026-06-23T10:00:30Z", "surface_temp_c": -0.3}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(first)):
+        assert poller.poll() is not None
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(second)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 2
+
+
+def test_poll_reference_survives_rejected_jump(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Nach einem verworfenen Sprung muss die Vergleichsbasis das letzte GUTE Reading bleiben,
+    # nicht der Ausreisser -> das naechste plausible Reading wird gegen den guten Wert geprueft.
+    base_ok = {**valid_snapshot, "measured_at": "2026-06-23T10:00:00Z", "surface_temp_c": -0.4}
+    spike = {**valid_snapshot, "measured_at": "2026-06-23T10:00:30Z", "surface_temp_c": 6.0}
+    recover = {**valid_snapshot, "measured_at": "2026-06-23T10:01:00Z", "surface_temp_c": -0.3}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(base_ok)):
+        assert poller.poll() is not None
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(spike)):
+        assert poller.poll() is None  # Sprung verworfen, Referenz bleibt -0.4
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(recover)):
+        reading = poller.poll()  # -0.3 gegen -0.4 (gut) plausibel, nicht gegen 6.0
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 2  # base_ok + recover, nicht der Spike
+
+
+def test_poll_sensor_change_resets_reference_without_crash(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Steht ein Reading eines ANDEREN Sensors in der Referenz, darf poll() nicht mit
+    # ValueError abbrechen (Contract 'Fehler -> None'), sondern die Referenz zuruecksetzen
+    # und das neue Reading normal verarbeiten.
+    poller._last_reading = _previous_reading(
+        datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC), surface_temp_c=-0.4, sensor_id="anr-rwy-99"
+    )
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:00:30Z"}  # sensor_id anr-rwy-01
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.sensor_id == "anr-rwy-01"
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_duplicate_measured_at_is_skipped_without_error(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Identisches measured_at (G1 hat noch keinen neuen Wert) ist kein Defekt: still
+    # ueberspringen, NICHT als Fehler verwerfen/loggen (santa-loop MEDIUM).
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:00:00Z", "surface_temp_c": -0.4}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        assert poller.poll() is not None
+    with (
+        caplog.at_level(logging.ERROR),
+        patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)),
+    ):
+        second = poller.poll()
+
+    assert second is None  # Duplikat uebersprungen
+    assert len(fake_repo.readings) == 1  # nicht erneut gespeichert
+    assert "unplausibel" not in caplog.text.lower()  # nicht als Defekt geloggt
+    assert "invalid timestamp" not in caplog.text.lower()
+
+
+def test_poll_flatline_detected_despite_lsb_dither(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Realer DS18B20-Defektfall (santa-loop Runde 2): ein eingefrorener Sensor zappelt um
+    # ~1 LSB (~0.0625 C) zwischen zwei 12-Bit-Codes. Die Spannweite (~0.0625) bleibt unter
+    # flatline_epsilon_c (0.15) -> das Fenster waechst weiter -> Flatline greift TROTZ Dither.
+    # Mit dem alten Punkt-Anker + epsilon=0.01 entkam genau dieser Fall (40/40 durchgelassen).
+    base = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    temps = (-0.4, -0.3375)  # zwei benachbarte 12-Bit-Codes, Abstand ~1 LSB
+    last: Reading | None = None
+    with caplog.at_level(logging.ERROR):
+        for k in range(40):  # 40 Polls * 30 s = 20 min
+            last = _poll_snapshot(
+                poller, valid_snapshot, base + timedelta(seconds=30 * k), temps[k % 2]
+            )
+
+    assert last is None  # Dither-Sensor wird nach >= 15 min als Flatline verworfen
+    assert "flatline" in caplog.text.lower()
+    assert len(fake_repo.readings) < 40  # kein Escape mehr -> nicht alle durchgelassen
+
+
+def test_poll_recovers_after_flatline_when_temperature_moves(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Nach erkanntem Flatline muss ein real bewegter Wert wieder akzeptiert werden (Fenster
+    # startet neu) — kein dauerhaftes Verwerfen ueber den Defekt hinaus.
+    base = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    for k in range(32):  # 16 min konstant -> Flatline ab Minute 15
+        _poll_snapshot(poller, valid_snapshot, base + timedelta(seconds=30 * k), -0.4)
+    saved_during_flat = len(fake_repo.readings)
+
+    # Temperatur bewegt sich real (> Band) -> wieder plausibel, Fenster startet neu.
+    moved = _poll_snapshot(poller, valid_snapshot, base + timedelta(minutes=16, seconds=30), 1.0)
+
+    assert moved is not None
+    assert len(fake_repo.readings) == saved_during_flat + 1

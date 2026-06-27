@@ -102,10 +102,51 @@ def check_plausibility(
     if jump_rate > thresholds.max_temp_jump_c_per_min:
         return f"temperature jump {jump_rate:.2f} C/min exceeds limit"
 
-    if delta_min >= thresholds.flatline_timeout_min:
-        if abs(delta_temp_c) <= thresholds.flatline_epsilon_c:
-            return "temperature flatline"
+    # Flatline wird hier NICHT geprueft: sie braucht ein ZEITFENSTER (siehe check_flatline),
+    # das der Aufrufer (Poller) haelt. check_plausibility deckt Zeitstempelordnung + Sprung ab.
+    return None
 
+
+def check_flatline(
+    window_start: datetime | None,
+    current_measured_at: datetime,
+    temp_span_c: float,
+    thresholds: DatenqualitaetSchwellen,
+) -> str | None:
+    """Flatline-Erkennung ueber ein ZEITFENSTER (FA-04, NF-01).
+
+    `window_start` ist der Beginn (measured_at) des aktuellen Konstanz-Fensters — des
+    aeltesten Readings, seit dem die Temperatur das Band nicht verlassen hat. `temp_span_c`
+    ist die Spannweite (max-min) der Oberflaechentemperatur ueber dieses Fenster inkl. des
+    aktuellen Readings. Flatline gilt, wenn das Fenster >= flatline_timeout_min lang ist UND
+    die Spannweite <= flatline_epsilon_c bleibt (die Temperatur hat sich real nicht bewegt).
+
+    Gegen ein Fenster statt gegen das unmittelbare Vorgaenger-Reading zu pruefen ist noetig,
+    weil delta_min bei dichtem Polling (z. B. 30 s) sonst nie flatline_timeout_min erreicht
+    (DTB-20 santa-loop). Die Spannweite ist ausserdem robuster gegen Rauschen als der Abstand
+    zu einem einzelnen Punkt.
+
+    WICHTIG (NF-05): flatline_epsilon_c ist die Rausch-/Bewegungstoleranz (Band). Sie muss zur
+    realen Sensoraufloesung/zum Rauschen passen — ist sie zu klein, entkommt ein rauschender,
+    eingefrorener Sensor der Erkennung. Der Wert ist mit dem Architekten/`Schwellenwerte.md`
+    zu plausibilisieren, nicht im Code zu raten.
+
+    Args:
+        window_start: measured_at des Fensterbeginns. None -> kein Fenster -> plausibel.
+        current_measured_at: measured_at des aktuellen Readings (Fensterende).
+        temp_span_c: max-min der Oberflaechentemperatur ueber das Fenster inkl. current.
+        thresholds: Parametrierbare Grenzwerte fuer Datenqualitaet (NF-05).
+
+    Returns:
+        "temperature flatline", wenn eingefroren; sonst None.
+    """
+    if window_start is None:
+        return None
+    delta_min = (current_measured_at - window_start).total_seconds() / 60.0
+    if delta_min < thresholds.flatline_timeout_min:
+        return None
+    if temp_span_c <= thresholds.flatline_epsilon_c:
+        return "temperature flatline"
     return None
 
 

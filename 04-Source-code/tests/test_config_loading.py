@@ -28,7 +28,7 @@ def test_default_config_laedt_kaskaden_schwellen_aus_schwellenwerte_md():
     assert thresholds.datenqualitaet.stale_timeout_s == 120.0
     assert thresholds.datenqualitaet.max_temp_jump_c_per_min == 5.0
     assert thresholds.datenqualitaet.flatline_timeout_min == 15.0
-    assert thresholds.datenqualitaet.flatline_epsilon_c == 0.01
+    assert thresholds.datenqualitaet.flatline_epsilon_c == 0.15
     assert thresholds.datenqualitaet.max_clock_skew_s == 5.0
     assert thresholds.datenqualitaet.min_plausible_dew_point_c == -50.0
     assert thresholds.plausibilitaet.min_temp_c == -50.0

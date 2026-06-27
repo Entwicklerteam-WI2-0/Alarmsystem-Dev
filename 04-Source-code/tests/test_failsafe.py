@@ -8,7 +8,12 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from src.assessment.failsafe import build_unknown_assessment, check_plausibility, is_stale
+from src.assessment.failsafe import (
+    build_unknown_assessment,
+    check_flatline,
+    check_plausibility,
+    is_stale,
+)
 from src.config.loader import DatenqualitaetSchwellen
 from src.model.enums import RiskLevel
 from src.model.schemas import Reading
@@ -181,33 +186,41 @@ def test_check_plausibility_cross_sensor_raises(
 
 
 # ---------------------------------------------------------------------------
-# Plausibilitaet - Flatline
+# Flatline ueber Zeitfenster (check_flatline, DTB-20)
 # ---------------------------------------------------------------------------
-def test_check_plausibility_flatline_exceeding_timeout_is_unplausible(
-    fresh_reading: Reading,
+def test_check_flatline_without_window_is_plausible(
     quality_thresholds: DatenqualitaetSchwellen,
 ) -> None:
-    previous = _build_previous(fresh_reading, minutes_ago=15.0, surface_temp_c=-0.4)
-    reason = check_plausibility(fresh_reading, previous, quality_thresholds)
-    assert reason == "temperature flatline"
+    now = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    assert check_flatline(None, now, 0.0, quality_thresholds) is None
 
 
-def test_check_plausibility_change_within_flatline_window_is_plausible(
-    fresh_reading: Reading,
+def test_check_flatline_constant_over_timeout_is_unplausible(
     quality_thresholds: DatenqualitaetSchwellen,
 ) -> None:
-    # 15 min auseinander, aber deutliche Aenderung -> kein Flatline.
-    previous = _build_previous(fresh_reading, minutes_ago=15.0, surface_temp_c=-1.0)
-    assert check_plausibility(fresh_reading, previous, quality_thresholds) is None
+    # Fenster >= flatline_timeout_min (15 min), Spannweite 0 -> eingefroren.
+    start = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    current = start + timedelta(minutes=15.0)
+    assert check_flatline(start, current, 0.0, quality_thresholds) == "temperature flatline"
 
 
-def test_check_plausibility_small_change_before_flatline_timeout_is_plausible(
-    fresh_reading: Reading,
+def test_check_flatline_span_above_band_is_plausible(
     quality_thresholds: DatenqualitaetSchwellen,
 ) -> None:
-    # 14 min auseinander, keine Aenderung -> noch unter dem Timeout.
-    previous = _build_previous(fresh_reading, minutes_ago=14.0, surface_temp_c=-0.4)
-    assert check_plausibility(fresh_reading, previous, quality_thresholds) is None
+    # Fenster lang genug, aber Spannweite > flatline_epsilon_c -> reale Bewegung, kein Flatline.
+    start = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    current = start + timedelta(minutes=15.0)
+    span = quality_thresholds.flatline_epsilon_c + 0.1
+    assert check_flatline(start, current, span, quality_thresholds) is None
+
+
+def test_check_flatline_before_timeout_is_plausible(
+    quality_thresholds: DatenqualitaetSchwellen,
+) -> None:
+    # Spannweite 0, aber Fenster < flatline_timeout_min -> noch nicht flatline.
+    start = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    current = start + timedelta(minutes=14.0)
+    assert check_flatline(start, current, 0.0, quality_thresholds) is None
 
 
 # ---------------------------------------------------------------------------
