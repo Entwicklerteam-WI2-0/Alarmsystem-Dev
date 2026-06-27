@@ -181,5 +181,9 @@ async def stream_alarms(
     except Exception:  # noqa: BLE001 - akademisch (StreamingResponse wirft praktisch nie)
         # Reservierten Slot freigeben, falls die Response-Konstruktion scheitert: der
         # _frames-finally liefe nie (der Generator startet nicht) -> sonst dauerhaft belegt.
+        # Awareness (PR-Review): sammelt asyncios Async-Gen-Finalizer den nie gestarteten
+        # _frames-Generator spaeter via aclose() ein, koennte dessen finally erneut release()
+        # rufen. Das ist sicher, weil release() idempotent ist (s. AlarmBroadcaster.release) —
+        # die Idempotenz ist hier der bewusste Sicherheitsgurt, keine zufaellige Annahme.
         broadcaster.release(queue)
         raise

@@ -7,12 +7,12 @@ Vermeidet das Duplikat der `is_disconnected`-Stubs ueber die beiden SSE-Testmodu
 from collections.abc import Awaitable, Callable
 
 
-async def _never_disconnected() -> bool:
+async def never_disconnected() -> bool:
     """is_disconnected-Stub, der nie trennt (Client bleibt verbunden)."""
     return False
 
 
-def _disconnect_after(n: int) -> Callable[[], Awaitable[bool]]:
+def disconnect_after(n: int) -> Callable[[], Awaitable[bool]]:
     """is_disconnected-Stub: die ersten n Aufrufe False, danach True."""
     i = 0
 

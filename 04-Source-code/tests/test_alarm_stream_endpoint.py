@@ -32,7 +32,7 @@ from src.api.v1 import _MAX_LOGGED_HEADER_LEN, _sanitize_header_value, stream_al
 from src.main import app, get_runtime
 from src.model.enums import AlarmSeverity, AlarmState
 from src.model.schemas import Alarm
-from tests.sse_helpers import _disconnect_after, _never_disconnected
+from tests.sse_helpers import disconnect_after, never_disconnected
 
 client = TestClient(app)
 
@@ -66,7 +66,7 @@ def test_stream_response_is_event_stream_with_no_store():
     async def scenario() -> None:
         broadcaster = AlarmBroadcaster()
         runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
-        request = SimpleNamespace(is_disconnected=_never_disconnected, headers=Headers({}))
+        request = SimpleNamespace(is_disconnected=never_disconnected, headers=Headers({}))
 
         response = await stream_alarms(runtime=runtime, request=request)
 
@@ -98,7 +98,7 @@ def test_stream_emits_published_alarm_as_frame():
     async def scenario() -> None:
         broadcaster = AlarmBroadcaster()
         runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
-        request = SimpleNamespace(is_disconnected=_disconnect_after(1), headers=Headers({}))
+        request = SimpleNamespace(is_disconnected=disconnect_after(1), headers=Headers({}))
 
         response = await stream_alarms(runtime=runtime, request=request)
         gen = response.body_iterator
@@ -152,8 +152,8 @@ def test_stream_emits_two_published_alarms_in_id_order():
     async def scenario() -> None:
         broadcaster = AlarmBroadcaster()
         runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
-        # _disconnect_after(2) -> der Generator liefert genau zwei Frames, dann beendet er sauber.
-        request = SimpleNamespace(is_disconnected=_disconnect_after(2), headers=Headers({}))
+        # disconnect_after(2) -> der Generator liefert genau zwei Frames, dann beendet er sauber.
+        request = SimpleNamespace(is_disconnected=disconnect_after(2), headers=Headers({}))
 
         response = await stream_alarms(runtime=runtime, request=request)
         gen = response.body_iterator
@@ -206,7 +206,7 @@ def test_endpoint_calls_sse_alarm_frames_with_default_heartbeat(monkeypatch):
     async def scenario() -> None:
         broadcaster = AlarmBroadcaster()
         runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
-        request = SimpleNamespace(is_disconnected=_never_disconnected, headers=Headers({}))
+        request = SimpleNamespace(is_disconnected=never_disconnected, headers=Headers({}))
 
         response = await stream_alarms(runtime=runtime, request=request)
         # Body iterieren -> der _frames-Generator ruft sse_alarm_frames mit den realen Call-Args.
@@ -230,7 +230,7 @@ def test_stream_logs_last_event_id_on_reconnect(caplog):
         # kanonischen Header 'Last-Event-ID'; der Fake muss diese Realitaet modellieren, sonst
         # koppelt der Test an die exakte Zugriffs-Schreibweise im Produktionscode.
         request = SimpleNamespace(
-            is_disconnected=_never_disconnected, headers=Headers({"Last-Event-ID": "7"})
+            is_disconnected=never_disconnected, headers=Headers({"Last-Event-ID": "7"})
         )
         with caplog.at_level(logging.INFO, logger="src.api.v1"):
             response = await stream_alarms(runtime=runtime, request=request)
@@ -254,7 +254,7 @@ def test_stream_does_not_log_reconnect_on_first_connection(caplog):
     async def scenario() -> None:
         broadcaster = AlarmBroadcaster()
         runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
-        request = SimpleNamespace(is_disconnected=_never_disconnected, headers=Headers({}))
+        request = SimpleNamespace(is_disconnected=never_disconnected, headers=Headers({}))
         with caplog.at_level(logging.INFO, logger="src.api.v1"):
             response = await stream_alarms(runtime=runtime, request=request)
             await response.body_iterator.aclose()
@@ -273,7 +273,7 @@ def test_stream_releases_slot_if_response_construction_fails(monkeypatch):
     async def scenario() -> None:
         broadcaster = AlarmBroadcaster()
         runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
-        request = SimpleNamespace(is_disconnected=_never_disconnected, headers=Headers({}))
+        request = SimpleNamespace(is_disconnected=never_disconnected, headers=Headers({}))
 
         def _boom(*_args: object, **_kwargs: object) -> object:
             raise RuntimeError("response-Konstruktion kaputt")
@@ -295,7 +295,7 @@ def test_stream_returns_503_when_at_capacity():
         broadcaster = AlarmBroadcaster(max_subscribers=1)
         broadcaster.reserve()  # Kapazitaet voll belegt
         runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
-        request = SimpleNamespace(is_disconnected=_never_disconnected, headers=Headers({}))
+        request = SimpleNamespace(is_disconnected=never_disconnected, headers=Headers({}))
 
         response = await stream_alarms(runtime=runtime, request=request)
 
@@ -344,7 +344,7 @@ def test_stream_sanitizes_last_event_id_in_log(caplog):
         broadcaster = AlarmBroadcaster()
         runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
         request = SimpleNamespace(
-            is_disconnected=_never_disconnected,
+            is_disconnected=never_disconnected,
             headers=Headers({"last-event-id": "7\r\nINFO:root:GEFAELSCHT"}),
         )
         with caplog.at_level(logging.INFO, logger="src.api.v1"):

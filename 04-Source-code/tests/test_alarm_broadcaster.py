@@ -34,7 +34,7 @@ from src.api.broadcaster import (
 )
 from src.model.enums import AlarmSeverity, AlarmState
 from src.model.schemas import Alarm
-from tests.sse_helpers import _disconnect_after
+from tests.sse_helpers import disconnect_after
 
 _T0 = datetime(2026, 6, 26, 12, 0, 0, tzinfo=UTC)
 
@@ -375,7 +375,7 @@ def test_sse_frame_carries_alarm_as_json_with_event_id():
     async def scenario() -> list[str]:
         queue: asyncio.Queue[Alarm] = asyncio.Queue()
         queue.put_nowait(_alarm(42, AlarmSeverity.CRITICAL))
-        gen = sse_alarm_frames(queue, _disconnect_after(1), heartbeat_s=5)
+        gen = sse_alarm_frames(queue, disconnect_after(1), heartbeat_s=5)
         return await _drain(gen)
 
     frames = asyncio.run(scenario())
@@ -404,7 +404,7 @@ def test_sse_frame_carries_alarm_as_json_with_event_id():
 def test_sse_emits_heartbeat_on_idle():
     async def scenario() -> list[str]:
         queue: asyncio.Queue[Alarm] = asyncio.Queue()  # leer -> Timeout -> Heartbeat
-        gen = sse_alarm_frames(queue, _disconnect_after(1), heartbeat_s=0.01)
+        gen = sse_alarm_frames(queue, disconnect_after(1), heartbeat_s=0.01)
         return await _drain(gen)
 
     frames = asyncio.run(scenario())
@@ -416,7 +416,7 @@ def test_sse_stops_immediately_when_already_disconnected():
     async def scenario() -> list[str]:
         queue: asyncio.Queue[Alarm] = asyncio.Queue()
         queue.put_nowait(_alarm(1))
-        gen = sse_alarm_frames(queue, _disconnect_after(0), heartbeat_s=5)  # sofort getrennt
+        gen = sse_alarm_frames(queue, disconnect_after(0), heartbeat_s=5)  # sofort getrennt
         return await _drain(gen)
 
     frames = asyncio.run(scenario())
@@ -431,7 +431,7 @@ def test_sse_emits_consecutive_alarms_in_event_id_order():
         queue: asyncio.Queue[Alarm] = asyncio.Queue()
         queue.put_nowait(_alarm(1))
         queue.put_nowait(_alarm(2))
-        gen = sse_alarm_frames(queue, _disconnect_after(2), heartbeat_s=5)
+        gen = sse_alarm_frames(queue, disconnect_after(2), heartbeat_s=5)
         return await _drain(gen)
 
     frames = asyncio.run(scenario())
@@ -447,7 +447,7 @@ def test_sse_continues_with_alarm_after_heartbeat():
     # treffen (jeder dort beendet nach genau einem Output).
     async def scenario() -> list[str]:
         queue: asyncio.Queue[Alarm] = asyncio.Queue()  # leer -> erste Runde Heartbeat
-        gen = sse_alarm_frames(queue, _disconnect_after(2), heartbeat_s=0.01)
+        gen = sse_alarm_frames(queue, disconnect_after(2), heartbeat_s=0.01)
         first = await gen.__anext__()  # Leerlauf -> Heartbeat
         queue.put_nowait(_alarm(8))  # jetzt Alarm einreihen
         second = await gen.__anext__()  # Schleife setzt nach continue fort -> Alarm-Frame
