@@ -60,6 +60,13 @@ def test_cors_origins_parses_comma_separated_list(monkeypatch):
     assert _cors_origins() == ["http://a.test", "http://b.test"]
 
 
+def test_cors_origins_wildcard_dominates_mixed_list(monkeypatch):
+    # Edge-Case (Review LOW): "*" zusammen mit konkreten Origins -> Wildcard dominiert (["*"]),
+    # statt einer ueberraschenden Mischliste durchzureichen.
+    monkeypatch.setenv("G2_CORS_ORIGINS", "*,http://g3.local")
+    assert _cors_origins() == ["*"]
+
+
 def test_restricted_origins_block_foreign_origin(monkeypatch):
     # Negativtest (Review LOW): bei eingeschraenkten Origins bekommt eine FREMDE Origin KEINEN
     # allow-origin-Header. Isolierte App mit _cors_origins() unter gesetzter Env (kein Reimport
