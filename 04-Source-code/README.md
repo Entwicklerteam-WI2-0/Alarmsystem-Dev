@@ -31,9 +31,16 @@ Kein Migrationsframework. Das Schema wird direkt eingespielt; `schema.sql` ist i
 *geänderter* Tabellenstruktur migriert `IF NOT EXISTS` **nicht** (Drift) → Strukturänderung = manuell
 DROP/ALTER.
 
+**DB-Kompatibilität:** `schema.sql` läuft auf **MariaDB** (Projekt-Default, E-29) **und MySQL 5.7/8.0**.
+`CREATE TABLE IF NOT EXISTS` ist beidem gemein. Für bedingte `ALTER TABLE`-Migrationen (z. B. nachträglich
+hinzugefügte Spalten/Indizes) wird statt der MariaDB-spezifischen Syntax `ADD/DROP ... IF [NOT] EXISTS`
+über `INFORMATION_SCHEMA` geprüft und nur bei Bedarf `ALTER TABLE` via `PREPARE`/`EXECUTE` ausgeführt.
+Das vermeidet Syntaxfehler auf älteren MySQL-Versionen (< 8.0.21), die Flughafen-Betriebsumgebungen noch
+verwenden können.
+
 **Zwei Rollen** (nicht verwechseln): den **Admin-User `root`** (`DB_ROOT_PASSWORD`) zum Einspielen von
-DDL + Rechten; den **App-User `alarm`** (`DB_USER`) nutzt nur die App. Voraussetzung: laufende MariaDB,
-App-User existiert (DB-Init), Zugangsdaten in `.env` (s. `.env.example`), nie committen.
+DDL + Rechten; den **App-User `alarm`** (`DB_USER`) nutzt nur die App. Voraussetzung: laufende MariaDB
+oder MySQL, App-User existiert (DB-Init), Zugangsdaten in `.env` (s. `.env.example`), nie committen.
 
 > Pi via SSH-Tunnel: zuerst `ssh -L 3306:localhost:3306 <pi>` öffnen, dann gegen `127.0.0.1` einspielen.
 > `docker-compose.yml` ist **abgewählt** (E-35: native MariaDB, kein Docker) und wird entfernt — **nicht**
