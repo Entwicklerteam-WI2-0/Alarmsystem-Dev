@@ -13,6 +13,7 @@ Lifespan) — analog zu den /v1/assessment/current-Tests.
 import pytest
 from fastapi.testclient import TestClient
 
+from src.api.exceptions import RuntimeNotReadyError
 from src.main import app, get_runtime
 
 client = TestClient(app)
@@ -40,8 +41,13 @@ def test_health_ready_returns_200_and_status_ok():
 
 
 def test_health_not_ready_returns_503_error_envelope():
-    # Arrange: kein Override + keine Lifespan (module-level TestClient laeuft ohne
-    # Context-Manager) -> app.state.runtime fehlt -> get_runtime-Guard greift.
+    # Arrange: get_runtime explizit auf RuntimeNotReadyError werfen lassen.
+    # Bewusst KEIN Seiteneffekt auf app.state.runtime (das koennte von einem
+    # anderen Test-Modul bereits gesetzt sein, wenn es den lifespan-Context
+    # verwendet hat); die Dependency-Override garantiert deterministisches 503.
+    app.dependency_overrides[get_runtime] = lambda: (_ for _ in ()).throw(
+        RuntimeNotReadyError("test: runtime fehlt")
+    )
 
     # Act
     response = client.get("/v1/health")
