@@ -293,18 +293,16 @@ def test_build_unknown_assessment_truncates_long_reason() -> None:
     assert assessment.explanation.endswith("...")
 
 
-def test_check_plausibility_lsb_dither_is_flatline(
-    fresh_reading: Reading,
+def test_check_flatline_lsb_dither_is_flatline(
     quality_thresholds: DatenqualitaetSchwellen,
 ) -> None:
     # Regression DTB-20: ein eingefrorener DS18B20 dithert um 1 LSB (0.0625 C @ 12-Bit).
-    # Mit dem alten epsilon=0.01 entkam das der Erkennung; mit 0.15 muss es Flatline sein.
+    # Die Spannweite ueber ein >= flatline_timeout_min langes Fenster muss als Flatline gelten
+    # (epsilon=0.15 deckt das LSB-Dither; mit dem alten epsilon=0.01 waere es entkommen).
+    # Migration aus PR #120: Flatline lebt jetzt in check_flatline (Zeitfenster), nicht mehr
+    # in check_plausibility (Konsekutiv-Paar) — DTB-20.
     dither_c = 0.0625
-    assert dither_c < quality_thresholds.flatline_epsilon_c
-    previous = _build_previous(
-        fresh_reading,
-        minutes_ago=15.0,
-        surface_temp_c=fresh_reading.surface_temp_c - dither_c,
-    )
-    reason = check_plausibility(fresh_reading, previous, quality_thresholds)
-    assert reason == "temperature flatline"
+    assert dither_c <= quality_thresholds.flatline_epsilon_c
+    start = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    current = start + timedelta(minutes=quality_thresholds.flatline_timeout_min)
+    assert check_flatline(start, current, dither_c, quality_thresholds) == "temperature flatline"
