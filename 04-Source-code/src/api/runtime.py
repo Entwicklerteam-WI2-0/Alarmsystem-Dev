@@ -17,22 +17,28 @@ from fastapi import Request
 from src.api.exceptions import RuntimeNotReadyError
 
 if TYPE_CHECKING:
+    from src.alarm.service import AlarmGenerator
     from src.assessment import AssessmentService
     from src.config.loader import Thresholds
     from src.ingest.poller import Poller
-    from src.storage import AssessmentRepository, AuditRepository, ReadingRepository
+    from src.storage import AssessmentRepository, AuditRepository, Repository
 
 
-@dataclass
+@dataclass(frozen=True)
 class Runtime:
-    """Zusammengebauter Dependency-Graph einer laufenden Instanz (DI)."""
+    """Zusammengebauter Dependency-Graph einer laufenden Instanz (DI). Unveraenderlich:
+    der Graph wird in `build_runtime` einmal zusammengebaut und danach nie mutiert."""
 
     thresholds: Thresholds
-    reading_repo: ReadingRepository
+    # ABC-Typ (nicht die konkrete ReadingRepository): konsistent mit assessment_repo/
+    # audit_repo und erlaubt In-Memory-Doubles (Tests/lokal) ohne Type-Bruch. build_runtime
+    # injiziert weiterhin die konkrete PyMySQL-ReadingRepository (DTB-41 Option A).
+    reading_repo: Repository
     assessment_repo: AssessmentRepository
     audit_repo: AuditRepository
     poller: Poller
     service: AssessmentService
+    alarm_generator: AlarmGenerator
 
 
 def get_runtime(request: Request) -> Runtime:

@@ -39,6 +39,284 @@ def test_default_config_laedt_kaskaden_schwellen_aus_schwellenwerte_md():
     assert thresholds.plausibilitaet.max_pressure_hpa == 1100.0
 
 
+def test_default_config_laedt_hysterese_parameter_aus_schwellenwerte_md():
+    # Act
+    thresholds = load_thresholds()
+
+    # Assert — Entprellung/Hysterese gem. Schwellenwerte.md §2 (ISA-18.2):
+    # On-Delay >= 60 s; Rueckstufung 0,5 C unterschritten und >= 5 min (300 s) stabil.
+    assert thresholds.hysterese.on_delay_s == 60.0
+    assert thresholds.hysterese.max_continuity_gap_s == 150.0  # = stale_timeout(120) + poll(30)
+    assert thresholds.hysterese.downgrade_stable_s == 300.0
+    assert thresholds.hysterese.downgrade_undershoot_c == 0.5
+
+
+@pytest.mark.parametrize(
+    "schluessel",
+    ["on_delay_s", "max_continuity_gap_s", "downgrade_stable_s", "downgrade_undershoot_c"],
+)
+def test_negative_hysterese_konstante_scheitert_laut(tmp_path, schluessel):
+    # Arrange — eine negative Zeit/Marge ist fachlich ungueltig und wuerde den
+    # On-Delay-Debounce aushebeln (Sicherheitsparameter still ignoriert).
+    daten = _minimal_config()
+    daten["hysterese"][schluessel] = -1.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    # Act / Assert — Loader muss laut scheitern (kein stiller Default, NF-01-Geist).
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+@pytest.mark.parametrize("ungueltig", [float("nan"), float("inf"), float("-inf")])
+def test_nicht_endliche_hysterese_konstante_scheitert_laut(tmp_path, ungueltig):
+    # NaN/inf wuerden alle >=-Vergleiche der Hysterese unterlaufen (NaN < 0 ist False!)
+    # -> muessen laut abgewiesen werden, nicht still als verschleppter Crash auftauchen.
+    daten = _minimal_config()
+    daten["hysterese"]["on_delay_s"] = ungueltig
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+@pytest.mark.parametrize("gap", [0.0, 30.0, 59.0])
+def test_max_continuity_gap_kleiner_als_on_delay_scheitert_laut(tmp_path, gap):
+    # max_gap < on_delay -> jeder Poll bricht die Kontinuitaet, der On-Delay akkumuliert
+    # nie -> es feuert NIE ein Alarm (Under-Alarm, NF-01-Verstoss). Muss laut scheitern.
+    daten = _minimal_config()
+    daten["hysterese"]["on_delay_s"] = 60.0
+    daten["hysterese"]["max_continuity_gap_s"] = gap
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_max_continuity_gap_gleich_on_delay_ist_erlaubt(tmp_path):
+    daten = _minimal_config()
+    daten["hysterese"]["on_delay_s"] = 60.0
+    daten["hysterese"]["max_continuity_gap_s"] = 60.0
+    # stale_timeout an die kleinere Gap angleichen (Cross-Check: max_gap >= stale_timeout).
+    daten["datenqualitaet"]["stale_timeout_s"] = 60.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    thresholds = load_thresholds(datei)
+
+    assert thresholds.hysterese.max_continuity_gap_s == 60.0
+
+
+def test_unbekannter_schluessel_in_sektion_scheitert_laut(tmp_path):
+    # NF-05: eine Safety-Config darf einen vertippten Key (z. B. 'off_delay_s' statt
+    # 'on_delay_s') nicht still verwerfen -> der Operator glaubt sonst, eine Schwelle
+    # geaendert zu haben, der Default bleibt aber aktiv. Spiegelt extra='forbid'.
+    daten = _minimal_config()
+    daten["hysterese"]["off_delay_s"] = 30.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+@pytest.mark.parametrize("ungueltig", [float("nan"), float("inf")])
+def test_nicht_endliche_vereisungs_schwelle_scheitert_laut(tmp_path, ungueltig):
+    # NaN/inf in einer Vereisungs-Schwelle wuerde in der Bewertung (DTB-38) alle
+    # Vergleiche unterlaufen (NaN < x ist immer False -> fail-open). Muss laut scheitern.
+    daten = _minimal_config()
+    daten["vereisung"]["t_s_gefrierpunkt_c"] = ungueltig
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+@pytest.mark.parametrize("feld", ["on_delay_s", "max_continuity_gap_s", "downgrade_stable_s"])
+def test_zu_grosse_zeitkonstante_scheitert_laut(feld):
+    # Ein absurd grosser Wert wuerde entweder timedelta sprengen (OverflowError beim
+    # Engine-Bau) oder den Alarm faktisch nie ausloesen (stiller Under-Alarm). Obergrenze
+    # 24 h -> laut ConfigError statt verschleppter Crash / stiller Deaktivierung.
+    from src.config.loader import HystereseParameter
+
+    werte = {
+        "on_delay_s": 60.0,
+        "max_continuity_gap_s": 120.0,
+        "downgrade_stable_s": 300.0,
+        "downgrade_undershoot_c": 0.5,
+    }
+    werte[feld] = 1e18
+    # max_gap muss >= on_delay bleiben, damit der Cross-Field-Check nicht zuerst greift.
+    if feld == "on_delay_s":
+        werte["max_continuity_gap_s"] = 1e18
+    with pytest.raises(ConfigError):
+        HystereseParameter(**werte)
+
+
+def test_zeitkonstante_obergrenze_grenzfall():
+    # Grenze _MAX_ZEIT_S = 86400 s (24 h): exakt erlaubt (`>`-Pruefung), knapp darueber nicht.
+    from src.config.loader import HystereseParameter
+
+    HystereseParameter(  # exakt 86400 -> ok
+        on_delay_s=60.0,
+        max_continuity_gap_s=86_400.0,
+        downgrade_stable_s=86_400.0,
+        downgrade_undershoot_c=0.5,
+    )
+    with pytest.raises(ConfigError):  # 86400.001 -> abgelehnt
+        HystereseParameter(
+            on_delay_s=60.0,
+            max_continuity_gap_s=86_400.0,
+            downgrade_stable_s=86_400.001,
+            downgrade_undershoot_c=0.5,
+        )
+
+
+def test_undershoot_obergrenze_grenzfall():
+    # Plausibilitaets-Grenze _MAX_UNDERSHOOT_C = 10 °C: exakt erlaubt, klar darueber abgelehnt.
+    # Ein zu grosser Deadband wuerde eine Rueckstufung faktisch nie bestaetigen (NF-05-Geist:
+    # Fehlkonfiguration frueh erkennen statt still die Stabilisierung deaktivieren).
+    from src.config.loader import HystereseParameter
+
+    HystereseParameter(  # exakt 10.0 -> ok
+        on_delay_s=60.0,
+        max_continuity_gap_s=120.0,
+        downgrade_stable_s=300.0,
+        downgrade_undershoot_c=10.0,
+    )
+    with pytest.raises(ConfigError):  # 50 °C -> abgelehnt (Fehlkonfiguration)
+        HystereseParameter(
+            on_delay_s=60.0,
+            max_continuity_gap_s=120.0,
+            downgrade_stable_s=300.0,
+            downgrade_undershoot_c=50.0,
+        )
+
+
+def test_kommentar_key_in_sektion_wird_toleriert(tmp_path):
+    # '_'-praefixierte Keys sind Kommentare und duerfen auch in einem Abschnitt stehen
+    # (Konsistenz mit Top-Level). Echte Schwellen-Keys bleiben streng (Tippfehler-Test oben).
+    daten = _minimal_config()
+    daten["hysterese"]["_comment"] = "Inline-Hinweis fuer Operatoren"
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    thresholds = load_thresholds(datei)  # darf NICHT scheitern
+    assert thresholds.hysterese.on_delay_s == 60.0
+
+
+def test_default_config_laedt_poll_interval():
+    # P0-a: die Poll-Kadenz des Schedulers ist parametrierbar (NF-05), nicht hardcodiert.
+    thresholds = load_thresholds()
+    assert thresholds.betrieb.poll_interval_s == 30.0
+
+
+@pytest.mark.parametrize("ungueltig", [0.0, -1.0, float("nan"), float("inf")])
+def test_ungueltiges_poll_interval_scheitert_laut(tmp_path, ungueltig):
+    # poll_interval_s muss > 0 und endlich sein: 0/negativ wäre ein Dauerpoll bzw. sinnlos,
+    # NaN/inf unterläuft jeden Vergleich. Laut scheitern statt still falsch konfigurieren.
+    daten = _minimal_config()
+    daten["betrieb"]["poll_interval_s"] = ungueltig
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_poll_interval_groesser_als_max_gap_scheitert_laut(tmp_path):
+    # Cross-Section (NF-01): pollt das System langsamer als die Kontinuitäts-Lücke der
+    # Alarm-Hysterese, bricht jeder Poll die Eskalations-Kontinuität -> es feuert nie ein
+    # Alarm (stiller Under-Alarm). Erst mit poll_interval_s in der Config erzwingbar.
+    daten = _minimal_config()
+    daten["betrieb"]["poll_interval_s"] = daten["hysterese"]["max_continuity_gap_s"] + 1.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_max_gap_kleiner_als_stale_timeout_scheitert_laut(tmp_path):
+    # Cross-Section (NF-01): eine einzelne Stale-Phase (bis stale_timeout_s) darf die
+    # Alarm-Kontinuität nicht brechen -> max_continuity_gap_s muss sie abdecken. Sonst setzt
+    # ein stale-flackernder Sensor während realer Vereisung den On-Delay perpetuell zurück.
+    daten = _minimal_config()
+    # max_gap < stale_timeout, aber >= on_delay (sonst greift der andere Check zuerst).
+    daten["hysterese"]["max_continuity_gap_s"] = daten["datenqualitaet"]["stale_timeout_s"] - 1
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+@pytest.mark.parametrize("ungueltig", [True, float("nan"), float("inf"), 0.0, -1.0, 86_401.0])
+def test_betrieb_parameter_direktkonstruktion_validiert(ungueltig):
+    # Direktkonstruktion (greift unabhängig vom Loader-Loop): bool/NaN/inf/<=0/zu-groß
+    # werden laut abgelehnt; ein gültiger Wert konstruiert sauber.
+    from src.config.loader import BetriebParameter
+
+    BetriebParameter(poll_interval_s=30.0)  # gültig -> kein Fehler
+    with pytest.raises(ConfigError):
+        BetriebParameter(poll_interval_s=ungueltig)
+
+
+def test_hysterese_parameter_lehnt_bool_bei_direktkonstruktion_ab():
+    # bool ist int-Subtyp -> als Zeit/Marge nicht zulassen (Defense-in-Depth).
+    from src.config.loader import HystereseParameter
+
+    with pytest.raises(ConfigError):
+        HystereseParameter(
+            on_delay_s=True,  # noqa: FBT003
+            max_continuity_gap_s=120.0,
+            downgrade_stable_s=300.0,
+            downgrade_undershoot_c=0.5,
+        )
+
+
+def test_hysterese_parameter_lehnt_nicht_endlich_bei_direktkonstruktion_ab():
+    # Defense-in-Depth: auch bei direkter Konstruktion (nicht ueber den Loader) wird
+    # NaN/inf abgewiesen -- __post_init__ schuetzt Aufrufer ausserhalb des Config-Pfads.
+    from src.config.loader import HystereseParameter
+
+    with pytest.raises(ConfigError):
+        HystereseParameter(
+            on_delay_s=float("nan"),
+            max_continuity_gap_s=120.0,
+            downgrade_stable_s=300.0,
+            downgrade_undershoot_c=0.5,
+        )
+
+
+def test_on_delay_null_ist_erlaubt(tmp_path):
+    # On-Delay 0 = bewusst kein Debounce (degeneriert, aber gueltig) -> kein Fehler.
+    daten = _minimal_config()
+    daten["hysterese"]["on_delay_s"] = 0.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    thresholds = load_thresholds(datei)
+
+    assert thresholds.hysterese.on_delay_s == 0.0
+
+
+def test_integer_schwellwert_wird_akzeptiert(tmp_path):
+    # Ein JSON-Integer (z. B. 0 ohne Dezimalpunkt) ist ein gueltiger Schwellwert
+    # (int wird neben float akzeptiert; nur bool/nicht-numerisch wird abgelehnt).
+    daten = _minimal_config()
+    daten["prognose"]["t_s_grenz_c"] = 0  # int, nicht 0.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    thresholds = load_thresholds(datei)
+
+    assert thresholds.prognose.t_s_grenz_c == 0
+
+
 def test_eigener_pfad_ist_parametrierbar(tmp_path):
     # Arrange — NF-05: Schwellen über externe Config austauschbar
     eigene = tmp_path / "thresholds.json"
@@ -232,6 +510,12 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "delta_t_feucht_k": 1.0,
         },
         "prognose": {"t_s_grenz_c": 0.0},
+        "hysterese": {
+            "on_delay_s": 60.0,
+            "max_continuity_gap_s": 120.0,
+            "downgrade_stable_s": 300.0,
+            "downgrade_undershoot_c": 0.5,
+        },
         "datenqualitaet": {
             "stale_timeout_s": 120,
             "max_temp_jump_c_per_min": 5.0,
@@ -248,4 +532,5 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "min_pressure_hpa": 800.0,
             "max_pressure_hpa": 1100.0,
         },
+        "betrieb": {"poll_interval_s": 30.0},
     }

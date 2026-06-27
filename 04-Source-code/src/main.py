@@ -18,11 +18,11 @@ Erledigt:
   - GET /v1/assessment/current (DTB-43): liest runtime.assessment_repo.get_latest()
     + runtime.reading_repo.get_latest(sensor_id); 503 (Error{code,message}) bei
     DB-Ausfall / keinen Daten, sonst build_assessment_current(...) mit Serve-Zeit-NF-01.
+  - poll_interval_s aus Config geladen (betrieb.poll_interval_s, P0-a/DTB-27).
+  - Alarm-Generierung im Bewertungszyklus verdrahtet (run_assessment_cycle, DTB-27).
 
 Offene TODOs fuer den Ausbau:
-  1. poll_interval_s aus Config laden (neues Feld betrieb.poll_interval_s, P0-a)
-     statt aus Env/Default.
-  2. GET /v1/health auf Pydantic `Health` + 503-Pfad heben (Contract-Treue).
+  - GET /v1/health auf Pydantic `Health` + 503-Pfad heben (Contract-Treue).
 """
 
 from __future__ import annotations
@@ -38,6 +38,8 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from src.alarm.hysterese import AlarmHysterese
+from src.alarm.service import AlarmGenerator, AuditError
 from src.api.exceptions import RuntimeNotReadyError
 from src.api.responses import NO_STORE_HEADERS, service_unavailable
 from src.api.runtime import Runtime, get_runtime
@@ -45,19 +47,17 @@ from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
 from src.config.loader import load_thresholds
 from src.ingest.poller import Poller
-from src.model.schemas import AssessmentCurrent, Error
+from src.model.schemas import AssessmentCurrent, Error, Reading
 from src.storage import (
     MySqlAssessmentRepository,
     MySqlAuditRepository,
     ReadingRepository,
     RepositoryError,
 )
+from src.storage.alarm_repository import MySqlAlarmRepository
 
 logger = logging.getLogger(__name__)
 
-# TODO DTB-64 / P0-a: poll_interval_s gehoert in die Config (betrieb.poll_interval_s),
-# nicht als Default hier. Bis dahin ueber Env uebersteuerbar.
-_DEFAULT_POLL_INTERVAL_S = 30.0
 # Bewusster Default: http:// im abgeschlossenen Projekt-/Intranet (G1 ist ein
 # Prototyp ohne TLS). Fuer realen Betrieb HTTPS NICHT hier hart erzwingen — ein
 # https://-Default wuerde die Verbindung zu einem HTTP-only-G1 brechen (eingefrorene
@@ -86,6 +86,12 @@ def build_runtime() -> Runtime:
         plausibility_thresholds=thresholds.plausibilitaet,
     )
     service = AssessmentService(thresholds, assessment_repo, audit_repo)
+    # DTB-27: Alarm-Generierung als Konsument der Bewertung. AlarmHysterese ist pro Sensor
+    # zustandsbehaftet (On-Delay) -> gehört in den langlebigen DI-Graph (eine Instanz je
+    # laufende Instanz; aktuell genau ein Sensor). Audit-Log wird mit dem Service geteilt.
+    alarm_generator = AlarmGenerator(
+        AlarmHysterese(thresholds.hysterese), MySqlAlarmRepository(), audit_repo
+    )
     return Runtime(
         thresholds=thresholds,
         reading_repo=reading_repo,
@@ -93,7 +99,35 @@ def build_runtime() -> Runtime:
         audit_repo=audit_repo,
         poller=poller,
         service=service,
+        alarm_generator=alarm_generator,
     )
+
+
+def run_assessment_cycle(
+    service: AssessmentService,
+    alarm_generator: AlarmGenerator,
+    reading: Reading | None,
+    now: datetime,
+) -> None:
+    """Ein vollständiger Zyklus: Bewertung (DTB-64) -> Alarm-Generierung (DTB-27).
+
+    `assess_reading` erzwingt das Laufzeit-NF-01 (stale/fault/keine Daten -> unknown) und
+    liefert das persistierte Assessment; dessen `risk_level` speist die Alarm-Generierung.
+    Bei `unknown` löst der Generator keinen Alarm aus und die On-Delay-Hysterese friert ein —
+    die in DTB-27 dokumentierte Vorbedingung (Stale -> UNKNOWN, nicht GELB) erfüllt DTB-64 hier.
+
+    Bewusst KEIN eigenes try/except: Persistenz-/Audit-Fehler propagieren in die Fail-safe-
+    Schleife des Schedulers (NF-01: ein Zyklus-Fehler beendet den Betrieb nicht).
+    """
+    assessment = service.assess_reading(reading, now)
+    if assessment.id is None:  # pragma: no cover - defensiver Invarianten-Guard
+        # assess_reading garantiert eine persistierte id; fehlt sie, ist die Invariante
+        # verletzt -> laut scheitern (kein assert, -O-fest), statt stumm einen Alarm ohne
+        # Assessment-Bezug zu erzeugen. Der Scheduler protokolliert das als Bug (CRITICAL).
+        raise ValueError(
+            "assessment.id ist None trotz Persistenz (assess_reading-Invariante verletzt)"
+        )
+    alarm_generator.verarbeite(assessment.risk_level, assessment.id, now)
 
 
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
@@ -104,13 +138,41 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
     derweil veraltete Daten ab (nie GRUEN).
     """
     logger.info("DTB-64: Scheduler gestartet (Intervall %.0fs).", interval_s)
+    last_now: datetime | None = None
     while True:
         try:
             # poller.poll() ist blockierend (httpx.get) -> in einen Thread auslagern,
             # damit der Event-Loop frei bleibt.
             reading = await asyncio.to_thread(runtime.poller.poll)
             now = datetime.now(UTC)
-            await asyncio.to_thread(runtime.service.assess_reading, reading, now)
+            # Monotonie erzwingen (Hysterese-Vorbedingung): eine NTP-Rueckwaertskorrektur der
+            # Wall-Clock darf die On-Delay-Akkumulation nicht zuruecksetzen (sonst einmaliger
+            # Under-Alarm). Nicht-fallende Zeit an die Engines weiterreichen; Clock-Skew fuer
+            # Ops sichtbar machen (anhaltender Rueckwaerts-Offset friert die Zeit kurz ein).
+            if last_now is not None and now < last_now:
+                logger.warning(
+                    "Wall-Clock-Rueckwaertssprung (%.1fs) - Zeit geklemmt (Clock-Skew?).",
+                    (last_now - now).total_seconds(),
+                )
+                now = last_now
+            last_now = now
+            await asyncio.to_thread(
+                run_assessment_cycle,
+                runtime.service,
+                runtime.alarm_generator,
+                reading,
+                now,
+            )
+        except AuditError as exc:
+            # Alarm IST gespeichert + Engine aktiv (KEIN Re-Arm), aber OHNE Audit-Trail -> ERROR
+            # (nicht WARNING): ein persistierter Alarm ohne Audit-Eintrag ist eine Luecke in der
+            # Nachvollziehbarkeit (NF-09). alarm_id mitloggen, damit Ops das vom verschluckten
+            # Alarm (reiner RepositoryError, bei dem ein Re-Arm stattfand) unterscheiden kann.
+            logger.error(
+                "Alarm %s gespeichert, aber Audit-Eintrag fehlgeschlagen (kein Re-Arm): %s",
+                exc.alarm_id,
+                exc,
+            )
         except RepositoryError as exc:
             logger.error("Bewertungszyklus fehlgeschlagen (fail-safe, weiter): %s", exc)
         except ValueError:
@@ -132,11 +194,6 @@ def _scheduler_enabled() -> bool:
     return os.environ.get("G2_ENABLE_SCHEDULER", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _poll_interval_s() -> float:
-    # TODO DTB-64: aus thresholds (betrieb.poll_interval_s) statt Env/Default.
-    return float(os.environ.get("G2_POLL_INTERVAL_S", _DEFAULT_POLL_INTERVAL_S))
-
-
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startet/stoppt den Hintergrund-Scheduler und haengt den Runtime-Graph an app.state."""
@@ -144,7 +201,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.runtime = runtime
     task: asyncio.Task[None] | None = None
     if _scheduler_enabled():
-        task = asyncio.create_task(run_scheduler(runtime, _poll_interval_s()))
+        task = asyncio.create_task(
+            run_scheduler(runtime, runtime.thresholds.betrieb.poll_interval_s)
+        )
     else:
         logger.info(
             "DTB-64: Scheduler deaktiviert (G2_ENABLE_SCHEDULER nicht gesetzt) — "

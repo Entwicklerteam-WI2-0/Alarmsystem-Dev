@@ -6,7 +6,7 @@ lesend (RB-01-neutral), setzt `Cache-Control: no-store` und meldet bei nicht ber
 Runtime fail-safe + contract-konform `Error {code, message}` (nicht FastAPI-`{detail}`).
 """
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from types import SimpleNamespace
 
 import pytest
@@ -15,14 +15,7 @@ from fastapi.testclient import TestClient
 from src.api.exceptions import RuntimeNotReadyError
 from src.api.runtime import get_runtime
 from src.api.v1 import get_thresholds
-from src.config.loader import (
-    DatenqualitaetSchwellen,
-    PlausibilitaetSchwellen,
-    PrognoseSchwellen,
-    Thresholds,
-    VereisungsSchwellen,
-    load_thresholds,
-)
+from src.config.loader import VereisungsSchwellen, load_thresholds
 from src.main import app
 
 client = TestClient(app)
@@ -40,24 +33,24 @@ def test_get_thresholds_returns_active_runtime_values():
     app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(thresholds=load_thresholds())
     # Act
     resp = client.get("/v1/thresholds")
-    # Assert: 200 + Struktur aus thresholds.json, deckungsgleich mit dem Loader.
+    # Assert: 200 + Struktur aus thresholds.json, deckungsgleich mit dem Loader. Schema-robust:
+    # die Sektionsmenge folgt dem Loader (bricht nicht, wenn neue Sektionen wie hysterese/betrieb
+    # dazukommen) statt einer fixen Liste.
     assert resp.status_code == 200
+    expected = asdict(load_thresholds())
     body = resp.json()
-    assert set(body) == {"vereisung", "prognose", "datenqualitaet", "plausibilitaet"}
-    assert body == asdict(load_thresholds())
+    assert set(body) == set(expected)
+    assert body == expected
     # Schwellen sind die Kalibrierung eines Fail-safe-Systems -> kein Proxy/Browser darf
     # ueberholte Werte ausliefern (NF-01-Geist, konsistent mit assessment/current).
     assert resp.headers["cache-control"] == "no-store"
 
 
 def test_get_thresholds_reflects_runtime_not_hardcoded():
-    # Arrange: Schwellen-Dependency mit bekannten Werten ueberschreiben.
-    fake = Thresholds(
-        vereisung=VereisungsSchwellen(1.0, 2.0, 3.0, 4.0),
-        prognose=PrognoseSchwellen(9.0),
-        datenqualitaet=DatenqualitaetSchwellen(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
-        plausibilitaet=PlausibilitaetSchwellen(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
-    )
+    # Arrange: eine bekannte, vom Default abweichende Sektion in den Runtime-Graph injizieren.
+    # Aus dem realen Loader abgeleitet (replace) -> Cross-Section-Invarianten (__post_init__)
+    # bleiben gewahrt, und der Test bricht nicht, wenn neue Schwellen-Sektionen hinzukommen.
+    fake = replace(load_thresholds(), vereisung=VereisungsSchwellen(1.0, 2.0, 3.0, 4.0))
     app.dependency_overrides[get_thresholds] = lambda: fake
     # Act
     resp = client.get("/v1/thresholds")

@@ -17,6 +17,8 @@ Bezug: NF-01, Schwellenwerte.md §2/§3, Contract v1 (AssessmentCurrent, E-36),
 Kapselt: assess_ice_risk (DTB-38), is_stale/build_unknown_assessment (DTB-13).
 """
 
+from __future__ import annotations
+
 import logging
 from datetime import datetime
 
@@ -127,8 +129,10 @@ class AssessmentService:
                 # Satz ist strukturell noch nicht belegbar. Die DB-Spalte (FK auf
                 # threshold_set) + INSERT/SELECT sind vorbereitet; die audit-feste
                 # Traceability bei Schwellen-Aenderungen (NF-05) zieht DTB-65 nach.
-                # driving_factor/explanation: optionale Klartext-Felder; reichern
-                # DTB-27 (Alarm-Begruendung) bzw. ein Folge-Task an. TODO DTB-64+.
+                # driving_factor/explanation: optionale Klartext-Felder; bleiben vorerst
+                # None. Die Befuellung gehoert in die Bewertungs-/Assessment-Domaene
+                # (DTB-38, die Kaskade liefert das "Warum"), NICHT zu DTB-27 (Alarm)
+                # -> Folge-Task DTB-66.
                 surface_temp_c=reading.surface_temp_c,
                 dew_point_c=reading.dew_point_c,
                 delta_t=delta_t,

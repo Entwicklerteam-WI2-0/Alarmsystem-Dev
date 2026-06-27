@@ -1,0 +1,175 @@
+"""Tests fuer das Alarm-Persistenz-Repository (DTB-27).
+
+DB-freier Kern: InMemory-Double + MySQL-Variante mit gemocktem `transaction`.
+Echte MariaDB-Integrationstests (FK-/CHECK-Verletzung, Roundtrip) folgen nach
+DTB-21 (geteilte conftest-Fixtures). Muster wie tests/test_audit_repository.py.
+"""
+
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
+
+import pymysql
+import pytest
+
+from src.model.enums import AlarmSeverity, AlarmState
+from src.model.schemas import Alarm
+from src.storage.alarm_repository import (
+    AlarmRepository,
+    InMemoryAlarmRepository,
+    MySqlAlarmRepository,
+)
+from src.storage.database import DatabaseConfigError, DatabaseConnectionError
+from src.storage.repository import RepositoryError
+
+UTC_NOW = datetime(2026, 6, 26, 12, 0, 0, tzinfo=UTC)
+
+
+def _alarm(**overrides) -> Alarm:
+    base = dict(
+        assessment_id=1,
+        severity=AlarmSeverity.WARNING,
+        raised_at=UTC_NOW,
+    )
+    base.update(overrides)
+    return Alarm(**base)
+
+
+def _mock_transaction():
+    """Baut (tx, cursor) fuer `with transaction() as conn, conn.cursor() as cur`."""
+    cursor = MagicMock()
+    cursor.lastrowid = 1
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cursor
+    tx = MagicMock()
+    tx.__enter__.return_value = conn
+    return tx, cursor
+
+
+# --- InMemory-Double (T1) ---
+
+
+def test_inmemory_save_returns_generated_id():
+    repo = InMemoryAlarmRepository()
+    assert repo.save(_alarm()) == 1
+
+
+def test_inmemory_save_increments_id():
+    repo = InMemoryAlarmRepository()
+    repo.save(_alarm())
+    assert repo.save(_alarm()) == 2
+
+
+def test_inmemory_saved_alarm_is_readable_and_active():
+    repo = InMemoryAlarmRepository()
+    repo.save(_alarm(severity=AlarmSeverity.CRITICAL))
+    gespeichert = repo.all()
+    assert len(gespeichert) == 1
+    assert gespeichert[0].id == 1
+    assert gespeichert[0].severity is AlarmSeverity.CRITICAL
+    assert gespeichert[0].state is AlarmState.ACTIVE  # ausgeloeste Alarme sind aktiv (V8)
+
+
+def test_inmemory_is_an_alarmrepository():
+    assert isinstance(InMemoryAlarmRepository(), AlarmRepository)
+
+
+def test_inmemory_all_gibt_kopien_zurueck():
+    # Lese-Aliasing vermeiden: all() muss bei jedem Aufruf unabhaengige Kopien liefern, nicht
+    # Referenzen auf den internen Stand. Pruefung ueber distinkte Instanzen statt In-Place-
+    # Mutation -> robust, falls Alarm spaeter frozen=True wird (sonst ValidationError statt
+    # aussagekraeftiger Assertion).
+    repo = InMemoryAlarmRepository()
+    repo.save(_alarm(severity=AlarmSeverity.WARNING))
+    assert repo.all()[0] is not repo.all()[0]
+    assert repo.all()[0].severity is AlarmSeverity.WARNING
+
+
+# --- MySQL-Variante (T2/T3), transaction gemockt ---
+
+
+def test_mysql_save_uses_parametrized_insert():
+    tx, cursor = _mock_transaction()
+    with patch("src.storage.alarm_repository.transaction", return_value=tx) as mock_tx:
+        new_id = MySqlAlarmRepository().save(_alarm(severity=AlarmSeverity.CRITICAL))
+    assert new_id == 1
+    # commit-tragender Helper wirklich genutzt (nicht versehentlich get_connection ohne Commit)
+    mock_tx.assert_called_once_with(None)
+    cursor.execute.assert_called_once()
+    sql, params = cursor.execute.call_args[0]
+    assert sql.strip().upper().startswith("INSERT INTO ALARM")
+    # parametrisiert: Werte in params, NICHT im SQL-String (SQL-Injection-Schutz, V2)
+    assert sql.count("%s") == 4
+    assert "critical" not in sql
+    # Spaltenreihenfolge im SQL UND exakte params -> faengt einen severity/state-Swap (V5)
+    assert "assessment_id, severity, raised_at, state" in sql
+    assert params == (1, "critical", UTC_NOW, "active")
+
+
+def test_mysql_save_returns_lastrowid():
+    tx, cursor = _mock_transaction()
+    cursor.lastrowid = 42
+    with patch("src.storage.alarm_repository.transaction", return_value=tx):
+        assert MySqlAlarmRepository().save(_alarm()) == 42
+
+
+@pytest.mark.parametrize("startup_error", [DatabaseConnectionError, DatabaseConfigError])
+def test_mysql_save_wraps_startup_error_failsafe(startup_error):
+    # Real wirft der Verbindungsaufbau erst beim __enter__ des transaction-Kontexts
+    # (get_connection) -> genau diesen Eintrittspunkt nachbilden, nicht den Aufruf.
+    tx, _cursor = _mock_transaction()
+    tx.__enter__.side_effect = startup_error("Startup-Fehler")
+    with patch("src.storage.alarm_repository.transaction", return_value=tx):
+        with pytest.raises(RepositoryError):  # V4: nie roher Fehler, Alarm nicht still verloren
+            MySqlAlarmRepository().save(_alarm())
+
+
+def test_mysql_save_wraps_query_error_failsafe():
+    # CHECK-/FK-Verletzung kommt als pymysql.Error aus cursor.execute (V9).
+    tx, cursor = _mock_transaction()
+    treiberfehler = pymysql.Error("CHECK/FK verletzt")
+    cursor.execute.side_effect = treiberfehler
+    with patch("src.storage.alarm_repository.transaction", return_value=tx):
+        with pytest.raises(RepositoryError) as excinfo:
+            MySqlAlarmRepository().save(_alarm())
+    # Ursache bleibt erhalten (raise ... from exc) -- wichtig fuer Fail-safe-Diagnose.
+    assert excinfo.value.__cause__ is treiberfehler
+
+
+@pytest.mark.parametrize("kein_id", [None, 0])
+def test_mysql_save_missing_or_zero_lastrowid_failsafe(kein_id):
+    # V6: keine gueltige AUTO_INCREMENT-ID (None ODER 0 -- AUTO_INCREMENT beginnt bei 1)
+    # -> RepositoryError statt eine anomale ID 0 als "Erfolg" zurueckzugeben.
+    tx, cursor = _mock_transaction()
+    cursor.lastrowid = kein_id
+    with patch("src.storage.alarm_repository.transaction", return_value=tx):
+        with pytest.raises(RepositoryError):
+            MySqlAlarmRepository().save(_alarm())
+
+
+def test_alarmrepository_has_no_mutation_path_rb01():
+    # V3/V11 (RB-01): Das Interface ist save-only -- kein update/delete/clear/acknowledge
+    # (kein Aktor, kein Auto-Zustandswechsel). Strukturell erzwungen.
+    for verboten in ("update", "delete", "clear", "acknowledge", "remove"):
+        assert not hasattr(AlarmRepository, verboten)
+    assert AlarmRepository.__abstractmethods__ == frozenset({"save"})
+
+
+# --- V7 wird am Modell-Rand erzwungen (Alarm-Konstruktion), nicht im Repo ---
+
+
+@pytest.mark.parametrize("repo_cls", [InMemoryAlarmRepository, MySqlAlarmRepository])
+@pytest.mark.parametrize("zustand", [AlarmState.ACKNOWLEDGED, AlarmState.CLEARED])
+def test_save_rejects_non_active_alarm(repo_cls, zustand):
+    # V8: save() persistiert nur AUSGELOESTE (aktive) Alarme. Ein nicht-aktiver Zustand
+    # ist ein Aufrufer-Fehler (Zustandswechsel laufen ueber DTB-24/manuell), kein DB-Write.
+    # Frische Instanz pro Lauf (kein geteilter Test-State).
+    with pytest.raises(ValueError):
+        repo_cls().save(_alarm(state=zustand))
+
+
+def test_naive_raised_at_rejected_at_model_boundary():
+    from pydantic import ValidationError
+
+    naive = datetime(2026, 6, 26, 12, 0)  # bewusst ohne tzinfo
+    with pytest.raises(ValidationError):
+        Alarm(assessment_id=1, severity=AlarmSeverity.WARNING, raised_at=naive)
