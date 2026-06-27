@@ -78,9 +78,7 @@ def poller(reading_repo: InMemoryReadingRepository, thresholds: Thresholds) -> P
 
 
 @pytest.fixture
-def alarm_generator(
-    thresholds: Thresholds, audit_repo: InMemoryAuditRepository
-) -> AlarmGenerator:
+def alarm_generator(thresholds: Thresholds, audit_repo: InMemoryAuditRepository) -> AlarmGenerator:
     # In-Memory-AlarmGenerator (DTB-27): Hysterese aus echter Config, In-Memory-Alarm-Repo,
     # geteiltes audit_repo — analog build_runtime, aber ohne DB.
     return AlarmGenerator(

@@ -21,7 +21,7 @@ from fastapi.testclient import TestClient
 from src.assessment.service import AssessmentService
 from src.main import Runtime, app, get_runtime
 from src.model.enums import RiskLevel, SensorStatus
-from src.model.schemas import Reading
+from src.model.schemas import Assessment, Reading
 from src.storage.repository import InMemoryReadingRepository
 
 client = TestClient(app)
@@ -63,7 +63,7 @@ def _persist_and_assess(
     service: AssessmentService,
     reading: Reading,
     now: datetime,
-):
+) -> Assessment:
     # Spiegelt den realen Pfad: Reading persistieren (id vergeben), dann bewerten.
     new_id = reading_repo.save(reading)
     return service.assess_reading(reading.model_copy(update={"id": new_id}), now)
