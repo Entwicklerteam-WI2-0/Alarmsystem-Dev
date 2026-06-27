@@ -76,6 +76,22 @@ def test_alle_gleicher_zeitstempel_keine_prognose():
     )
 
 
+def test_nahezu_gleicher_zeitstempel_ist_entartet():
+    # Mikrosekunden-Abstand zwischen den Stuetzstellen -> sxx winzig, aber nicht 0.0.
+    # Ohne epsilon-Guard wuerde eine enorme, aber endliche Steigung durchgereicht.
+    readings = [
+        _reading(0.0, 1.0),
+        _reading(1e-7, 2.0),  # ~6 µs vor _NOW
+        _reading(2e-7, 3.0),  # ~12 µs vor _NOW
+    ]
+    assert (
+        forecast_surface_temp(
+            readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+        )
+        is None
+    )
+
+
 def test_nicht_endliche_werte_werden_gefiltert():
     # NaN-Stuetzstelle wird verworfen; die 3 endlichen reichen -> endliche Prognose.
     bad = _reading(15, float("nan"))

@@ -22,6 +22,12 @@ from datetime import datetime, timedelta
 
 from src.model.schemas import Reading
 
+# Untergrenze fuer die Zeitvarianz sxx (in Minuten^2). Liegt die Varianz darunter,
+# gilt die Regression als numerisch entartet (nahezu identische Timestamps) ->
+# fail-safe None, statt eine ausufernde Steigung zu extrapolieren. 1e-9 Min^2
+# entspricht ca. 2 ms Zeitspanne bei zwei Punkten, also weit unter realer G1-Kadenz.
+_MIN_SXX = 1e-9
+
 
 def forecast_surface_temp(
     readings: Sequence[Reading],
@@ -93,12 +99,11 @@ def _project(points: list[tuple[float, float]], horizon_min: float) -> float | N
     mean_y = sum(y for _, y in points) / n
     sxx = sum((x - mean_x) ** 2 for x, _ in points)
     sxy = sum((x - mean_x) * (y - mean_y) for x, y in points)
-    # sxx ist Summe von Quadraten -> >= 0. Liegt es exakt bei 0.0, haben alle
-    # Stuetzstellen denselben Zeitpunkt (keine Zeitvarianz) -> Steigung unbestimmbar.
-    # `not sxx` ist der idiomatische Python-Null-Check fuer Numerics (0.0 ist falsy);
-    # ein Literal-Vergleich wuerde DTB-22 (hartcodierte Schwellen) triggern.
+    # sxx ist Summe von Quadraten -> >= 0. Liegt es exakt bei 0.0 oder nur
+    # numerisch knapp darueber (nahezu identische Timestamps), ist die Regression
+    # entartet -> fail-safe None, statt eine ausufernde Steigung zu extrapolieren.
     # math.isfinite(forecast) fängt zudem NaN/inf bei entarteten Zahlen ab.
-    if not sxx:
+    if not sxx or sxx < _MIN_SXX:
         return None
     slope = sxy / sxx
     intercept = mean_y - slope * mean_x  # y bei x = 0 (= now)
