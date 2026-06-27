@@ -33,23 +33,35 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator, AuditError
-from src.api.exceptions import RuntimeNotReadyError
-from src.api.responses import NO_STORE_HEADERS, service_unavailable
+from src.api.exceptions import (
+    ApiKeyNotConfiguredError,
+    AuthenticationError,
+    RuntimeNotReadyError,
+)
+from src.api.responses import (
+    NO_STORE_HEADERS,
+    service_unavailable,
+    unauthorized,
+    unprocessable_entity,
+)
 from src.api.runtime import Runtime, get_runtime
 from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
-from src.config.loader import load_thresholds
+from src.config.loader import ConfigError, Thresholds, load_thresholds, parse_thresholds
 from src.ingest.poller import Poller
 from src.model.schemas import AssessmentCurrent, Error, Health, Reading
 from src.storage import (
     MySqlAssessmentRepository,
     MySqlAuditRepository,
+    MySqlThresholdSetRepository,
     ReadingRepository,
     RepositoryError,
+    ThresholdSetRepository,
 )
 from src.storage.alarm_repository import MySqlAlarmRepository
 
@@ -71,8 +83,15 @@ _SENSOR_ID = "anr-rwy-01"
 
 
 def build_runtime() -> Runtime:
-    """Baut den DI-Graph (ohne DB/G1 zu kontaktieren — Repos verbinden erst pro Query)."""
-    thresholds = load_thresholds()
+    """Baut den DI-Graph (Repos verbinden erst pro Query, kein DB-Zwang beim Start).
+
+    Aktive Schwellen = zuletzt gespeicherter `threshold_set` (DB, DTB-63-Reload-
+    Semantik); ist die Tabelle leer oder die DB beim Start nicht erreichbar, wird die
+    JSON-Seed-Config verwendet (`_load_active_thresholds`). So bleibt der Stub ohne DB
+    lauffaehig (der Scheduler ist ohnehin per Default aus).
+    """
+    threshold_set_repo = MySqlThresholdSetRepository()
+    thresholds = _load_active_thresholds(threshold_set_repo)
     reading_repo = ReadingRepository()
     assessment_repo = MySqlAssessmentRepository()
     audit_repo = MySqlAuditRepository()
@@ -94,10 +113,40 @@ def build_runtime() -> Runtime:
         reading_repo=reading_repo,
         assessment_repo=assessment_repo,
         audit_repo=audit_repo,
+        threshold_set_repo=threshold_set_repo,
         poller=poller,
         service=service,
         alarm_generator=alarm_generator,
     )
+
+
+def _load_active_thresholds(threshold_set_repo: ThresholdSetRepository) -> Thresholds:
+    """Aktive Schwellen = zuletzt gespeicherter `threshold_set`, sonst JSON-Seed.
+
+    Reload-Semantik (DTB-63): ein per PUT /v1/thresholds gespeicherter Satz wird beim
+    naechsten Start aktiv. Faellt die DB aus oder ist die Tabelle leer, wird die
+    JSON-Seed-Config geladen (fail-safe: lieber die committete Basiskalibrierung als
+    gar keine Schwellen). Fehler werden laut geloggt (kein stilles Maskieren).
+    """
+    try:
+        latest = threshold_set_repo.get_latest()
+    except RepositoryError as exc:
+        logger.warning(
+            "threshold_set nicht lesbar (%s) -> JSON-Seed-Config (config/thresholds.json).", exc
+        )
+        return load_thresholds()
+    if latest is None:
+        logger.info("Kein threshold_set in der DB -> JSON-Seed-Config (config/thresholds.json).")
+        return load_thresholds()
+    try:
+        return parse_thresholds(latest.params)
+    except ConfigError as exc:
+        logger.error(
+            "Gespeicherter threshold_set (id=%s) ist ungueltig (%s) -> JSON-Seed-Config.",
+            latest.id,
+            exc,
+        )
+        return load_thresholds()
 
 
 def run_assessment_cycle(
@@ -230,6 +279,31 @@ async def _runtime_not_ready_handler(_request: Request, exc: RuntimeNotReadyErro
     """Fehlt der Runtime-Graph, contract-konform als 503 melden (nie rohes 500/{detail})."""
     logger.error("Runtime nicht verfuegbar: %s", exc)
     return service_unavailable("G2 momentan nicht lieferfaehig.")
+
+
+@app.exception_handler(AuthenticationError)
+async def _authentication_error_handler(
+    _request: Request, exc: AuthenticationError
+) -> JSONResponse:
+    """Fehlender/ungueltiger API-Key -> contract-konform 401 (nie 403/{detail})."""
+    logger.warning("Authentifizierung fehlgeschlagen: %s", exc)
+    return unauthorized("Ungueltiger oder fehlender API-Key.")
+
+
+@app.exception_handler(ApiKeyNotConfiguredError)
+async def _api_key_not_configured_handler(
+    _request: Request, exc: ApiKeyNotConfiguredError
+) -> JSONResponse:
+    """G2_API_KEY nicht gesetzt -> Schreibzugriff fail-safe-closed als 503 melden."""
+    logger.error("Schreibzugriff nicht konfiguriert: %s", exc)
+    return service_unavailable("Schreibzugriff nicht konfiguriert.")
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Body-/Schema-Validierung -> contract-konform 422 (statt FastAPI-{detail}-Liste)."""
+    logger.info("Request-Validierung fehlgeschlagen: %s", exc)
+    return unprocessable_entity("Ungueltiger Request-Body.")
 
 
 @app.get(

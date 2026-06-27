@@ -219,6 +219,23 @@ _SECTIONS: dict[str, type[Any]] = {
 }
 
 
+def parse_thresholds(raw: dict[str, Any]) -> Thresholds:
+    """Validiert ein rohes Schwellen-dict und baut das `Thresholds`-Objekt.
+
+    Gemeinsamer Kern fuer beide Quellen: die JSON-Config-Datei (`load_thresholds`)
+    UND der in der DB gespeicherte `threshold_set.params` (Reload, DTB-63). Scheitert
+    *laut* mit `ConfigError`, wenn ein Pflicht-Abschnitt/-Schluessel fehlt, ein Wert
+    keine endliche Zahl ist oder eine Cross-Section-Invariante (Thresholds.__post_init__)
+    verletzt wird — bewusst kein stiller Default (NF-01-Geist).
+    """
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f"Schwellen-Konfiguration muss ein JSON-Objekt sein, ist {type(raw).__name__}"
+        )
+    sektionen = {name: _baue_sektion(name, cls, raw) for name, cls in _SECTIONS.items()}
+    return Thresholds(**sektionen)
+
+
 def load_thresholds(path: Path | str | None = None) -> Thresholds:
     """Lädt die Schwellenwerte aus der JSON-Config (Default oder eigener Pfad).
 
@@ -238,8 +255,7 @@ def load_thresholds(path: Path | str | None = None) -> Thresholds:
     if not isinstance(raw, dict):
         raise ConfigError(f"Konfiguration muss ein JSON-Objekt sein: {config_path}")
 
-    sektionen = {name: _baue_sektion(name, cls, raw) for name, cls in _SECTIONS.items()}
-    return Thresholds(**sektionen)
+    return parse_thresholds(raw)
 
 
 def _baue_sektion[T](name: str, cls: type[T], raw: dict[str, Any]) -> T:

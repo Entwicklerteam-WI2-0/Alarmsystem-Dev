@@ -6,19 +6,28 @@ Alle Endpoints hier sind **rein lesend** (RB-01-neutral): kein Aktor, keine
 Runway-Steuerung.
 """
 
+import logging
+from dataclasses import asdict
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
+from fastapi.responses import JSONResponse
 
-from src.api.responses import NO_STORE_HEADERS
+from src.api.responses import NO_STORE_HEADERS, service_unavailable, unprocessable_entity
 from src.api.runtime import Runtime, get_runtime
-from src.config.loader import Thresholds
-from src.model.schemas import Error
+from src.api.security import require_api_key
+from src.config.loader import ConfigError, Thresholds, parse_thresholds
+from src.model.enums import AuditEventType
+from src.model.schemas import AuditLogEntry, Error, ThresholdSet, ThresholdUpdateRequest
+from src.storage import RepositoryError
 
 # Kein Router-weiter Tag: jeder Endpoint deklariert seinen Ressourcen-Tag selbst
 # (wie assessment/current -> "Assessment" in main.py), damit die FastAPI-Auto-Docs
 # (/docs, /openapi.json) dieselbe Gruppierung zeigen wie die eingefrorene openapi.yaml.
 router = APIRouter(prefix="/v1")
+
+logger = logging.getLogger(__name__)
 
 
 def get_thresholds(runtime: Annotated[Runtime, Depends(get_runtime)]) -> Thresholds:
@@ -64,3 +73,70 @@ def read_thresholds(
     """
     response.headers.update(NO_STORE_HEADERS)
     return thresholds
+
+
+@router.put(
+    "/thresholds",
+    status_code=201,
+    dependencies=[Depends(require_api_key)],
+    response_model=ThresholdSet,
+    summary="Schwellenwerte versioniert aktualisieren (Auth)",
+    tags=["Thresholds"],
+    responses={
+        401: {"model": Error, "description": "Kein/ungueltiger API-Key (NF-07)."},
+        422: {"model": Error, "description": "Ungueltige Schwellen-Konfiguration."},
+        503: {
+            "model": Error,
+            "description": "Schreibzugriff nicht konfiguriert ODER Persistenz nicht verfuegbar.",
+        },
+    },
+)
+def update_thresholds(
+    payload: ThresholdUpdateRequest,
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+) -> ThresholdSet | JSONResponse:
+    """Legt einen neuen, versionierten Schwellensatz an (DTB-63, NF-07/NF-05).
+
+    Auth-geschuetzt (`Authorization: Bearer <key>`, `require_api_key`). Schreibt den
+    Satz append-only als neuen `threshold_set` (Supersession per `valid_from`, DTB-54)
+    und in DERSELBEN Transaktion den `threshold_changed`-Audit-Eintrag (NF-09).
+
+    Reload-Semantik (bewusste Architektur-Entscheidung): der neue Satz wird beim
+    naechsten kontrollierten Reload/Neustart aktiv — die laufende Bewertung nutzt bis
+    dahin die bisherigen Schwellen (kein Live-Swap des Runtime-Graphen). `201` traegt
+    den angelegten Satz.
+
+    RB-01-neutral: aendert nur die Entscheidungs-Parameter, kein Aktor/keine Freigabe.
+    """
+    # Volle fachliche Validierung ueber den kanonischen Loader — identische Regeln wie
+    # die Datei-Config (Pflicht-Sektionen, endliche Zahlen, Cross-Section-Invarianten).
+    # Ungueltiger Body -> 422 (Client-Fehler, der Body ist schuld).
+    try:
+        validated = parse_thresholds(payload.thresholds)
+    except ConfigError as exc:
+        return unprocessable_entity(f"Ungueltige Schwellen-Konfiguration: {exc}")
+
+    now = datetime.now(UTC)
+    # Kanonische, validierte Form speichern (verwirft Kommentar-/Unbekannt-Keys); genau
+    # diese Struktur laedt parse_thresholds beim naechsten Reload wieder ein.
+    threshold_set = ThresholdSet(
+        name=payload.name,
+        params=asdict(validated),
+        valid_from=now,
+        changed_by=payload.changed_by,
+    )
+    audit_entry = AuditLogEntry(
+        ts=now,
+        event_type=AuditEventType.THRESHOLD_CHANGED,
+        entity_type="threshold_set",
+        actor=payload.changed_by,
+        detail={"name": payload.name},
+    )
+    try:
+        new_id = runtime.threshold_set_repo.append(threshold_set, audit_entry)
+    except RepositoryError as exc:
+        # Persistenz-/DB-Ausfall: Detail server-seitig loggen, nach aussen generisch (Contract D).
+        logger.error("Schwellen-Update fehlgeschlagen: %s", exc)
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+
+    return threshold_set.model_copy(update={"id": new_id})

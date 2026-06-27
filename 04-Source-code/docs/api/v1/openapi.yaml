@@ -145,6 +145,71 @@ paths:
               example:
                 code: SERVICE_UNAVAILABLE
                 message: "G2 momentan nicht lieferfaehig."
+    put:
+      tags: [Thresholds]
+      operationId: updateThresholds
+      summary: Schwellenwerte versioniert aktualisieren (Auth, DTB-63)
+      security:
+        - BearerApiKey: []
+      description: |
+        Legt einen neuen, **versionierten** Schwellensatz an (Supersession per
+        neuem `valid_from`-Satz — append-only, kein Ueberschreiben; DTB-54) und
+        schreibt in derselben Transaktion den `threshold_changed`-Audit-Eintrag
+        (NF-09).
+
+        **Auth (NF-07):** Erfordert `Authorization: Bearer <key>`. Fehlender/
+        falscher Schluessel -> `401`; ist serverseitig kein Schluessel konfiguriert,
+        ist der Schreibzugriff fail-safe-closed -> `503`.
+
+        **Wirksamkeit (Reload-Semantik, bewusste Architektenentscheidung):** der
+        neue Satz wird beim naechsten kontrollierten Reload/Neustart aktiv — die
+        laufende Bewertung nutzt bis dahin die bisherigen Schwellen (kein Live-Swap).
+
+        **RB-01-neutral:** aendert nur Entscheidungs-Parameter, kein Aktor.
+
+        > Nach dem v1.0-Freeze ergaenzt (DTB-63, G2-eigener Endpoint) — Naht-Review
+        > durch Architekt. Der eingefrorene G3-`ack`-Endpoint bleibt davon unberuehrt
+        > (dessen Auth ist eine eigene M3-Abstimmung mit G3).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ThresholdUpdateRequest"
+      responses:
+        "201":
+          description: Neuer Schwellensatz angelegt (wird beim naechsten Reload aktiv).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThresholdSet"
+        "401":
+          description: Kein/ungueltiger API-Key (NF-07).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: UNAUTHORIZED
+                message: "Ungueltiger oder fehlender API-Key."
+        "422":
+          description: Ungueltige Schwellen-Konfiguration (Body-/Schema-Validierung).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: UNPROCESSABLE_ENTITY
+                message: "Ungueltige Schwellen-Konfiguration."
+        "503":
+          description: Schreibzugriff nicht konfiguriert ODER Persistenz nicht verfuegbar.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: SERVICE_UNAVAILABLE
+                message: "G2 momentan nicht lieferfaehig."
 
   /v1/assessment/current:
     get:
@@ -464,6 +529,15 @@ paths:
                 $ref: "#/components/schemas/Error"
 
 components:
+  securitySchemes:
+    BearerApiKey:
+      type: http
+      scheme: bearer
+      description: |
+        API-Key als Bearer-Token im `Authorization`-Header (NF-07, DTB-63). Nur fuer
+        schreibende, G2-eigene Endpoints (derzeit `PUT /v1/thresholds`). Der erwartete
+        Schluessel kommt serverseitig aus der Umgebung (`G2_API_KEY`), nie aus dem Code.
+
   schemas:
 
     # --- Enums (Spiegel von src/model/enums.py) ---
@@ -590,6 +664,55 @@ components:
             max_pressure_hpa:
               type: number
               description: Maximaler plausibler Luftdruck (hPa).
+
+    # --- Schwellen-Schreibweg (G2-eigen, Auth), DTB-63 ---
+    ThresholdUpdateRequest:
+      type: object
+      description: |
+        Request-Body fuer PUT /v1/thresholds. `thresholds` ist die vollstaendige
+        Schwellen-Struktur (wie `GET /v1/thresholds` sie liefert); sie wird
+        serverseitig ueber den kanonischen Loader validiert (ungueltig -> 422).
+        `changed_by` ist der selbstdeklarierte Operator fuer den Audit-Trail
+        (NF-09/K6). `name` ist ein Label fuer den versionierten Satz.
+      required: [changed_by, thresholds]
+      properties:
+        changed_by:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: Kennung der aendernden Person (Audit-Anker, NF-09).
+        name:
+          type: string
+          minLength: 1
+          maxLength: 128
+          default: "manuelle Aktualisierung"
+          description: Label fuer den versionierten Schwellensatz.
+        thresholds:
+          $ref: "#/components/schemas/Thresholds"
+
+    ThresholdSet:
+      type: object
+      description: |
+        Angelegter, versionierter Schwellensatz (Antwort auf PUT /v1/thresholds).
+        Append-only (Supersession per `valid_from`, DTB-54).
+      required: [id, name, params, valid_from, changed_by]
+      properties:
+        id:
+          type: integer
+          format: int64
+          readOnly: true
+        name:
+          type: string
+          maxLength: 128
+        params:
+          $ref: "#/components/schemas/Thresholds"
+        valid_from:
+          type: string
+          format: date-time
+          description: Gueltig-ab-Zeitpunkt (UTC); hoechster Wert = aktiver Satz.
+        changed_by:
+          type: string
+          maxLength: 128
 
     # --- Aktuelle Bewertung (G2 -> G3), flach (E-36) ---
     AssessmentCurrent:

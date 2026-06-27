@@ -169,3 +169,19 @@ class AckRequest(_Base):
 
     operator: str = Field(min_length=1, max_length=128)
     note: str | None = Field(default=None, max_length=512)
+
+
+class ThresholdUpdateRequest(_Base):
+    """Request-Body fuer PUT /v1/thresholds (DTB-63, NF-07).
+
+    `thresholds` ist die vollstaendige Schwellen-Struktur (wie GET /v1/thresholds sie
+    liefert); fachlich validiert wird sie im Endpoint ueber den kanonischen Loader
+    (`parse_thresholds`) -> bei ungueltigen Werten 422. `changed_by` ist der
+    selbstdeklarierte Operator fuer den Audit-Trail (NF-09/K6): bei einem geteilten
+    API-Key der einzige Accountability-Anker (analog `operator` bei der Quittierung).
+    `name` ist ein Label fuer den versionierten Schwellensatz (threshold_set.name).
+    """
+
+    changed_by: str = Field(min_length=1, max_length=128)
+    name: str = Field(default="manuelle Aktualisierung", min_length=1, max_length=128)
+    thresholds: dict[str, Any]

@@ -24,6 +24,7 @@ from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
 from src.storage.repository import InMemoryReadingRepository
+from src.storage.threshold_set_repository import InMemoryThresholdSetRepository
 
 # Single-Sensor-Betrieb (anr-rwy-01) — identisch zu src.main._SENSOR_ID.
 _SENSOR_ID = "anr-rwy-01"
@@ -53,6 +54,11 @@ def assessment_repo() -> InMemoryAssessmentRepository:
 @pytest.fixture
 def audit_repo() -> InMemoryAuditRepository:
     return InMemoryAuditRepository()
+
+
+@pytest.fixture
+def threshold_set_repo() -> InMemoryThresholdSetRepository:
+    return InMemoryThresholdSetRepository()
 
 
 @pytest.fixture
@@ -92,6 +98,7 @@ def runtime(
     reading_repo: InMemoryReadingRepository,
     assessment_repo: InMemoryAssessmentRepository,
     audit_repo: InMemoryAuditRepository,
+    threshold_set_repo: InMemoryThresholdSetRepository,
     poller: Poller,
     assessment_service: AssessmentService,
     alarm_generator: AlarmGenerator,
@@ -104,6 +111,7 @@ def runtime(
         reading_repo=reading_repo,
         assessment_repo=assessment_repo,
         audit_repo=audit_repo,
+        threshold_set_repo=threshold_set_repo,
         poller=poller,
         service=assessment_service,
         alarm_generator=alarm_generator,
