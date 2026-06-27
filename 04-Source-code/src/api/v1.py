@@ -176,4 +176,10 @@ async def stream_alarms(
             # ein _frame()-raise bliebe hier defensiv und wuerde via finally sauber released.
             broadcaster.release(queue)
 
-    return StreamingResponse(_frames(), media_type="text/event-stream", headers=_SSE_HEADERS)
+    try:
+        return StreamingResponse(_frames(), media_type="text/event-stream", headers=_SSE_HEADERS)
+    except Exception:  # noqa: BLE001 - akademisch (StreamingResponse wirft praktisch nie)
+        # Reservierten Slot freigeben, falls die Response-Konstruktion scheitert: der
+        # _frames-finally liefe nie (der Generator startet nicht) -> sonst dauerhaft belegt.
+        broadcaster.release(queue)
+        raise

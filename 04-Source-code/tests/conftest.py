@@ -20,18 +20,16 @@ from src.api.broadcaster import AlarmBroadcaster
 from src.assessment.service import AssessmentService
 from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
-from src.main import Runtime
+from src.main import _SENSOR_ID, Runtime
 from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
 from src.storage.repository import InMemoryReadingRepository
 
-# Single-Sensor-Betrieb (anr-rwy-01) — identisch zu src.main._SENSOR_ID.
-_SENSOR_ID = "anr-rwy-01"
-
 
 @pytest.fixture
 def sensor_id() -> str:
+    # Aus src.main importiert (kein Duplikat -> kein Drift bei einem Sensor-Rename).
     return _SENSOR_ID
 
 

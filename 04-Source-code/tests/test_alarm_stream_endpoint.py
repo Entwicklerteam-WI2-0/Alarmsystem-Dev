@@ -265,6 +265,28 @@ def test_stream_does_not_log_reconnect_on_first_connection(caplog):
     asyncio.run(scenario())
 
 
+def test_stream_releases_slot_if_response_construction_fails(monkeypatch):
+    # Theoretischer Slot-Leak (PR-Review): wirft die StreamingResponse-Konstruktion NACH
+    # reserve() (akademisch, z. B. OOM), muss der reservierte Slot trotzdem freigegeben werden —
+    # sonst belegt eine nie gestartete Verbindung dauerhaft Kapazitaet (der _frames-finally
+    # liefe nie, weil der Generator nie startet).
+    async def scenario() -> None:
+        broadcaster = AlarmBroadcaster()
+        runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
+        request = SimpleNamespace(is_disconnected=_never_disconnected, headers=Headers({}))
+
+        def _boom(*_args: object, **_kwargs: object) -> object:
+            raise RuntimeError("response-Konstruktion kaputt")
+
+        monkeypatch.setattr("src.api.v1.StreamingResponse", _boom)
+        with pytest.raises(RuntimeError):
+            await stream_alarms(runtime=runtime, request=request)
+
+        assert broadcaster.subscriber_count == 0  # Slot freigegeben, kein Leak
+
+    asyncio.run(scenario())
+
+
 def test_stream_returns_503_when_at_capacity():
     # Connection-Cap (Ressourcenschutz): ist der Broadcaster voll (max gleichzeitige Abos),
     # weist der Endpoint die neue SSE-Verbindung mit 503 + Contract-Error ab, statt unbegrenzt
