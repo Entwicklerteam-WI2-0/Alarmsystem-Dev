@@ -7,7 +7,7 @@ Runway-Steuerung.
 """
 
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -166,12 +166,14 @@ async def stream_alarms(
         logger.warning("SSE-Stream-Kapazitaet erreicht — Verbindung mit 503 abgewiesen: %s", exc)
         return service_unavailable("Stream-Kapazitaet erreicht; bitte spaeter erneut verbinden.")
 
-    async def _frames() -> AsyncIterator[str]:
+    async def _frames() -> AsyncGenerator[str, None]:
         try:
             async for frame in sse_alarm_frames(queue, request.is_disconnected):
                 yield frame
         finally:
             # Abo am Verbindungsende abmelden (Kapazitaet freigeben, Leak verhindern).
+            # Invarianten-verletzende Alarme (id=None) filtert bereits publish() am Ingress;
+            # ein _frame()-raise bliebe hier defensiv und wuerde via finally sauber released.
             broadcaster.release(queue)
 
     return StreamingResponse(_frames(), media_type="text/event-stream", headers=_SSE_HEADERS)

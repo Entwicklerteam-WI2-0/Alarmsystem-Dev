@@ -237,6 +237,21 @@ def test_default_queue_is_bounded():
     assert asyncio.run(scenario()) == _DEFAULT_MAX_QUEUE
 
 
+def test_publish_skips_and_logs_alarm_without_id(caplog):
+    # Ingress-Guard (PR-Review): ein Alarm ohne DB-id (Bug: publish vor Persistenz) wird NICHT
+    # gestreamt — best-effort verworfen + an der Quelle geloggt, statt "id: None" an ALLE Clients
+    # zu verteilen. publish wirft dabei nicht (NF-01). _frame() haelt zusaetzlich als letzte Linie.
+    async def scenario() -> None:
+        bc = AlarmBroadcaster()
+        async with bc.subscribe() as queue:
+            with caplog.at_level(logging.ERROR, logger="src.api.broadcaster"):
+                bc.publish(_alarm(1).model_copy(update={"id": None}))  # darf nicht werfen
+            assert queue.empty()  # nichts zugestellt
+        assert any("ohne DB-id" in record.getMessage() for record in caplog.records)
+
+    asyncio.run(scenario())
+
+
 def test_publish_drops_oldest_when_queue_full(caplog):
     async def scenario() -> list[int]:
         bc = AlarmBroadcaster(max_queue=2)

@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 
 from src.model.schemas import Alarm
 
@@ -76,6 +76,15 @@ class AlarmBroadcaster:
         geloggt, nicht propagiert. Bei vollem Client-Puffer wird der aelteste Alarm
         verworfen (Drop-oldest; der Resync via DTB-31 schliesst die Luecke).
         """
+        if alarm.id is None:
+            # Invariante am Ingress (Bug-Guard): nur persistierte Alarme (mit DB-id) duerfen
+            # gestreamt werden. Best-effort (NF-01: nie werfend) -> an der Quelle loggen +
+            # verwerfen, statt einen "id: None"-Event an ALLE Clients zu verteilen. _frame()
+            # haelt als letzte Linie zusaetzlich dagegen (raise).
+            logger.error(
+                "Alarm ohne DB-id verworfen (nicht gestreamt) — Bug: publish vor Persistenz?"
+            )
+            return
         for queue in self._subscribers:
             try:
                 if queue.full():
@@ -145,13 +154,20 @@ async def sse_alarm_frames(
     queue: asyncio.Queue[Alarm],
     is_disconnected: Callable[[], Awaitable[bool]],
     heartbeat_s: float = _HEARTBEAT_S,
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str, None]:
     """Erzeugt SSE-Frames aus einem Abo-Queue, bis der Client die Verbindung trennt.
 
     Wartet je Runde bis `heartbeat_s` auf den naechsten Alarm; bleibt er aus, geht eine
     `:keep-alive`-Kommentarzeile raus (Liveness-Signal). `is_disconnected` wird zwischen
     den Frames geprueft, damit ein getrennter Client sauber beendet wird (das Abo raeumt
     der `subscribe()`-Kontextmanager im Aufrufer ab).
+
+    Disconnect-Latenz: `is_disconnected` wird erst NACH dem `wait_for` geprueft -> ein nur
+    per Poll als getrennt erkannter Client haelt seinen Subscriber-Slot bis zu `heartbeat_s`
+    (~15 s) weiter. Im Normalbetrieb (G3 = 1 Verbindung, Cap 64) unkritisch; falls der Cap je
+    nahe ausgeschoepft wird, koennte er bei vielen gleichzeitigen Disconnects kurz blockieren
+    (dann engeren Disconnect-Poll erwaegen). Bei echtem HTTP-Disconnect raeumt Starlettes
+    Task-Cancel sofort ab — diese Latenz betrifft nur den `is_disconnected`-Poll-Pfad.
 
     Entkoppelt von FastAPIs `Request` (nimmt nur ein `is_disconnected`-Callable) -> ohne
     HTTP-Stack unit-testbar.

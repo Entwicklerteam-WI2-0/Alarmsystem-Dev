@@ -14,11 +14,12 @@ async def _never_disconnected() -> bool:
 
 def _disconnect_after(n: int) -> Callable[[], Awaitable[bool]]:
     """is_disconnected-Stub: die ersten n Aufrufe False, danach True."""
-    calls = {"i": 0}
+    i = 0
 
     async def _is_disconnected() -> bool:
-        i = calls["i"]
-        calls["i"] += 1
-        return i >= n
+        nonlocal i
+        result = i >= n
+        i += 1
+        return result
 
     return _is_disconnected
