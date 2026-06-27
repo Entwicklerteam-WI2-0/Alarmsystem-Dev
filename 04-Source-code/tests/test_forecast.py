@@ -106,6 +106,33 @@ def test_readings_ausserhalb_des_fensters_ignoriert():
     assert forecast == pytest.approx(-3.0)
 
 
+def test_zukunfts_reading_clock_skew_wird_ignoriert():
+    # Clock-Skew: G1-Uhr laeuft G2 vor -> measured_at > now. Das frischeste (zukuenftige)
+    # Reading wird verworfen (trend.py: measured_at > now -> continue), nie ein Punkt aus
+    # der Zukunft. Die 3 Punkte im Fenster bleiben -> Trend unveraendert (-3.0).
+    future = _reading(-2, 99.0)  # 2 min NACH now (measured_at > _NOW)
+    readings = [future, _reading(20, 2.0), _reading(10, 1.0), _reading(0, 0.0)]
+    forecast = forecast_surface_temp(
+        readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+    )
+    assert forecast == pytest.approx(-3.0)
+
+
+def test_clock_skew_kann_prognose_auf_none_degradieren():
+    # Faellt das frischeste Reading durch Clock-Skew (G1 vorlaufend) in die Zukunft und
+    # bleiben dadurch < min_points uebrig, degradiert die Prognose still auf None. Das ist
+    # Fail-safe (None senkt die Risikostufe nie ab -> kein Under-Alarm), wird aber im
+    # Scheduler-Kommentar (main.py) als bewusste Trenddegradierung dokumentiert.
+    future = _reading(-1, 0.0)  # zukuenftig -> ausgeschlossen
+    readings = [future, _reading(10, 1.0), _reading(0, 0.0)]  # nur 2 gueltige < min_points=3
+    assert (
+        forecast_surface_temp(
+            readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+        )
+        is None
+    )
+
+
 def test_leere_zeitreihe_keine_prognose():
     assert (
         forecast_surface_temp(

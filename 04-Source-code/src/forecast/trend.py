@@ -70,6 +70,9 @@ def _collect_points(
     cutoff = now - timedelta(minutes=window_min)
     points: list[tuple[float, float]] = []
     for reading in readings:
+        # `> now` ist ein Clock-Skew-Guard: laeuft die G1-Uhr G2 vor, kann measured_at in
+        # der Zukunft liegen. Solche Punkte werden verworfen (nie aus der Zukunft regressieren).
+        # Fail-safe: schlimmstenfalls bleiben < min_points uebrig -> None (kein Under-Alarm).
         if reading.measured_at < cutoff or reading.measured_at > now:
             continue
         y = reading.surface_temp_c

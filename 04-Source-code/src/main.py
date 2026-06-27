@@ -125,7 +125,12 @@ def run_assessment_cycle(
     Bewusst KEIN eigenes try/except: Persistenz-/Audit-Fehler propagieren in die Fail-safe-
     Schleife des Schedulers (NF-01: ein Zyklus-Fehler beendet den Betrieb nicht).
     """
-    assessment = service.assess_reading(reading, now, forecast_surface_temp_c)
+    # Keyword fuer forecast_surface_temp_c: `now` und der Prognosewert stehen beide
+    # float|None-nah nebeneinander -> benannt halten, damit eine Signaturreihenfolgen-
+    # aenderung nicht still die Argumente vertauscht.
+    assessment = service.assess_reading(
+        reading, now, forecast_surface_temp_c=forecast_surface_temp_c
+    )
     if assessment.id is None:  # pragma: no cover - defensiver Invarianten-Guard
         # assess_reading garantiert eine persistierte id; fehlt sie, ist die Invariante
         # verletzt -> laut scheitern (kein assert, -O-fest), statt stumm einen Alarm ohne
@@ -172,6 +177,11 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
             last_now = now
             # DTB-33 (FA-06): 30-min-T_s-Prognose aus der Historie -> GELB-Vorwarnung.
             # Bruecke liest die Zeitreihe; Fail-safe: None bei fehlendem Reading/DB-Fehler.
+            # Clock-Skew-Implikation: `now` wird VOR dem Poll gesetzt. Laeuft die G1-Uhr G2 vor,
+            # liegt das soeben gepollte measured_at > now und faellt aus dem Trendfenster
+            # (trend.py verwirft `> now`). Das ist fail-safe (None senkt nie ab), kann aber bei
+            # duenner Datenlage die Prognose still degradieren. Bewusst NICHT `now = max(now,
+            # measured_at)`: das braeche die oben erzwungene Monotonie-Invariante der Hysterese.
             forecast = await asyncio.to_thread(
                 compute_forecast_for_cycle,
                 reading,
