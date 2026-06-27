@@ -75,9 +75,10 @@ _SENSOR_ID = "anr-rwy-01"
 _SERVICE_UNAVAILABLE_CODE = "SERVICE_UNAVAILABLE"
 
 
-@dataclass
+@dataclass(frozen=True)
 class Runtime:
-    """Zusammengebauter Dependency-Graph einer laufenden Instanz (DI)."""
+    """Zusammengebauter Dependency-Graph einer laufenden Instanz (DI). Unveränderlich:
+    der Graph wird in `build_runtime` einmal zusammengebaut und danach nie mutiert."""
 
     thresholds: Thresholds
     reading_repo: ReadingRepository
@@ -231,10 +232,11 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                 now,
             )
         except AuditError as exc:
-            # Alarm IST gespeichert + Engine aktiv (KEIN Re-Arm) — nur der Audit-Eintrag fehlte.
-            # WARNING mit alarm_id, damit Ops das vom verschluckten Alarm (reiner RepositoryError,
-            # bei dem ein Re-Arm stattfand) klar unterscheiden kann.
-            logger.warning(
+            # Alarm IST gespeichert + Engine aktiv (KEIN Re-Arm), aber OHNE Audit-Trail -> ERROR
+            # (nicht WARNING): ein persistierter Alarm ohne Audit-Eintrag ist eine Luecke in der
+            # Nachvollziehbarkeit (NF-09). alarm_id mitloggen, damit Ops das vom verschluckten
+            # Alarm (reiner RepositoryError, bei dem ein Re-Arm stattfand) unterscheiden kann.
+            logger.error(
                 "Alarm %s gespeichert, aber Audit-Eintrag fehlgeschlagen (kein Re-Arm): %s",
                 exc.alarm_id,
                 exc,
@@ -292,9 +294,7 @@ app = FastAPI(
 
 
 @app.exception_handler(RuntimeNotReadyError)
-async def _runtime_not_ready_handler(
-    _request: Request, exc: RuntimeNotReadyError
-) -> JSONResponse:
+async def _runtime_not_ready_handler(_request: Request, exc: RuntimeNotReadyError) -> JSONResponse:
     """Fehlt der Runtime-Graph, contract-konform als 503 melden (nie rohes 500/{detail})."""
     logger.error("Runtime nicht verfuegbar: %s", exc)
     return _service_unavailable("G2 momentan nicht lieferfaehig.")

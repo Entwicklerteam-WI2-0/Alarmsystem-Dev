@@ -90,9 +90,7 @@ class HystereseParameter:
                     f"Hysterese-Parameter '{feld}' muss endlich sein, ist aber {wert!r}"
                 )
             if wert < 0:
-                raise ConfigError(
-                    f"Hysterese-Parameter '{feld}' muss >= 0 sein, ist aber {wert!r}"
-                )
+                raise ConfigError(f"Hysterese-Parameter '{feld}' muss >= 0 sein, ist aber {wert!r}")
         # Obergrenze für die Zeitkonstanten (Sekunden): absurd große Werte sprengen timedelta
         # oder deaktivieren den Alarm faktisch.
         for feld, wert in (
