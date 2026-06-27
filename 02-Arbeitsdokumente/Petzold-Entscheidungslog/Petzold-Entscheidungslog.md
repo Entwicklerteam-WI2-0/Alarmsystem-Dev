@@ -1,5 +1,5 @@
 # Persönliches Entscheidungslog — Johannes Petzold (G2)
-> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-26  ·  **Zeitraum:** 2026-06-22 bis 2026-06-26
+> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-27  ·  **Zeitraum:** 2026-06-22 bis 2026-06-27
 > **Autor:** Johannes Petzold · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
@@ -299,3 +299,13 @@
   - *Speichern ohne Zustands-Check:* verworfen — ließe nicht-aktive Alarme zu und damit eine irreführende Historie.
   - *Rohe Treiberfehler durchreichen:* verworfen — der Aufrufer könnte nicht fail-safe reagieren.
 - **Ergebnis/Status:** Gebaut mit abstrakter Basis, einem In-Memory-Double für DB-freie Tests und der MySQL-Implementierung, getestet inklusive der Integrationstests, die ohne erreichbare Datenbank übersprungen werden. Der reale Datenbank-Lauf ist ein Folge-Ticket.
+
+## 2026-06-27 — Audit-Fehler: Bewertung läuft weiter, Alarm meldet sich laut (Sicherheit vor lückenlosem Protokoll)
+- **Kontext/Task:** DTB-27, Verdrahtung in den Bewertungszyklus · NF-01 (Fail-safe) · NF-09 (lückenloses, append-only Audit) · FA-12 (Alarm-Audit). Jeder Zyklus schreibt zwei Audit-Ereignisse: eine Bewertungs-Protokollzeile nach jeder Bewertung und einen Alarm-Eintrag, wenn ein Alarm ausgelöst wird. Offen war: Wie reagiert das System, wenn das Audit-Log fehlschlägt — den sicherheitsrelevanten Vorgang abbrechen (für ein lückenloses Protokoll) oder weiterlaufen lassen?
+- **Entscheidung:** Asymmetrisch, abgestuft nach Sicherheitsrelevanz. Schlägt das **Bewertungs-Audit** fehl, läuft der Zyklus weiter — der Fehler wird nur protokolliert, die Bewertung selbst steht trotzdem. Schlägt das **Alarm-Audit** fehl, wird das als eigener, lauter Fehler nach oben gemeldet (mit der ID des trotzdem gespeicherten Alarms, auf Fehler-Logstufe), aber der Alarm bleibt gültig und aktiv. In keinem Fall blockiert ein Audit-Fehler den eigentlichen Sicherheits-Output.
+- **Begründung:** Beim Zielkonflikt zwischen „nie eine unsichere Lücke" (NF-01) und „lückenloses Protokoll" (NF-09) hat die Sicherheit Vorrang. Würde ich den Zyklus bei einem Audit-Fehler abbrechen, könnte ein kaputtes Logging das Erkennen oder Anzeigen einer realen Vereisung verhindern — das Protokoll-Ziel würde das Sicherheits-Ziel aushebeln, genau verkehrt herum. Deshalb darf ein fehlendes Protokoll nie den Bewertungs- oder Alarm-Output verhindern. Die Asymmetrie folgt der Schwere des Defizits: Eine fehlende Bewertungs-Protokollzeile ist ein reines Nachvollziehbarkeits-Defizit — nur protokollieren und weiter. Ein gespeicherter Alarm ohne Protokoll-Eintrag ist gravierender: Der Alarm existiert real, aber seine Entstehung ist nicht belegt; das muss laut und mit Bezug zum konkreten Alarm gemeldet werden, damit es jemandem auffällt, statt unterzugehen. Genau deshalb „laut" (Fehler nach oben, mit Alarm-ID, auf Fehler-Stufe) statt einer beiläufigen Warnung.
+- **Alternativen (erwogen/verworfen):**
+  - *Audit und Vorgang in einer Transaktion koppeln (alles-oder-nichts):* verworfen — dann verhindert ein Audit-Ausfall den Sicherheits-Output (NF-01-Bruch); zudem ist das Audit ein eigenes, append-only geführtes Log, das bewusst nicht an den fachlichen Schreibpfad gekoppelt ist.
+  - *Beide Audit-Fehler gleich behandeln, beide nur protokollieren:* verworfen — ein gespeicherter Alarm ohne Beleg ist gravierender als eine fehlende Bewertungszeile und verdient eine eigene, laute Meldung mit Alarm-Bezug.
+  - *Beide Audit-Fehler gleich behandeln, beide hart melden:* verworfen — würde den häufigeren, unkritischen Bewertungs-Audit-Fehler unnötig zum lauten Vorfall eskalieren.
+- **Ergebnis/Status:** Umgesetzt und getestet (je ein Fehlerfall für beide Audit-Pfade). Bewusste Abwägung Sicherheit (NF-01) vor lückenlosem Protokoll (NF-09); in keinem Pfad wird ein Audit-Fehler still verschluckt (immer mindestens protokolliert). **Offen:** die zentrale Architektur-Notiz zu dieser Abwägung mit Lucas abstimmen.
