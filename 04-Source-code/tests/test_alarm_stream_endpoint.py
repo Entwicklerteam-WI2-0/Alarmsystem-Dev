@@ -92,7 +92,8 @@ def test_stream_response_is_event_stream_with_no_store():
 
 def test_stream_emits_published_alarm_as_frame():
     # End-to-end durch den Endpoint-Body: ein am Broadcaster publizierter Alarm erscheint als
-    # SSE-Frame (id: + data:Alarm-JSON). Beweist die Verdrahtung subscribe() -> sse_alarm_frames,
+    # SSE-Frame (id: + data:Alarm-JSON). Beweist die Endpoint-Verdrahtung (reserve -> _frames ->
+    # sse_alarm_frames),
     # die der Header-Test (kein Body-Iterieren) nicht mitprueft.
     async def scenario() -> None:
         broadcaster = AlarmBroadcaster()
@@ -118,7 +119,7 @@ def test_stream_emits_published_alarm_as_frame():
         assert payload["severity"] == "warning"
         assert payload["state"] == "active"
         assert datetime.fromisoformat(payload["raised_at"].replace("Z", "+00:00")) == _T0
-        await gen.aclose()  # Abo abbauen (subscribe()-finally)
+        await gen.aclose()  # Abo abbauen (_frames()-finally -> broadcaster.release)
         assert broadcaster.subscriber_count == 0
 
     asyncio.run(scenario())
@@ -152,7 +153,7 @@ def test_stream_emits_two_published_alarms_in_id_order():
         frame2 = await asyncio.wait_for(gen.__anext__(), timeout=1)
         assert frame2.startswith("id: 2\n")
 
-        await gen.aclose()  # Abo abbauen (subscribe()-finally)
+        await gen.aclose()  # Abo abbauen (_frames()-finally -> broadcaster.release)
         assert broadcaster.subscriber_count == 0
 
     asyncio.run(scenario())
