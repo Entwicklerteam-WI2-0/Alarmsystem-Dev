@@ -133,8 +133,13 @@ class AlarmBroadcaster:
 
         Dieselbe Kapazitaetsgrenze + Leak-Schutz wie reserve()/release(): die `finally`-
         Abmeldung verhindert, dass die Queue eines getrennten Clients zurueckbleibt und bei
-        jedem `publish` weiter befuellt wird. Der Endpoint nutzt reserve()/release() direkt,
-        um die Kapazitaets-Ablehnung VOR dem StreamingResponse als 503 zu melden.
+        jedem `publish` weiter befuellt wird.
+
+        Nutzungspfade (PR-Review): Im PRODUKTIONSpfad wird subscribe() NICHT verwendet — der
+        Endpoint `stream_alarms` in `api/v1.py` ruft reserve()/release() DIREKT (reserve muss
+        vor dem StreamingResponse laufen, um bei voller Kapazitaet noch ein 503 zu liefern).
+        subscribe() ist die Test-Convenience-Naht; eine Aenderung an subscribe()/reserve()/
+        release() muss daher BEIDE Nutzungspfade im Blick behalten.
         """
         queue = self.reserve()
         try:
