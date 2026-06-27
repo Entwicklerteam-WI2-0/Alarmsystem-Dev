@@ -1,6 +1,6 @@
 """Tests fuer GET /v1/health (P0.3 / Contract v1: 200 Health, 503 Error).
 
-Der Endpoint ist eine Readiness-Probe (openapi.yaml: ``200`` = erreichbar,
+Der Endpoint ist eine Liveness-Probe (openapi.yaml: ``200`` = erreichbar,
 ``503`` = (noch) nicht lieferfaehig). Solange der DI-/Runtime-Graph (lifespan)
 nicht steht, ist G2 nicht lieferfaehig -> ``503`` mit dem Contract-Fehlerformat
 ``Error {code, message}`` (NICHT FastAPIs ``{detail}``). Steht der Runtime ->
@@ -36,6 +36,7 @@ def test_health_ready_returns_200_and_status_ok():
     # Assert
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_health_not_ready_returns_503_error_envelope():

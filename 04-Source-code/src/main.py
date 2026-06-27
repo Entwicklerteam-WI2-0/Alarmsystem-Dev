@@ -316,16 +316,20 @@ async def _runtime_not_ready_handler(_request: Request, exc: RuntimeNotReadyErro
         }
     },
 )
-def health() -> Health:
-    """Readiness-Check (P0.3, Contract v1): meldet, ob G2 lieferfaehig ist.
+def health(response: Response) -> Health:
+    """Liveness-Check (P0.3, Contract v1): bestaetigt, dass G2 erreichbar ist.
 
     ``200`` ``Health{status:"ok"}`` sobald der Runtime-/DI-Graph (lifespan) steht;
     ``503`` ``Error`` solange er fehlt: die ``get_runtime``-Dependency wirft dann
     ``RuntimeNotReadyError``, der registrierte Exception-Handler bildet sie
     contract-konform auf ``503`` ab (nie rohes ``500``/``{detail}``). ``get_runtime``
-    dient hier nur als Readiness-Gate (Wert ungenutzt) -> als Route-Dependency
+    dient hier nur als Ready-Gate (Wert ungenutzt) -> als Route-Dependency
     statt Endpoint-Parameter.
+
+    Cache-Control: no-store auch auf dem 200-Pfad: ein gecachter Momentan-Zustand
+    waere ein veraltetes Sicherheitssignal (NF-01).
     """
+    response.headers.update(_NO_STORE_HEADERS)
     return Health(status="ok")
 
 
