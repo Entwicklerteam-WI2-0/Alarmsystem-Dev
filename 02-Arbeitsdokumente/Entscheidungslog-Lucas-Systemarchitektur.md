@@ -169,6 +169,13 @@
 - *Kurz:* NF-01 ist mehrschichtig garantiert — Ingest/Stale · Sensor-Fault · Plausibilität · Storage/DB-Ausfall (→ 503/`unknown`) · Assessment-Kaskade (→ ORANGE/GELB, E-34) · Serve-Zeit-Re-Check; GRÜN nur, wenn ALLE Schichten ok. ID **E-40** statt geplantem „E-39" (E-39 inzwischen = Audit-Log/DTB-29).
 - *Bezug:* NF-01; E-34; E-35; E-31; E-36; DTB-13/DTB-43/DTB-64; blockt DTB-20. Querverweis persönliches Log: DTB-64-Eintrag (2026-06-26).
 
+**E-41 — `/v1/thresholds`-Response um die DTB-33-Prognoseparameter erweitert (Post-Freeze-Naht, additiv)**
+- *Status:* Akzeptiert (DTB-33 / PR #119). Betrifft den **Post-Freeze**-Endpoint `GET /v1/thresholds` (DTB-62), **NICHT** den eingefrorenen Wire-Kern — `AssessmentCurrent` + G1↔G2↔G3-Naht unverändert.
+- *Entscheidung:* Das DTB-33-Feature (FA-06, 30-min-Prognose) erweitert `PrognoseSchwellen` um `trend_window_min`, `horizon_min`, `min_points`, `max_readings_limit` (NF-05, parametrierbar). Da `/v1/thresholds` die Config-Dataclass direkt spiegelt, liefert der Endpoint diese 4 Felder an G3. `openapi.yaml` (`Thresholds.prognose`) **additiv** nachgezogen; **alle 4 Felder werden exponiert** (kein restriktives DTO).
+- *Begründung:* Additiv + non-breaking (G3 ignoriert unbekannte Felder; kein `additionalProperties:false` auf der Naht); konsistent mit dem bestehenden „Spiegel der internen Config"-Design von DTB-62. `t_s_grenz_c`/`trend_window_min`/`horizon_min` = G3-Kalibrierwerte; `min_points`/`max_readings_limit` = interne Regressions-/DB-Last-Knöpfe (in `openapi.yaml` ausdrücklich als „interner DB-Last-Cap, kein Kalibrierwert" markiert).
+- *Alternative:* Dediziertes Wire-DTO, das nur Kalibrierwerte exponiert und die internen Knöpfe verbirgt — **verworfen (vorerst)**: mehr Code/Naht-Aufwand, und DTB-62 spiegelt bereits bewusst die ganze Config; die internen Felder sind klar als solche dokumentiert. **Re-Visit**, falls das G3-Menü die internen Felder fälschlich als Bedien-Parameter anzeigt.
+- *Bezug:* DTB-33, DTB-62; `openapi.yaml` (`Thresholds.prognose`); `API_FROZEN_v1.md` §3 (Post-Freeze-Vermerk); G3-Seam-Sync-Nachricht an Nick (2026-06-27).
+
 **E-11 — 4-Stufen-Risikomodell (🟢🟡🟠🔴) mit konkreten Schwellen + Hysterese/Entprellung**
 - *Begründung:* Klare, parametrierbare Kategorien statt eines unscharfen Einzelwerts; Hysterese verhindert Alarm-Flattern (ISA-18.2). Beide Vorfälle werden korrekt aufgelöst.
 

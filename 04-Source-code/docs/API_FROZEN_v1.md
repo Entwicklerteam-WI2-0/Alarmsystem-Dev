@@ -75,6 +75,17 @@ G2 ist hier **Client**. G1 stellt bereit, G2 pollt.
 ### Weitere Endpoints (reserviert, T1/T2)
 `GET /v1/readings` (Historie). Verbindliche Form folgt mit `openapi.yaml` (DTB-19).
 
+### Post-Freeze-Erweiterungen (nach v1.0-Freeze ergänzt — `openapi.yaml` maßgeblich)
+> **Nicht Teil des 2026-06-24-Freeze.** Additive G2→G3-Erweiterungen, die den eingefrorenen
+> Wire-Kern (oben) nicht ändern. Maßgeblich ist `docs/api/v1/openapi.yaml`.
+
+- **`GET /v1/thresholds`** (DTB-62, NF-05): rein lesende Ausgabe der aktiven Vereisungs-Schwellen
+  für das G3-Schwellenwert-Menü (RB-01-neutral, kein Aktor).
+  - **DTB-33 (FA-06)** erweitert den `prognose`-Block **additiv** um `trend_window_min`, `horizon_min`,
+    `min_points`, `max_readings_limit` (E-41). `t_s_grenz_c`/`trend_window_min`/`horizon_min` =
+    G3-Kalibrierwerte; `min_points`/`max_readings_limit` = **interne** Tuning-/DB-Last-Knöpfe
+    (kein Kalibrierwert fürs G3-Menü). Non-breaking — G3 ignoriert unbekannte Felder.
+
 ## 4. Messintervall + Stale (NF-02, final)
 
 - **Poll-Intervall:** 30 s. **Stale-Timeout:** 120 s (`measured_at` älter → `risk_level=unknown`, nie GRÜN).
