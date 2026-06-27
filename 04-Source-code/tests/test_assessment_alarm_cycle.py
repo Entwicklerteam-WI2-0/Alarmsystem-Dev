@@ -373,15 +373,22 @@ def test_scheduler_pusht_nicht_wenn_kein_alarm(monkeypatch):
     asyncio.run(scenario())
 
 
-def test_scheduler_pusht_nicht_bei_audit_error(monkeypatch, caplog):
-    # AuditError-Pfad (main.py): Alarm gespeichert, aber Audit fehlgeschlagen -> der Zyklus wirft,
-    # run_scheduler pusht NICHT an den Broadcaster (ein un-auditierter Alarm darf G3 nur via Resync
-    # GET /v1/alarms erreichen, NF-09/E-37) und loggt ERROR mit alarm_id; Scheduler laeuft weiter.
-    calls = {"i": 0}
+def test_scheduler_pusht_alarm_trotz_audit_error(monkeypatch, caplog):
+    # AuditError-Pfad (main.py, Option b / NF-01 vor NF-09): Alarm IST persistiert, nur das Audit
+    # schlug fehl -> der Zyklus wirft AuditError MIT dem persistierten Alarm. run_scheduler loggt
+    # die Audit-Luecke (ERROR, NF-09-Nachvollziehbarkeit) UND pusht den Alarm TROTZDEM live an G3:
+    # der SSE-Stream bleibt vollstaendig, G3 muss nicht auf den GET /v1/alarms-Resync warten
+    # (schliesst die zuvor offene Sichtbarkeits-Luecke; Contract bleibt: Resync = nur Reconnect).
+    persisted = Alarm(
+        id=99,
+        assessment_id=9,
+        severity=AlarmSeverity.CRITICAL,
+        raised_at=_T0,
+        state=AlarmState.ACTIVE,
+    )
 
     def _audit_boom(*_a: object, **_k: object) -> Alarm:
-        calls["i"] += 1
-        raise AuditError("Audit-Eintrag fehlgeschlagen (Test).", alarm_id=99)
+        raise AuditError("Audit-Eintrag fehlgeschlagen (Test).", alarm=persisted)
 
     async def scenario() -> None:
         broadcaster = AlarmBroadcaster()
@@ -397,18 +404,15 @@ def test_scheduler_pusht_nicht_bei_audit_error(monkeypatch, caplog):
             async with subscribed(broadcaster) as queue:
                 task = asyncio.create_task(run_scheduler(runtime, interval_s=0.01))
                 try:
-                    # Statt Fixsleep: bis der 2. Zyklus BEGONNEN hat (calls>=2). Der Beginn des
-                    # 2. Zyklus beweist, dass der 1. Zyklus seinen Schleifenkoerper inkl. des
-                    # AuditError-Handlers (ERROR-Log, KEIN publish) vollstaendig durchlief ->
-                    # entkoppelt von der Thread-Pool-Latenz und pinnt die durchlaufene
-                    # Verzweigung (nicht nur, dass der Worker zu zaehlen begann).
-                    assert await _wait_until(lambda: calls["i"] >= 2)
+                    got = await asyncio.wait_for(
+                        queue.get(), timeout=1
+                    )  # trotz Audit-Luecke gepusht
                 finally:
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
-                assert queue.empty()  # un-auditierter Alarm NICHT live gepusht
-        # ERROR-Zeile mit der alarm_id belegt: AuditError erkannt, Alarm verbleibt fuer Resync.
+            assert got.id == 99  # der persistierte Alarm erreicht G3 live
+        # Audit-Luecke ist als ERROR geloggt (NF-09): die Zustellung verdeckt die Luecke nicht.
         assert any("99" in record.getMessage() for record in caplog.records)
 
     asyncio.run(scenario())

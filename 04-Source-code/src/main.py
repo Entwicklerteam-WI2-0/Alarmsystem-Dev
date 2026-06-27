@@ -173,9 +173,8 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                 # DTB-61: Live-Push BEWUSST auf dem Event-Loop (nicht im to_thread-Worker) ->
                 # der Broadcaster greift direkt auf asyncio.Queues zu, das ist nur loop-seitig
                 # safe (kein cross-thread put). publish ist best-effort und wirft nie (NF-01).
-                # Hinweis: Auf dem AuditError-Pfad (Alarm gespeichert, Audit fehlgeschlagen)
-                # wird hier NICHT gepusht (verarbeite wirft, kein Return) -> G3 bekommt den
-                # Alarm ueber den Resync GET /v1/alarms (DTB-31, E-37).
+                # (Der AuditError-Pfad pusht separat im except unten -> SSE bleibt vollstaendig,
+                # G3 muss nicht auf den GET /v1/alarms-Resync warten; NF-01 vor NF-09.)
                 runtime.alarm_broadcaster.publish(raised)
         except AuditError as exc:
             # Alarm IST gespeichert + Engine aktiv (KEIN Re-Arm), aber OHNE Audit-Trail -> ERROR
@@ -187,6 +186,10 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                 exc.alarm_id,
                 exc,
             )
+            # NF-01 vor NF-09: der Alarm IST persistiert -> trotz der (oben geloggten) Audit-
+            # Luecke live an G3 pushen, damit der SSE-Stream vollstaendig bleibt und G3 nicht auf
+            # den GET /v1/alarms-Resync warten muss. publish ist best-effort und wirft nie (NF-01).
+            runtime.alarm_broadcaster.publish(exc.alarm)
         except RepositoryError as exc:
             logger.error("Bewertungszyklus fehlgeschlagen (fail-safe, weiter): %s", exc)
         except ValueError:
