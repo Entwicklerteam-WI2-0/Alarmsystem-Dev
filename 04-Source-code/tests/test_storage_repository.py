@@ -46,9 +46,7 @@ def _test_db_name() -> str:
     else:
         name = f"{os.environ.get('DB_NAME', 'alarmsystem')}_test"
     if not _DB_NAME_RE.fullmatch(name):
-        raise ValueError(
-            f"Ungueltiger Test-DB-Name (nur [A-Za-z0-9_] erlaubt): {name!r}"
-        )
+        raise ValueError(f"Ungueltiger Test-DB-Name (nur [A-Za-z0-9_] erlaubt): {name!r}")
     return name
 
 

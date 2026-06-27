@@ -12,6 +12,7 @@ build_runtime wird auf den In-Memory-runtime-Fixture gepatcht (keine DB), run_sc
 durch eine No-op-Coroutine ersetzt (keine echte httpx-Schleife gegen G1).
 """
 
+import asyncio
 from collections.abc import Callable, Iterator
 
 import pytest
@@ -19,7 +20,7 @@ from fastapi.testclient import TestClient
 
 from src.assessment.service import AssessmentService
 from src.ingest.poller import Poller
-from src.main import Runtime, app, build_runtime
+from src.main import Runtime, app, build_runtime, run_scheduler
 from src.storage.assessment_repository import AssessmentRepository
 from src.storage.audit_repository import AuditRepository
 from src.storage.repository import Repository
@@ -116,3 +117,43 @@ def test_build_runtime_wires_graph(monkeypatch: pytest.MonkeyPatch) -> None:
     assert isinstance(rt.poller, Poller)
     assert isinstance(rt.service, AssessmentService)
     assert rt.thresholds is not None
+
+
+def test_scheduler_prognose_fehler_blockt_bewertung_nicht(
+    monkeypatch: pytest.MonkeyPatch, runtime: Runtime
+) -> None:
+    """Ein unerwarteter Prognose-Fehler darf den sicherheitskritischen Bewertungs-
+    zyklus NICHT auslassen (NF-01).
+
+    compute_forecast_for_cycle ist bereits fail-safe (None bei RepositoryError/
+    fehlendem Reading). Wirft es dennoch (kuenftige Regression im Producer, ungefangener
+    DB-Edge-Case), muss run_assessment_cycle trotzdem laufen — mit forecast=None.
+    """
+    # Poll deterministisch (kein echtes httpx gegen G1). reading egal: die Prognose ist
+    # gepatcht-werfend und run_assessment_cycle gespiegelt.
+    monkeypatch.setattr(runtime.poller, "poll", lambda: None)
+
+    def _forecast_boom(*args: object, **kwargs: object) -> float:
+        raise RuntimeError("Prognose-Producer kaputt (simuliert)")
+
+    monkeypatch.setattr("src.main.compute_forecast_for_cycle", _forecast_boom)
+
+    class _StopLoop(BaseException):
+        """Bricht die Endlosschleife nach einer Iteration. KEIN Exception-Subtyp, damit
+        das fail-safe `except Exception` des Schedulers ihn nicht schluckt."""
+
+    calls: list[tuple] = []
+
+    def _spy_assessment_cycle(*args: object, **kwargs: object) -> None:
+        calls.append((args, kwargs))
+        raise _StopLoop
+
+    monkeypatch.setattr("src.main.run_assessment_cycle", _spy_assessment_cycle)
+
+    with pytest.raises(_StopLoop):
+        asyncio.run(run_scheduler(runtime, 0.0))
+
+    assert len(calls) == 1, "run_assessment_cycle muss trotz Prognose-Fehler laufen"
+    # Positionsargumente: (service, alarm_generator, reading, now, forecast)
+    forecast_arg = calls[0][0][4]
+    assert forecast_arg is None, "Bei Prognose-Fehler muss forecast=None an die Bewertung gehen"

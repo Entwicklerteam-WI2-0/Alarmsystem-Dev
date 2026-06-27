@@ -182,13 +182,25 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
             # (trend.py verwirft `> now`). Das ist fail-safe (None senkt nie ab), kann aber bei
             # duenner Datenlage die Prognose still degradieren. Bewusst NICHT `now = max(now,
             # measured_at)`: das braeche die oben erzwungene Monotonie-Invariante der Hysterese.
-            forecast = await asyncio.to_thread(
-                compute_forecast_for_cycle,
-                reading,
-                runtime.reading_repo,
-                runtime.thresholds.prognose,
-                now,
-            )
+            # Prognose-Isolation (NF-01): die 30-min-Vorwarnung ist eine NICHT-kritische
+            # Hilfsfunktion. compute_forecast_for_cycle ist bereits fail-safe (None bei
+            # RepositoryError/fehlendem Reading), aber ein hier nicht erwarteter Fehler
+            # (kuenftige Regression im Producer, ungefangener DB-Edge-Case) wuerde sonst ins
+            # aeussere except propagieren und run_assessment_cycle in DIESEM Tick auslassen —
+            # eine Hilfsfunktion duerfte dann den sicherheitskritischen Bewertungspfad
+            # blockieren. Darum eigen kapseln: loggen (sichtbar, kein stilles Schlucken) ->
+            # forecast=None -> Bewertung laeuft unbedingt weiter (allein auf dem Ist-Reading).
+            try:
+                forecast = await asyncio.to_thread(
+                    compute_forecast_for_cycle,
+                    reading,
+                    runtime.reading_repo,
+                    runtime.thresholds.prognose,
+                    now,
+                )
+            except Exception:  # noqa: BLE001 - Prognose-Fehler darf Bewertung nie blockieren (NF-01)
+                logger.exception("Prognose fehlgeschlagen (fail-safe, forecast=None).")
+                forecast = None
             await asyncio.to_thread(
                 run_assessment_cycle,
                 runtime.service,
