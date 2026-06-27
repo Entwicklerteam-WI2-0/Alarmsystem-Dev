@@ -70,8 +70,11 @@ def _collect_points(
     cutoff = now - timedelta(minutes=window_min)
     points: list[tuple[float, float]] = []
     for reading in readings:
-        # `> now` ist ein Clock-Skew-Guard: laeuft die G1-Uhr G2 vor, kann measured_at in
-        # der Zukunft liegen. Solche Punkte werden verworfen (nie aus der Zukunft regressieren).
+        # Zeitfenster-Filter (bewusste Doppelfilterung mit bridge.py: die Bruecke
+        # begrenzt die DB-Abfrage, diese Funktion garantiert die Semantik von
+        # `window_min` fuer alle Aufrufer, auch wenn readings ausserhalb kommen).
+        # `> now` ist zusaetzlich ein Clock-Skew-Guard: laeuft die G1-Uhr G2 vor,
+        # kann measured_at in der Zukunft liegen. Solche Punkte werden verworfen.
         # Fail-safe: schlimmstenfalls bleiben < min_points uebrig -> None (kein Under-Alarm).
         if reading.measured_at < cutoff or reading.measured_at > now:
             continue

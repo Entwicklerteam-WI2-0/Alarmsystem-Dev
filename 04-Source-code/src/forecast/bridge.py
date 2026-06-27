@@ -50,6 +50,10 @@ def compute_forecast_for_cycle(
     if reading is None:
         return None
 
+    # DB-Last-Begrenzung: nur Readings innerhalb des Trendfensters holen.
+    # `forecast_surface_temp` fuehrt denselben Fenster-Filter nochmals durch
+    # (Defense-in-Depth): die Bruecke begrenzt die DB-Abfrage, die reine
+    # Trend-Funktion garantiert die API-Semantik fuer jeden Aufrufer.
     since = now - timedelta(minutes=prognose.trend_window_min)
     try:
         readings = reading_repo.get_since(
