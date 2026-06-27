@@ -56,18 +56,21 @@ def check_plausibility(
     previous: Reading | None,
     thresholds: DatenqualitaetSchwellen,
 ) -> str | None:
-    """Prueft ein Reading auf physikalische Plausibilitaet gegen ein vorheriges.
+    """Prueft ein Reading auf Zeitstempelordnung und Temperatur-SPRUNG gegen ein vorheriges.
 
-    Prueft zwei laut Schwellenwerte.md §3 definierte Fehlerbilder;
-    die konkreten Grenzwerte kommen aus thresholds.json (NF-05):
+    Prueft ausschliesslich die beiden konsekutiv-paar-basierten Fehlerbilder laut
+    Schwellenwerte.md §3; die Grenzwerte kommen aus thresholds.json (NF-05):
+    - Zeitstempelordnung: previous muss zeitlich vor current liegen.
     - Sprung: Aenderung der Oberflaechentemperatur > thresholds.max_temp_jump_c_per_min.
-    - Flatline: Keine Aenderung der Oberflaechentemperatur ueber
-      >= thresholds.flatline_timeout_min (innerhalb einer Toleranz fuer Sensorrauschen).
+
+    Flatline wird hier bewusst NICHT geprueft — sie braucht ein ZEITFENSTER (siehe
+    check_flatline), das der Aufrufer (Poller) haelt. Diese Funktion und check_flatline
+    sind komplementaer; keine ersetzt die andere.
 
     Args:
         current: Aktuelles Reading.
         previous: Vorheriges Reading desselben Sensors. Bei None kann keine
-            Sprung-/Flatline-Pruefung stattfinden -> plausibel.
+            Sprung-Pruefung stattfinden -> plausibel.
         thresholds: Parametrierbare Grenzwerte fuer Datenqualitaet.
 
     Returns:
@@ -142,7 +145,10 @@ def check_flatline(
 
     Raises:
         ValueError: wenn current_measured_at oder ein gesetztes window_start nicht
-            zeitzonenbewusst (UTC) ist — analog is_stale (DTB-20 LOW).
+            zeitzonenbewusst (UTC) ist (analog is_stale, DTB-20 LOW), oder wenn
+            temp_span_c negativ ist (eine Spannweite max-min ist nie < 0 -> ein
+            negativer Wert signalisiert einen Aufrufer-Bug; ein stiller False-Positive
+            "flatline" waere irrefuehrend, DTB-20 Review).
     """
     # TZ-Awareness analog zu is_stale erzwingen: naive datetimes liefern bei der
     # Subtraktion unten sonst einen stummen TypeError statt eines fruehen, klaren
@@ -150,6 +156,11 @@ def check_flatline(
     # der Guard schuetzt aber Aufrufer aus anderem Kontext.
     if current_measured_at.tzinfo is None:
         raise ValueError("current_measured_at muss zeitzonenbewusst sein (UTC)")
+    # Spannweite ist definitionsgemaess max-min >= 0; ein negativer Wert ist ein
+    # Aufrufer-Bug und darf nicht als (fail-safe wirkender, aber falscher) Flatline-
+    # Treffer durchrutschen -> frueh und klar scheitern (DTB-20 Review MEDIUM).
+    if temp_span_c < 0:
+        raise ValueError(f"temp_span_c muss >= 0 sein, erhalten: {temp_span_c!r}")
     if window_start is None:
         return None
     if window_start.tzinfo is None:

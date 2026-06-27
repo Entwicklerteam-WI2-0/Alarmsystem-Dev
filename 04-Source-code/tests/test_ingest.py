@@ -1214,7 +1214,10 @@ def test_poll_flatline_detected_despite_lsb_dither(
 
     assert last is None  # Dither-Sensor wird nach >= 15 min als Flatline verworfen
     assert "flatline" in caplog.text.lower()
-    assert len(fake_repo.readings) < 40  # kein Escape mehr -> nicht alle durchgelassen
+    # Exakter Break-Even (DTB-20 Review): k=0..29 (< 15 min) gespeichert, ab k=30 (= 15 min)
+    # Flatline. Das scharfe == 30 (statt < 40) faengt einen Schwellenrueckschritt, bei dem die
+    # Erkennung erst spaeter griffe, als Regression ab.
+    assert len(fake_repo.readings) == 30
 
 
 def test_poll_recovers_after_flatline_when_temperature_moves(
@@ -1232,3 +1235,25 @@ def test_poll_recovers_after_flatline_when_temperature_moves(
 
     assert moved is not None
     assert len(fake_repo.readings) == saved_during_flat + 1
+
+
+def test_poll_baseline_after_sustained_jump_triggers_flatline(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # DTB-20 Review (M-2): Ein zwischenzeitlich verworfener Sprung aktualisiert WEDER die
+    # Referenz NOCH das Flatline-Fenster. Die Flatline-Uhr laeuft daher ab dem letzten GUTEN
+    # Reading weiter. Kehrt der Sensor >= flatline_timeout_min nach der Baseline exakt auf den
+    # Ausgangswert zurueck, gilt das (fail-safe konservativ) als Flatline und wird verworfen.
+    base = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    # Baseline -0.4 gespeichert -> Fenster startet bei base.
+    assert _poll_snapshot(poller, valid_snapshot, base, -0.4) is not None
+    # Sprung (+20 C in 30 s = 40.8 C/min > 5.0) -> verworfen, Fenster bleibt bei base/-0.4.
+    assert _poll_snapshot(poller, valid_snapshot, base + timedelta(seconds=30), 20.0) is None
+    # 15 min nach der Baseline zurueck auf -0.4: Sprung gegen die Baseline plausibel (0 C/min),
+    # Fenster ist nie weitergewandert -> Spannweite 0 ueber >= 15 min -> Flatline.
+    with caplog.at_level(logging.ERROR):
+        last = _poll_snapshot(poller, valid_snapshot, base + timedelta(minutes=15), -0.4)
+
+    assert last is None
+    assert "flatline" in caplog.text.lower()
+    assert len(fake_repo.readings) == 1  # nur die Baseline

@@ -10,6 +10,7 @@ Bezug: Pull-Protokoll E-31; Datenmodell DTB-12; Persistenz DTB-28.
 import json
 import logging
 import math
+import unicodedata
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -138,6 +139,12 @@ class Poller:
             return None
 
         # Sprung + Zeitstempelordnung gegen das unmittelbare Vorgaenger-Reading.
+        # Hinweis (DTB-20 Review): Referenz UND Flatline-Fenster werden NUR nach einem
+        # erfolgreichen Save aktualisiert. Verworfene Readings (Sprung/Flatline) lassen beide
+        # unveraendert -> die Flatline-Uhr laeuft ab dem letzten GUTEN Reading weiter, auch
+        # wenn dazwischen Werte als Sprung verworfen wurden. Kehrt der Sensor nach
+        # >= flatline_timeout_min auf die alte Baseline zurueck, gilt das (fail-safe
+        # konservativ) als Flatline.
         reason = check_plausibility(reading, self._last_reading, self.data_quality_thresholds)
         if reason is None:
             # Flatline gegen das Konstanz-FENSTER (Spannweite ueber >= flatline_timeout_min):
@@ -179,6 +186,9 @@ class Poller:
 
     def _reset_flatline_window(self) -> None:
         """Setzt das Flatline-Konstanz-Fenster zurueck (z. B. bei Sensorwechsel)."""
+        # 0.0 ist nur ein Dummy: _flatline_temp_min/max sind ausschliesslich gueltig, wenn
+        # _flatline_window_start gesetzt ist. Beide Konsumenten (_flatline_span_including,
+        # _update_flatline_window) guarden auf window_start is None und lesen die 0.0 nie.
         self._flatline_window_start = None
         self._flatline_temp_min = 0.0
         self._flatline_temp_max = 0.0
@@ -416,9 +426,13 @@ def _as_string(value: object, field: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{field} muss ein String sein, erhalten: {type(value)}")
     stripped = value.strip()
+    # Eingebettete Control-Characters (Unicode-Kategorie Cc, inkl. \n/\r/\t und U+007F)
+    # entfernen: ein manipuliertes G1-Feld wie "anr-rwy-01\n[AUDIT] ..." koennte sonst eine
+    # gefaelschte Log-/Audit-Zeile injizieren (DTB-20 LOW). Aeusserer Whitespace ist oben
+    # bereits entfernt; dieser Filter trifft nur noch eingebettete Steuerzeichen.
+    stripped = "".join(ch for ch in stripped if unicodedata.category(ch) != "Cc")
     if not stripped:
         raise ValueError(f"{field} darf nicht leer sein")
-    # Whitespace am Rand verhindert spaetere sensor_id-Lookups (z. B. in DB).
     return stripped
 
 
