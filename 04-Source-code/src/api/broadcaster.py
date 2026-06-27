@@ -3,7 +3,7 @@
 `GET /v1/alarms/stream` (api/v1.py) pusht Alarme live an G3, statt sie pollen zu lassen.
 Der Bewertungszyklus (`run_scheduler` in main.py, auf dem Event-Loop) ruft bei jedem neu
 ausgeloesten Alarm `AlarmBroadcaster.publish(alarm)`; jeder offene SSE-Client haelt ueber
-`subscribe()` ein Abo (eine `asyncio.Queue`) und konsumiert daraus via `sse_alarm_frames`.
+reserve()/release() ein Abo (eine `asyncio.Queue`) und konsumiert daraus via `sse_alarm_frames`.
 
 Bewusste Scope-Grenzen:
 - **Kein Replay-Puffer.** Nach einem Reconnect (Last-Event-ID) macht G3 den Resync ueber
@@ -144,19 +144,15 @@ class AlarmBroadcaster:
             self._subscribers.remove(queue)
 
     @contextlib.asynccontextmanager
-    async def subscribe(self) -> AsyncIterator[asyncio.Queue[Alarm]]:
-        """TEST-ONLY: registriert ein Abo (via reserve) + baut es garantiert ab — NICHT im
-        Produktionspfad (der Endpoint nutzt reserve()/release() direkt, s. u.).
+    async def _subscribe(self) -> AsyncIterator[asyncio.Queue[Alarm]]:
+        """TEST-ONLY (Unterstrich = nicht Teil der Produktions-API): registriert ein Abo (via
+        reserve) + baut es garantiert ab. Der `finally`-Abbau verhindert, dass die Queue eines
+        getrennten Clients zurueckbleibt und bei jedem `publish` weiter befuellt wird.
 
-        Dieselbe Kapazitaetsgrenze + Leak-Schutz wie reserve()/release(): die `finally`-
-        Abmeldung verhindert, dass die Queue eines getrennten Clients zurueckbleibt und bei
-        jedem `publish` weiter befuellt wird.
-
-        Nutzungspfade (PR-Review): Im PRODUKTIONSpfad wird subscribe() NICHT verwendet — der
-        Endpoint `stream_alarms` in `api/v1.py` ruft reserve()/release() DIREKT (reserve muss
-        vor dem StreamingResponse laufen, um bei voller Kapazitaet noch ein 503 zu liefern).
-        subscribe() ist die Test-Convenience-Naht; eine Aenderung an subscribe()/reserve()/
-        release() muss daher BEIDE Nutzungspfade im Blick behalten.
+        Bewusst NICHT im Produktionspfad: der Endpoint `stream_alarms` (api/v1.py) ruft
+        reserve()/release() DIREKT — reserve() muss VOR dem StreamingResponse laufen, damit bei
+        vollem Cap noch ein 503 (statt 200-Stream) moeglich ist. Wer _subscribe() versehentlich
+        im Endpoint einsetzte, braeche genau diese 503-vor-200-Invariante still -> daher privat.
         """
         queue = self.reserve()
         try:
@@ -192,8 +188,8 @@ async def sse_alarm_frames(
 
     Wartet je Runde bis `heartbeat_s` auf den naechsten Alarm; bleibt er aus, geht eine
     `:keep-alive`-Kommentarzeile raus (Liveness-Signal). `is_disconnected` wird zwischen
-    den Frames geprueft, damit ein getrennter Client sauber beendet wird (das Abo raeumt
-    der `subscribe()`-Kontextmanager im Aufrufer ab).
+    den Frames geprueft, damit ein getrennter Client sauber beendet wird (das Abo raeumt der
+    Aufrufer ab: der Endpoint via `_frames`-finally -> release(), die Tests via `_subscribe`).
 
     Disconnect-Latenz: `is_disconnected` wird erst NACH dem `wait_for` geprueft -> ein nur
     per Poll als getrennt erkannter Client haelt seinen Subscriber-Slot bis zu `heartbeat_s`

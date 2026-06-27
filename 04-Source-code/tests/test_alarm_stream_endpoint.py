@@ -301,11 +301,16 @@ def test_sanitize_header_value_strips_all_non_printable():
         + chr(27)  # ESC
         + "F ok"
     )
-    assert _sanitize_header_value(raw) == "7ABCDEF ok"
+    sanitized, had_non_printable = _sanitize_header_value(raw)
+    assert sanitized == "7ABCDEF ok"
+    assert had_non_printable is True  # es wurden Steuerzeichen entfernt
 
 
 def test_sanitize_header_value_truncates():
-    assert _sanitize_header_value("x" * 200) == "x" * _MAX_LOGGED_HEADER_LEN
+    # Reiner Truncation-Fall (alles druckbar) -> had_non_printable=False (kein False-Positive).
+    sanitized, had_non_printable = _sanitize_header_value("x" * 200)
+    assert sanitized == "x" * _MAX_LOGGED_HEADER_LEN
+    assert had_non_printable is False
 
 
 def test_stream_sanitizes_last_event_id_in_log(caplog):

@@ -88,17 +88,23 @@ _SSE_HEADERS = {
 _MAX_LOGGED_HEADER_LEN = 64
 
 
-def _sanitize_header_value(value: str) -> str:
-    """Entfernt ALLE nicht-druckbaren Zeichen und begrenzt die Laenge eines Headerwerts.
+def _sanitize_header_value(value: str) -> tuple[str, bool]:
+    """Bereinigt einen Headerwert + meldet, OB nicht-druckbare Zeichen entfernt wurden.
+
+    Returns `(sanitized, had_non_printable)` in EINEM Scan: der bereinigte Log-Wert UND das
+    Injection-Verdacht-Flag des Aufrufers teilen sich dieselbe Iteration (statt den Header
+    zweimal zu durchlaufen).
 
     Schutz gegen Log-Injection/-Forging (NF-09 Log-Integritaet): ein eingeschmuggelter
     Zeilenumbruch ODER Unicode-Zeilentrenner (U+2028/U+2029) im (von G3 gesendeten)
     Last-Event-ID-Header koennte sonst eine gefaelschte/verschleierte Log-Zeile erzeugen.
-    Gefiltert wird per str.isprintable() (entfernt CR/LF, Tabs, C0/C1-Controls,
-    Zero-Width); normaler Text + Leerzeichen bleiben. Geloggt wird nur der bereinigte,
-    begrenzte Wert.
+    Gefiltert wird per str.isprintable() (entfernt CR/LF, Tabs, C0/C1-Controls, Zero-Width);
+    normaler Text + Leerzeichen bleiben. Geloggt wird nur der bereinigte, begrenzte Wert.
+    `had_non_printable` ist True, sobald IRGENDEIN Zeichen entfernt wurde (an jeder Position) —
+    eine blosse Laengen-Kuerzung eines sauberen Werts loest es NICHT aus (kein False-Positive).
     """
-    return "".join(ch for ch in value if ch.isprintable())[:_MAX_LOGGED_HEADER_LEN]
+    printable = [ch for ch in value if ch.isprintable()]
+    return "".join(printable)[:_MAX_LOGGED_HEADER_LEN], len(printable) != len(value)
 
 
 @router.get(
@@ -151,7 +157,8 @@ async def stream_alarms(
     """
     last_event_id = request.headers.get("last-event-id")
     if last_event_id:
-        if any(not ch.isprintable() for ch in last_event_id):
+        sanitized, had_non_printable = _sanitize_header_value(last_event_id)
+        if had_non_printable:
             # Nicht-druckbare Zeichen im client-kontrollierten Header -> moeglicher Injection-/
             # Log-Forging-Versuch (G3-Bug oder MitM). Fuer proaktives Security-Monitoring als
             # WARNING sichtbar machen (NF-09-Geist), statt nur still zu bereinigen.
@@ -161,7 +168,7 @@ async def stream_alarms(
         logger.info(
             "SSE-Reconnect mit Last-Event-ID=%s — G3 sollte via GET /v1/alarms resyncen "
             "(DTB-31); G2 liefert keine Historie nach.",
-            _sanitize_header_value(last_event_id),
+            sanitized,
         )
 
     broadcaster = runtime.alarm_broadcaster
