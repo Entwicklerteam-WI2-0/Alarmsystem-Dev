@@ -283,6 +283,39 @@ def test_beenden_waehrend_upgrade_pending_setzt_alles_zurueck():
     assert spaet is not None and spaet.severity is AlarmSeverity.CRITICAL
 
 
+def test_beenden_verzoegert_eskalation_aber_verliert_sie_nicht():
+    # Diskussionspunkt G3 (Nick): "Beenden einer WARNUNG verzoegert eine laufende ROT-Eskalation
+    # um ~60 s — eine Eskalation nach oben will man doch nicht verzoegern?" Bewusste Entscheidung
+    # (Option A / K1): Bei 30-s-Poll-Intervall (config: poll_interval_s=30, on_delay_s=60) sind
+    # 60 s On-Delay >= 2 frische Messungen. Nach dem manuellen Reset feuert eine REAL
+    # fortbestehende KRITISCH-Lage WIEDER mit der richtigen Stufe, sobald frische Polls sie
+    # re-bestaetigen.
+    # Es geht also KEINE Eskalation verloren — sie wird nur an eine "gesicherte Grundlage" geknuepft
+    # (kein Alarm auf einem einzelnen ROT-Blip) -> Fehlalarm-Vermeidung. Belegt die Antwort an Nick.
+    engine = _engine()
+    _aktiver_warning(engine, _T0)  # WARNUNG aktiv (Operator sieht sie)
+
+    # Lage verschaerft sich Richtung KRITISCH -> ROT-Upgrade laeuft im On-Delay-Fenster ...
+    engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=90))  # critical pending
+    # ... der Operator beendet die WARNUNG mitten im Hochlauf -> voller Reset (auch Pending).
+    engine.beenden()
+
+    # Danach besteht die KRITISCH-Lage real fort und wird im 30-s-Poll-Takt weiter gemeldet.
+    # Der Re-Arm-On-Delay zaehlt ab der ersten frischen Bestaetigung (+150):
+    poll1 = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=150))  # frisches Pending
+    poll2 = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=180))  # +30 s < 60 -> warten
+    assert (
+        poll1 is None and poll2 is None
+    )  # KEIN Alarm auf einer einzelnen Messung (gesicherte Grundlage)
+
+    # +210: 60 s seit der ersten frischen Bestaetigung (durch >=2 frische Polls re-bestaetigt) ->
+    # die Eskalation feuert WIEDER und MIT der korrekten Stufe (nicht verloren, nur bestaetigt).
+    refire = engine.beobachte(RiskLevel.RED, _T0 + timedelta(seconds=210))
+    assert refire is not None
+    assert refire.severity is AlarmSeverity.CRITICAL
+    assert refire.ausgeloest_am == _T0 + timedelta(seconds=210)
+
+
 def test_upgrade_on_delay_ist_luecken_tolerant_gewollt():
     # DOKUMENTIERT/GEWOLLT (K1-Safe, Over-Alarm): Der On-Delay misst die Zeit seit der
     # ersten Bestaetigung und toleriert Luecken bis max_continuity_gap_s — er verlangt
