@@ -25,6 +25,14 @@ class TestSplitSqlStatements:
             "SELECT 1",
         ]
 
+    def test_ignoriert_semicolon_in_doppelt_escapedem_string(self) -> None:
+        # SQL-Standard-Escape via verdoppeltes Anfuehrungszeichen (z. B. 'it''s; ok').
+        ddl = "INSERT INTO t VALUES ('a''b;c'); SELECT 1;"
+        assert split_sql_statements(ddl) == [
+            "INSERT INTO t VALUES ('a''b;c')",
+            "SELECT 1",
+        ]
+
     def test_ignoriert_semicolon_in_zeilenkommentar(self) -> None:
         ddl = "SELECT 1; -- das ist ein; kommentar\nSELECT 2;"
         assert split_sql_statements(ddl) == [

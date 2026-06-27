@@ -43,6 +43,11 @@ def split_sql_statements(ddl: str) -> list[str]:
             if char == "\\" and next_char:
                 current.append(next_char)
                 i += 1
+            elif char == string_char and next_char == string_char:
+                # SQL-Standard-Quote-Escape (z. B. 'it''s ok'); das naechste Zeichen
+                # gehoert noch zum Literal und darf keinen String-Abschluss bedeuten.
+                current.append(next_char)
+                i += 1
             elif char == string_char:
                 in_string = False
         else:
