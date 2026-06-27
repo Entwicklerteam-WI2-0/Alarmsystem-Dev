@@ -322,6 +322,19 @@ def test_integer_schwellwert_wird_akzeptiert(tmp_path):
     assert thresholds.prognose.t_s_grenz_c == 0
 
 
+def test_prognose_min_points_als_float_scheitert_laut(tmp_path):
+    # min_points zaehlt Stuetzstellen -> ein JSON-Float (3.0) ist Fehlkonfig und wird
+    # direkt im allgemeinen Typ-Gate als Ganzzahl-Feld abgelehnt (DTB-33 Review LOW),
+    # nicht erst im Sektions-Validator.
+    daten = _minimal_config()
+    daten["prognose"]["min_points"] = 3.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="Ganzzahl erwartet"):
+        load_thresholds(datei)
+
+
 def test_eigener_pfad_ist_parametrierbar(tmp_path):
     # Arrange — NF-05: Schwellen über externe Config austauschbar
     eigene = tmp_path / "thresholds.json"

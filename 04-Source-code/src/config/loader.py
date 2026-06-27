@@ -285,11 +285,22 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict[str, Any]) -> T:
     if unerwartet:
         raise ConfigError(f"Abschnitt '{name}': unbekannte Schlüssel {sorted(unerwartet)}")
     werte = {feld: daten[feld] for feld in erwartet}
+    # Feld -> annotierter Zieltyp (str unter `from __future__ import annotations`), um
+    # Ganzzahl-Felder direkt im allgemeinen Gate zu pruefen statt erst im Sektions-Validator.
+    feld_typen = {f.name: f.type for f in fields(cls)}
     for feld, wert in werte.items():
         # bool ist in Python ein int-Subtyp, soll aber keine gültige Schwelle sein.
         if isinstance(wert, bool) or not isinstance(wert, (int, float)):
             raise ConfigError(
                 f"Abschnitt '{name}', Schlüssel '{feld}': Schwellenwert muss eine Zahl sein, "
+                f"ist aber {type(wert).__name__} ({wert!r})"
+            )
+        # Ganzzahl-Felder (z. B. prognose.min_points): ein JSON-Float wie 3.0 ist eine
+        # Fehlkonfiguration -> direkt hier ablehnen (einstufiges Typ-Gate), statt erst im
+        # Sektions-Validator aufzufangen (DTB-33 Review LOW).
+        if feld_typen[feld] == "int" and not isinstance(wert, int):
+            raise ConfigError(
+                f"Abschnitt '{name}', Schlüssel '{feld}': Ganzzahl erwartet, "
                 f"ist aber {type(wert).__name__} ({wert!r})"
             )
         # NaN/inf unterlaufen jeden Vergleich (NaN < x ist immer False -> fail-open in der

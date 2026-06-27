@@ -105,8 +105,11 @@ ALTER TABLE audit_log
 -- CREATE TABLE IF NOT EXISTS oben legt die Spalte nur bei Neuinstallation an; fuer bereits
 -- existierende DBs wird forecast_surface_temp_c hier nachgezogen, sonst schlaegt der INSERT
 -- von MySqlAssessmentRepository mit "Unknown column" fehl (-> RepositoryError, NF-01).
--- Hinweis: ADD COLUMN IF NOT EXISTS wird von MariaDB lange unterstuetzt, von MySQL erst
--- ab 8.0.21. Bei aelteren MySQL-Versionen muss die Spalte manuell ergaenzt werden.
+-- Hinweis: ADD COLUMN IF NOT EXISTS wird von MariaDB (Projekt-Default, E-29) lange
+-- unterstuetzt, von MySQL erst ab 8.0.21. Auf aelteren MySQL-Versionen schlaegt diese
+-- Migration fehl -> die Spalte dort EINMALIG manuell ergaenzen (ohne IF NOT EXISTS):
+--   ALTER TABLE assessment ADD COLUMN forecast_surface_temp_c DOUBLE NULL
+--     COMMENT 'DTB-33/FA-06: 30-min-Prognose-T_s (Nachvollziehbarkeit FA-05)';
 ALTER TABLE assessment
   ADD COLUMN IF NOT EXISTS forecast_surface_temp_c DOUBLE NULL
     COMMENT 'DTB-33/FA-06: 30-min-Prognose-T_s (Nachvollziehbarkeit FA-05)';
