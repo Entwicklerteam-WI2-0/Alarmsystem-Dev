@@ -24,6 +24,7 @@ from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
 from src.storage.repository import InMemoryReadingRepository
+from tests._db_helpers import database, db_available  # noqa: F401  (DTB-21: geteilte DB-Fixtures)
 
 # Single-Sensor-Betrieb (anr-rwy-01) — identisch zu src.main._SENSOR_ID.
 _SENSOR_ID = "anr-rwy-01"

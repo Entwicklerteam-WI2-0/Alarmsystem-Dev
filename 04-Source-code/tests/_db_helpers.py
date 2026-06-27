@@ -1,0 +1,102 @@
+"""Geteilte DB-Test-Helfer + Fixtures fuer die MariaDB-Integrationstests (DTB-21-Konsolidierung).
+
+EINE Quelle fuer Verbindungsparameter (Port/Charset/Creds aus Env), Test-DB-Name,
+Erreichbarkeits-Check und Schema-Load -> kein Copy-Paste-Drift mehr zwischen den
+*_integration.py-Modulen. Die Fixtures (`db_available`, `database`) werden in `conftest.py`
+re-exportiert und sind dadurch in allen Testmodulen verfuegbar.
+
+Hinweis (Splitter-Limit, vgl. `_sql_splitter`): Backtick-quotierte Identifier (`name`) werden
+NICHT als Quote-Kontext erkannt. Fuer das aktuelle schema.sql unkritisch (keine ';' in
+Identifiern); bei exotischeren Identifiern hier mitbedenken.
+"""
+
+import os
+import re
+from pathlib import Path
+
+import pymysql
+import pytest
+
+from src.storage.database import DatabaseConfig
+from tests._sql_splitter import split_sql_statements
+
+# DDL-Identifier sind in MySQL nicht parametrisierbar -> Test-DB-Name aus Env vor der
+# Interpolation auf [A-Za-z0-9_] weisslisten (DDL-Injection ueber manipulierte Env-Vars
+# verhindern). fullmatch statt match, weil `$` in Python auch vor einem abschliessenden \n
+# matcht (Trailing-Newline aus Env-Dateien).
+DB_NAME_RE = re.compile(r"[A-Za-z0-9_]+")
+
+
+def test_db_name() -> str:
+    """Name der Wegwerf-Test-DB: DB_NAME_TEST oder `<DB_NAME>_test` (Default alarmsystem_test)."""
+    if "DB_NAME_TEST" in os.environ:
+        name = os.environ["DB_NAME_TEST"]
+    else:
+        name = f"{os.environ.get('DB_NAME', 'alarmsystem')}_test"
+    if not DB_NAME_RE.fullmatch(name):
+        raise ValueError(f"Ungueltiger Test-DB-Name (nur [A-Za-z0-9_] erlaubt): {name!r}")
+    return name
+
+
+def conn_params(**extra) -> dict:
+    """PyMySQL-Verbindungsparameter aus den DB_*-Env-Variablen (DictCursor, utf8mb4)."""
+    base = {
+        "host": os.environ.get("DB_HOST", "localhost"),
+        "port": int(os.environ.get("DB_PORT", "3306")),
+        "user": os.environ.get("DB_USER", "alarm"),
+        "password": os.environ.get("DB_PASSWORD", "changeme"),
+        "charset": "utf8mb4",
+        "cursorclass": pymysql.cursors.DictCursor,
+    }
+    base.update(extra)
+    return base
+
+
+def db_config_for(name: str) -> DatabaseConfig:
+    """DatabaseConfig (App-Verbindungspfad) fuer `name` aus den DB_*-Env-Variablen."""
+    return DatabaseConfig(
+        host=os.environ.get("DB_HOST", "localhost"),
+        port=int(os.environ.get("DB_PORT", "3306")),
+        name=name,
+        user=os.environ.get("DB_USER", "alarm"),
+        password=os.environ.get("DB_PASSWORD", "changeme"),
+    )
+
+
+@pytest.fixture(scope="session")
+def db_available() -> bool:
+    """True, wenn eine MariaDB ueber die DB_*-Env erreichbar ist (sonst skippen die Tests)."""
+    try:
+        conn = pymysql.connect(**conn_params(autocommit=True))
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        conn.close()
+    except pymysql.Error:
+        return False
+    return True
+
+
+@pytest.fixture(scope="session")
+def database(db_available: bool) -> str:
+    """Erzeugt (idempotent) die Test-DB, spielt das Schema ein, gibt den Namen zurueck."""
+    if not db_available:
+        pytest.skip("MariaDB-Test-DB nicht erreichbar (DB_HOST/DB_PORT/DB_USER/DB_PASSWORD).")
+    name = test_db_name()
+    root = pymysql.connect(**conn_params(autocommit=True))
+    with root.cursor() as cursor:
+        cursor.execute(
+            f"CREATE DATABASE IF NOT EXISTS {name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+        )
+    root.close()
+    ddl = (Path(__file__).parent.parent / "migrations" / "schema.sql").read_text(encoding="utf-8")
+    conn = pymysql.connect(**conn_params(database=name, autocommit=False))
+    try:
+        with conn.cursor() as cursor:
+            # Echter Statement-Splitter: schema.sql hat seit DTB-29/DTB-33 Prepared Statements
+            # + Kommentare mit ';' (naives split(';') zerschnitt mitten im Kommentar -> 1064).
+            for statement in split_sql_statements(ddl):
+                cursor.execute(statement)
+        conn.commit()
+    finally:
+        conn.close()
+    return name

@@ -5,16 +5,12 @@ Schliesst die zuletzt verbliebene Real-DB-Luecke: assessment (Serving-/Sicherhei
 DTB-64/DTB-43) und audit_log (NF-09-Trail, DTB-29) waren bislang nur mit gemocktem Cursor
 getestet. Hier laufen echte INSERT/SELECT-Roundtrips (Spalten-/Typ-/Enum-/DATETIME(3)-Mapping).
 
-Skippen automatisch, wenn keine Test-DB erreichbar ist (CI/Standard ist DB-frei). Schema
-idempotent aus migrations/schema.sql; Muster wie test_alarm_repository_integration.py.
-Geteilte DB-Fixtures werden mit DTB-21 konsolidiert.
+Geteilte DB-Helfer + Fixtures (`db_available`/`database` via conftest, `conn_params`/
+`db_config_for`) liegen in tests/_db_helpers (DTB-21-Konsolidierung).
 """
 
 import json
-import os
-import re
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pymysql
 import pytest
@@ -24,80 +20,17 @@ from src.model.schemas import Assessment, AuditLogEntry
 from src.storage.assessment_repository import MySqlAssessmentRepository
 from src.storage.audit_repository import MySqlAuditRepository
 from src.storage.database import DatabaseConfig
-from tests._sql_splitter import split_sql_statements
+from tests._db_helpers import conn_params, db_config_for
 
 _UTC_NOW = datetime(2026, 6, 26, 12, 0, 0, tzinfo=UTC)
 
-# DDL-Identifier sind in MySQL nicht parametrisierbar -> Test-DB-Name aus Env vor der
-# Interpolation auf [A-Za-z0-9_] weisslisten (DDL-Injection ueber Env-Vars verhindern).
-_DB_NAME_RE = re.compile(r"[A-Za-z0-9_]+")
-
 _TABLES = ("acknowledgement", "alarm", "audit_log", "assessment", "reading", "threshold_set")
-
-
-def _test_db_name() -> str:
-    if "DB_NAME_TEST" in os.environ:
-        name = os.environ["DB_NAME_TEST"]
-    else:
-        name = f"{os.environ.get('DB_NAME', 'alarmsystem')}_test"
-    if not _DB_NAME_RE.fullmatch(name):
-        raise ValueError(f"Ungueltiger Test-DB-Name (nur [A-Za-z0-9_] erlaubt): {name!r}")
-    return name
-
-
-def _conn_params(**extra) -> dict:
-    base = {
-        "host": os.environ.get("DB_HOST", "localhost"),
-        "port": int(os.environ.get("DB_PORT", "3306")),
-        "user": os.environ.get("DB_USER", "alarm"),
-        "password": os.environ.get("DB_PASSWORD", "changeme"),
-        "charset": "utf8mb4",
-        "cursorclass": pymysql.cursors.DictCursor,
-    }
-    base.update(extra)
-    return base
-
-
-@pytest.fixture(scope="session")
-def db_available() -> bool:
-    try:
-        conn = pymysql.connect(**_conn_params(autocommit=True))
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-        conn.close()
-    except pymysql.Error:
-        return False
-    return True
-
-
-@pytest.fixture(scope="session")
-def database(db_available: bool) -> str:
-    if not db_available:
-        pytest.skip("MariaDB-Test-DB nicht erreichbar (DB_HOST/DB_PORT/DB_USER/DB_PASSWORD).")
-    name = _test_db_name()
-    root = pymysql.connect(**_conn_params(autocommit=True))
-    with root.cursor() as cursor:
-        cursor.execute(
-            f"CREATE DATABASE IF NOT EXISTS {name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-        )
-    root.close()
-    ddl = (Path(__file__).parent.parent / "migrations" / "schema.sql").read_text(encoding="utf-8")
-    conn = pymysql.connect(**_conn_params(database=name, autocommit=False))
-    try:
-        with conn.cursor() as cursor:
-            # Echter Statement-Splitter: schema.sql hat Prepared Statements + Kommentare mit ';'.
-            for statement in split_sql_statements(ddl):
-                cursor.execute(statement)
-        conn.commit()
-    finally:
-        conn.close()
-    return name
 
 
 @pytest.fixture
 def clean_db(database: str) -> str:
     """Leert alle Tabellen vor jedem Test (Isolation); gibt den Test-DB-Namen zurueck."""
-    conn = pymysql.connect(**_conn_params(database=database, autocommit=False))
+    conn = pymysql.connect(**conn_params(database=database, autocommit=False))
     try:
         with conn.cursor() as cursor:
             cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
@@ -114,7 +47,7 @@ def clean_db(database: str) -> str:
 def db_connection(clean_db: str) -> pymysql.Connection:
     """DictCursor-Verbindung zur Test-DB (fuer MySqlAssessmentRepository, das eine
     Connection erwartet)."""
-    conn = pymysql.connect(**_conn_params(database=clean_db, autocommit=False))
+    conn = pymysql.connect(**conn_params(database=clean_db, autocommit=False))
     try:
         yield conn
     finally:
@@ -124,13 +57,7 @@ def db_connection(clean_db: str) -> pymysql.Connection:
 @pytest.fixture
 def db_config(clean_db: str) -> DatabaseConfig:
     """DatabaseConfig zur Test-DB (fuer MySqlAuditRepository, das eine Config erwartet)."""
-    return DatabaseConfig(
-        host=os.environ.get("DB_HOST", "localhost"),
-        port=int(os.environ.get("DB_PORT", "3306")),
-        name=clean_db,
-        user=os.environ.get("DB_USER", "alarm"),
-        password=os.environ.get("DB_PASSWORD", "changeme"),
-    )
+    return db_config_for(clean_db)
 
 
 # --- MySqlAssessmentRepository (DTB-64 / DTB-43): Serving-/Sicherheits-Persistenz ---
@@ -228,7 +155,7 @@ def test_audit_append_and_readback(db_config: DatabaseConfig):
     new_id = repo.append(_entry())
     assert isinstance(new_id, int) and new_id > 0
 
-    conn = pymysql.connect(**_conn_params(database=db_config.name, autocommit=True))
+    conn = pymysql.connect(**conn_params(database=db_config.name, autocommit=True))
     try:
         with conn.cursor() as cursor:
             cursor.execute("SELECT * FROM audit_log WHERE id = %s", (new_id,))
@@ -246,7 +173,7 @@ def test_audit_append_and_readback(db_config: DatabaseConfig):
 def test_audit_append_null_detail_roundtrip(db_config: DatabaseConfig):
     repo = MySqlAuditRepository(db_config)
     new_id = repo.append(_entry(event_type=AuditEventType.SENSOR_FAULT, detail=None))
-    conn = pymysql.connect(**_conn_params(database=db_config.name, autocommit=True))
+    conn = pymysql.connect(**conn_params(database=db_config.name, autocommit=True))
     try:
         with conn.cursor() as cursor:
             cursor.execute("SELECT event_type, detail FROM audit_log WHERE id = %s", (new_id,))
