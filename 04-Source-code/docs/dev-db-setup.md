@@ -90,6 +90,8 @@ hochgezogen** (Hardware-Problem im ursprünglichen Setup). Folge: der einzige Re
 Kommentar mit `;` → SQL-1064; gefixt via `tests/_sql_splitter.py`). Anschließend wurden alle vier MySql-Repos
 und die NF-09-Append-only-Rechte gegen eine echte MariaDB verifiziert.
 
-> Abweichung von DTB-53 („native MariaDB, kein Docker"): Docker ist auf dem Finalisierungs-Rechner defekt,
-> daher lokale **portable** MariaDB. Für den dauerhaften Team-/Demo-Betrieb ist die DB-Bereitstellung
-> (nativ vs. zentral) eine offene Architektenentscheidung (→ M3-Integration, DTB-17/23).
+> **Konform zu DTB-53 / E-35 („kein Docker", native MariaDB).** Genutzt wird **Option (b)** aus DTB-53 —
+> lokale native MariaDB auf Windows — als **portables ZIP** statt winget (vermeidet den UAC-Installer-Prompt),
+> funktional identisch. Ein anfänglicher Docker-Versuch wurde verworfen (Engine auf dem Rechner defekt) —
+> Docker war ohnehin per E-35 ausgeschlossen, also **keine** Abweichung. Für den dauerhaften Team-/Demo-Betrieb
+> bleibt die DB-Bereitstellung (geteilte Pi vs. lokal je Entwickler) eine offene Frage (→ M3, DTB-17/23).

@@ -7,8 +7,9 @@
 (Hardware) → der einzige Real-DB-Integrationstest (DTB-27 T4) skippte immer; **kein SQL lief je gegen
 eine echte DB**. Nur InMemory war verifiziert.
 **Gemacht:**
-- Lokale **MariaDB 11.4.12** (portable, `127.0.0.1:3306`) statt Docker — Docker auf dem Rechner defekt
-  (Container ohne Netz-Endpoint) → bewusste Abweichung von DTB-53 („native, kein Docker").
+- Lokale **MariaDB 11.4.12** (portable, `127.0.0.1:3306`) — **konform zu DTB-53/E-35 Option (b)** (lokale
+  native MariaDB, kein Docker; portables ZIP statt winget). Ein Docker-Versuch wurde verworfen (Engine defekt
+  + per E-35 ohnehin ausgeschlossen). DB-Bereitstellung auf Dauer (Pi vs. lokal) offen (→ M3).
 - Schlummernden Bug gefixt: Schema-Lader `ddl.split(';')` zerschnitt einen Kommentar mit `;` → SQL-1064.
   Echter Splitter `tests/_sql_splitter.py` (Spiegel #119); 2 Integrationstest-Lader umgestellt.
 - **Alle 4 MySql-Repos real-DB-verifiziert** (reading/alarm/assessment/audit); assessment+audit-Real-DB-
