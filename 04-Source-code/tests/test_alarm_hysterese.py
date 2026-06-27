@@ -290,7 +290,8 @@ def test_beenden_verzoegert_eskalation_aber_verliert_sie_nicht():
     # >= 2 frische Messungen. Nach dem manuellen Reset feuert eine REAL fortbestehende KRITISCH-Lage
     # WIEDER mit der richtigen Stufe, sobald frische Polls sie re-bestaetigen.
     # Es geht also KEINE Eskalation verloren — sie wird nur an eine "gesicherte Grundlage" geknuepft
-    # (kein Alarm auf einem einzelnen ROT-Blip) -> Fehlalarm-Vermeidung. Belegt die Antwort an Roman.
+    # (kein Alarm auf einem einzelnen ROT-Blip) -> Fehlalarm-Vermeidung.
+    # Belegt die Antwort an Roman (G3).
     engine = _engine()
     _aktiver_warning(engine, _T0)  # WARNUNG aktiv (Operator sieht sie)
 
