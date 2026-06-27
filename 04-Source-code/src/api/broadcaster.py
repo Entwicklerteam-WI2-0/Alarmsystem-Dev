@@ -133,6 +133,11 @@ def _frame(alarm: Alarm) -> str:
     severity, raised_at, state) — `model_dump_json` ist die eine Serialisierung dieses
     Pydantic-Modells. Leerzeile (`\\n\\n`) schliesst das Event ab (SSE-Framing).
     """
+    if alarm.id is None:
+        # Invariante (-O-fest, raise statt assert wie main.py): nur persistierte Alarme
+        # mit DB-id duerfen gestreamt werden. Sonst ginge "id: None" als SSE-Event-ID
+        # raus, die G3s EventSource als Last-Event-ID speichern wuerde.
+        raise ValueError("alarm.id muss gesetzt sein (DB-id) bevor gestreamt wird")
     return f"id: {alarm.id}\ndata: {alarm.model_dump_json()}\n\n"
 
 

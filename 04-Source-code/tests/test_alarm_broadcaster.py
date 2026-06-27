@@ -19,7 +19,7 @@ import asyncio
 import inspect
 import json
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import pytest
@@ -29,10 +29,12 @@ from src.api.broadcaster import (
     _HEARTBEAT_S,
     AlarmBroadcaster,
     StreamCapacityError,
+    _frame,
     sse_alarm_frames,
 )
 from src.model.enums import AlarmSeverity, AlarmState
 from src.model.schemas import Alarm
+from tests.sse_helpers import _disconnect_after
 
 _T0 = datetime(2026, 6, 26, 12, 0, 0, tzinfo=UTC)
 
@@ -45,18 +47,6 @@ def _alarm(alarm_id: int, severity: AlarmSeverity = AlarmSeverity.WARNING) -> Al
         raised_at=_T0,
         state=AlarmState.ACTIVE,
     )
-
-
-def _disconnect_after(n: int) -> Callable[[], Awaitable[bool]]:
-    """Liefert ein is_disconnected, das die ersten n Aufrufe False, dann True liefert."""
-    calls = {"i": 0}
-
-    async def _is_disconnected() -> bool:
-        i = calls["i"]
-        calls["i"] += 1
-        return i >= n
-
-    return _is_disconnected
 
 
 async def _drain(gen: AsyncIterator[str]) -> list[str]:
@@ -370,6 +360,15 @@ def test_subscribe_enforces_capacity_as_backstop():
 # ---------------------------------------------------------------------------
 # sse_alarm_frames — Contract-Frame-Formatierung
 # ---------------------------------------------------------------------------
+
+
+def test_frame_rejects_alarm_without_id():
+    # Invarianten-Guard (PR-Review): nur persistierte Alarme (mit DB-id) duerfen gestreamt
+    # werden. Ein Alarm mit id=None wuerde sonst "id: None" als SSE-Event-ID senden, die G3s
+    # EventSource als Last-Event-ID speichert. raise (kein assert) -> -O-fest (Repo-Konvention).
+    alarm_ohne_id = _alarm(1).model_copy(update={"id": None})
+    with pytest.raises(ValueError, match="id"):
+        _frame(alarm_ohne_id)
 
 
 def test_sse_frame_carries_alarm_as_json_with_event_id():

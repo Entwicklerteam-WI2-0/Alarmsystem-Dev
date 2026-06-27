@@ -17,7 +17,6 @@ import asyncio
 import contextlib
 import json
 import logging
-from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -33,6 +32,7 @@ from src.api.v1 import _MAX_LOGGED_HEADER_LEN, _sanitize_header_value, stream_al
 from src.main import app, get_runtime
 from src.model.enums import AlarmSeverity, AlarmState
 from src.model.schemas import Alarm
+from tests.sse_helpers import _disconnect_after, _never_disconnected
 
 client = TestClient(app)
 
@@ -50,21 +50,6 @@ def _reset_overrides_and_state():
         app.dependency_overrides.clear()
         if hasattr(app.state, "runtime"):
             del app.state.runtime
-
-
-async def _never_disconnected() -> bool:
-    return False
-
-
-def _disconnect_after(n: int) -> Callable[[], Awaitable[bool]]:
-    calls = {"i": 0}
-
-    async def _is_disconnected() -> bool:
-        i = calls["i"]
-        calls["i"] += 1
-        return i >= n
-
-    return _is_disconnected
 
 
 def _alarm(alarm_id: int) -> Alarm:
@@ -97,9 +82,9 @@ def test_stream_response_is_event_stream_with_no_store():
         assert response.headers["cache-control"] == "no-store"
         # Reverse-Proxy-Buffering aus -> Events erreichen G3 sofort statt blockweise.
         assert response.headers["x-accel-buffering"] == "no"
-        # Vollstaendiges 3er-_SSE_HEADERS-Set gegen Drift sichern: keep-alive haelt die
-        # Verbindung offen; ein Entfernen/Umbenennen des Headers wuerde sonst keinen Test roten.
-        assert response.headers["connection"] == "keep-alive"
+        # KEIN Connection-Header: in HTTP/2 verboten (RFC 9113 §8.2.2), in HTTP/1.1 redundant.
+        # Absenz pinnen -> ein versehentliches Wieder-Hinzufuegen faellt im Test auf.
+        assert "connection" not in response.headers
         # Body-Generator (nicht gestartet) sauber schliessen -> keine "never awaited"-Warnung.
         await response.body_iterator.aclose()
 

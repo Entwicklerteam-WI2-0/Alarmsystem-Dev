@@ -73,12 +73,13 @@ def read_thresholds(
 
 
 # SSE-Antwortheader (DTB-61): no-store (Echtzeit-Sicherheitsnaht, kein Cache eines
-# ueberholten Stream-Zustands), keep-alive (Verbindung offen halten) und
-# X-Accel-Buffering:no (schaltet das Response-Buffering eines Reverse-Proxys wie nginx
-# fuer SSE ab -> Events erreichen G3 sofort statt blockweise).
+# ueberholten Stream-Zustands) und X-Accel-Buffering:no (schaltet das Response-Buffering
+# eines Reverse-Proxys wie nginx fuer SSE ab -> Events erreichen G3 sofort statt blockweise).
+# KEIN "Connection: keep-alive": in HTTP/1.1 ohnehin Default (redundant) und in HTTP/2 ein
+# verbotener hop-by-hop-Header (RFC 9113 §8.2.2). Die SSE-Verbindung bleibt durch den
+# offenen Body-Stream offen, nicht durch diesen Header.
 _SSE_HEADERS = {
     "Cache-Control": "no-store",
-    "Connection": "keep-alive",
     "X-Accel-Buffering": "no",
 }
 
