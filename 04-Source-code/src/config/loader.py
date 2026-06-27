@@ -11,7 +11,7 @@ import json
 import math
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any
+from typing import Any, get_type_hints
 
 # config/thresholds.json liegt zwei Ebenen über src/config/loader.py
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "thresholds.json"
@@ -285,9 +285,11 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict[str, Any]) -> T:
     if unerwartet:
         raise ConfigError(f"Abschnitt '{name}': unbekannte Schlüssel {sorted(unerwartet)}")
     werte = {feld: daten[feld] for feld in erwartet}
-    # Feld -> annotierter Zieltyp (str unter `from __future__ import annotations`), um
-    # Ganzzahl-Felder direkt im allgemeinen Gate zu pruefen statt erst im Sektions-Validator.
-    feld_typen = {f.name: f.type for f in fields(cls)}
+    # Aufgelöste Typ-Hinweise (keine Strings) fuer robusten Ganzzahl-Check.
+    # Bei `from __future__ import annotations` liefert f.type nur einen String;
+    # get_type_hints() wertet Annotationen aus und gibt echte Typ-Objekte zurueck.
+    # Ein Feld vom Typ `int | None` ist dann NICHT mehr `is int` (L-1).
+    feld_typen = get_type_hints(cls)
     for feld, wert in werte.items():
         # bool ist in Python ein int-Subtyp, soll aber keine gültige Schwelle sein.
         if isinstance(wert, bool) or not isinstance(wert, (int, float)):
@@ -298,7 +300,7 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict[str, Any]) -> T:
         # Ganzzahl-Felder (z. B. prognose.min_points): ein JSON-Float wie 3.0 ist eine
         # Fehlkonfiguration -> direkt hier ablehnen (einstufiges Typ-Gate), statt erst im
         # Sektions-Validator aufzufangen (DTB-33 Review LOW).
-        if feld_typen[feld] == "int" and not isinstance(wert, int):
+        if feld_typen[feld] is int and not isinstance(wert, int):
             raise ConfigError(
                 f"Abschnitt '{name}', Schlüssel '{feld}': Ganzzahl erwartet, "
                 f"ist aber {type(wert).__name__} ({wert!r})"
@@ -340,10 +342,9 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
         )
     _require_positive(schwellen.trend_window_min, "prognose.trend_window_min", upper=1_440)
     _require_positive(schwellen.horizon_min, "prognose.horizon_min", upper=1_440)
-    # min_points zaehlt Stuetzstellen -> echte Ganzzahl verlangen (3.0 ist Fehlkonfig).
-    # bool ist int-Subtyp, wird aber bereits in _baue_sektion als Schwellenwert abgelehnt.
-    if not isinstance(schwellen.min_points, int):
-        raise ConfigError("prognose.min_points muss eine Ganzzahl sein")
+    # Ganzzahl- und Bereichspruefung fuer min_points/max_readings_limit.
+    # isinstance(int) ist bereits in _baue_sektion erledigt (L-3); hier bleiben nur
+    # die sektionsspezifischen semantischen Grenzen.
     if schwellen.min_points < 2:
         raise ConfigError(
             "prognose.min_points muss mindestens 2 sein (Regression braucht 2 Punkte)"
@@ -355,8 +356,6 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
         )
     # max_readings_limit begrenzt die DB-Last bei get_since; sie muss ausreichend gross
     # sein, um min_points Stuetzstellen zu liefern, sonst wird die Prognose still abgeschaltet.
-    if not isinstance(schwellen.max_readings_limit, int):
-        raise ConfigError("prognose.max_readings_limit muss eine Ganzzahl sein")
     if schwellen.max_readings_limit < schwellen.min_points:
         raise ConfigError(
             "prognose.max_readings_limit muss mindestens so gross wie min_points sein"

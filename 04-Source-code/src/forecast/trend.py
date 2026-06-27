@@ -90,11 +90,13 @@ def _project(points: list[tuple[float, float]], horizon_min: float) -> float | N
     mean_y = sum(y for _, y in points) / n
     sxx = sum((x - mean_x) ** 2 for x, _ in points)
     sxy = sum((x - mean_x) * (y - mean_y) for x, y in points)
-    try:
-        slope = sxy / sxx
-    except ZeroDivisionError:
-        # Alle Stuetzstellen auf demselben Zeitpunkt (sxx = 0) -> Steigung unbestimmbar.
+    # sxx ist Summe von Quadraten -> >= 0. Bei sxx == 0.0 liegen alle Stuetzstellen
+    # auf demselben Zeitpunkt (keine Zeitvarianz) -> Steigung unbestimmbar.
+    # Hinweis: 0.0/0.0 wirft in Python *doch* ZeroDivisionError; deshalb expliziter
+    # Guard statt try/except oder blinder Annahme, math.isfinite wuerde alles fangen.
+    if sxx == 0.0:
         return None
+    slope = sxy / sxx
     intercept = mean_y - slope * mean_x  # y bei x = 0 (= now)
     forecast = intercept + slope * horizon_min  # x = +horizon_min (now + horizon)
     if not math.isfinite(forecast):
