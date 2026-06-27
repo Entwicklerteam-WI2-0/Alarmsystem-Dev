@@ -278,3 +278,20 @@ def test_build_unknown_assessment_truncates_long_reason() -> None:
 
     assert len(assessment.explanation) <= max_reason_len + len("Fail-safe: ")
     assert assessment.explanation.endswith("...")
+
+
+def test_check_plausibility_lsb_dither_is_flatline(
+    fresh_reading: Reading,
+    quality_thresholds: DatenqualitaetSchwellen,
+) -> None:
+    # Regression DTB-20: ein eingefrorener DS18B20 dithert um 1 LSB (0.0625 C @ 12-Bit).
+    # Mit dem alten epsilon=0.01 entkam das der Erkennung; mit 0.15 muss es Flatline sein.
+    dither_c = 0.0625
+    assert dither_c < quality_thresholds.flatline_epsilon_c
+    previous = _build_previous(
+        fresh_reading,
+        minutes_ago=15.0,
+        surface_temp_c=fresh_reading.surface_temp_c - dither_c,
+    )
+    reason = check_plausibility(fresh_reading, previous, quality_thresholds)
+    assert reason == "temperature flatline"
