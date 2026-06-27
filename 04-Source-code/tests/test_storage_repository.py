@@ -5,10 +5,8 @@ erreichbar ist. Schema wird idempotent aus migrations/schema.sql aufgebaut.
 """
 
 import logging
-import os
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pymysql
 import pytest
@@ -16,116 +14,16 @@ import pytest
 from src.model.enums import SensorStatus, Source
 from src.model.schemas import Reading
 from src.storage.repository import ReadingRepository, RepositoryError
-from tests._sql_splitter import split_sql_statements
+from tests._db_helpers import conn_params
 
 
 # ---------------------------------------------------------------------------
-# Test-DB Konfiguration
+# Fixtures (db_available/database kommen aus conftest -> tests/_db_helpers, DTB-21)
 # ---------------------------------------------------------------------------
-def _test_db_name() -> str:
-    """Ermittelt den Namen der Test-DB.
-
-    Reihenfolge:
-        1. DB_NAME_TEST Umgebungsvariable
-        2. DB_NAME + "_test"
-        3. Fallback "alarmsystem_test"
-    """
-    if "DB_NAME_TEST" in os.environ:
-        return os.environ["DB_NAME_TEST"]
-    base = os.environ.get("DB_NAME", "alarmsystem")
-    return f"{base}_test"
-
-
-def _root_connection() -> pymysql.Connection:
-    """Verbindung ohne Datenbank-Auswahl, um die Test-DB anzulegen."""
-    return pymysql.connect(
-        host=os.environ.get("DB_HOST", "localhost"),
-        port=int(os.environ.get("DB_PORT", "3306")),
-        user=os.environ.get("DB_USER", "alarm"),
-        password=os.environ.get("DB_PASSWORD", "changeme"),
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=True,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-@pytest.fixture(scope="session")
-def db_available() -> bool:
-    """Prueft, ob die Test-DB erreichbar ist."""
-    try:
-        conn = _root_connection()
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-        conn.close()
-    except pymysql.Error:
-        return False
-    return True
-
-
-@pytest.fixture(scope="session")
-def test_db_name() -> str:
-    return _test_db_name()
-
-
-@pytest.fixture(scope="session")
-def database(test_db_name: str, db_available: bool) -> None:
-    """Erstellt die Test-DB und fuehrt migrations/schema.sql aus.
-
-    Skipped die Tests komplett, wenn keine DB-Verbindung moeglich ist.
-    """
-    if not db_available:
-        pytest.skip(
-            "MariaDB-Test-DB nicht erreichbar (DB_HOST/DB_PORT/DB_USER/DB_PASSWORD pruefen)"
-        )
-
-    root_conn = _root_connection()
-    with root_conn.cursor() as cursor:
-        cursor.execute(
-            f"CREATE DATABASE IF NOT EXISTS {test_db_name} "
-            "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-        )
-    root_conn.close()
-
-    schema_path = Path(__file__).parent.parent / "migrations" / "schema.sql"
-    ddl = schema_path.read_text(encoding="utf-8")
-
-    conn = pymysql.connect(
-        host=os.environ.get("DB_HOST", "localhost"),
-        port=int(os.environ.get("DB_PORT", "3306")),
-        database=test_db_name,
-        user=os.environ.get("DB_USER", "alarm"),
-        password=os.environ.get("DB_PASSWORD", "changeme"),
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=False,
-    )
-    try:
-        with conn.cursor() as cursor:
-            # split_sql_statements ignoriert ';' in Strings/Kommentaren (schema.sql hat seit
-            # DTB-29/DTB-33 Prepared Statements + Kommentare mit ';'); Spiegel #119.
-            for statement in split_sql_statements(ddl):
-                cursor.execute(statement)
-        conn.commit()
-    finally:
-        conn.close()
-
-
 @pytest.fixture
-def db_connection(database: None, test_db_name: str) -> pymysql.Connection:
-    """Bietet eine frische Verbindung zur Test-DB und raeumt Tabelle auf."""
-    conn = pymysql.connect(
-        host=os.environ.get("DB_HOST", "localhost"),
-        port=int(os.environ.get("DB_PORT", "3306")),
-        database=test_db_name,
-        user=os.environ.get("DB_USER", "alarm"),
-        password=os.environ.get("DB_PASSWORD", "changeme"),
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor,
-        autocommit=False,
-    )
+def db_connection(database: str) -> pymysql.Connection:
+    """Frische Verbindung zur Test-DB (aus conftest); raeumt die reading-Tabelle."""
+    conn = pymysql.connect(**conn_params(database=database, autocommit=False))
     try:
         with conn.cursor() as cursor:
             cursor.execute("SET FOREIGN_KEY_CHECKS = 0")

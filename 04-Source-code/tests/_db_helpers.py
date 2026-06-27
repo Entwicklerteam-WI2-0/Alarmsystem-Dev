@@ -68,11 +68,17 @@ def db_available() -> bool:
     """True, wenn eine MariaDB ueber die DB_*-Env erreichbar ist (sonst skippen die Tests)."""
     try:
         conn = pymysql.connect(**conn_params(autocommit=True))
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT 1")
-        conn.close()
     except pymysql.Error:
         return False
+    # Verbindung steht -> in jedem Fall schliessen, auch wenn das SELECT wirft
+    # (sonst Connection-Leak ueber die Session, da diese Fixture session-scoped ist).
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except pymysql.Error:
+        return False
+    finally:
+        conn.close()
     return True
 
 
@@ -88,7 +94,10 @@ def database(db_available: bool) -> str:
             f"CREATE DATABASE IF NOT EXISTS {name} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
         )
     root.close()
-    ddl = (Path(__file__).parent.parent / "migrations" / "schema.sql").read_text(encoding="utf-8")
+    schema_path = Path(__file__).parent.parent / "migrations" / "schema.sql"
+    if not schema_path.exists():
+        pytest.fail(f"schema.sql fuer Test-DB-Setup nicht gefunden: {schema_path}")
+    ddl = schema_path.read_text(encoding="utf-8")
     conn = pymysql.connect(**conn_params(database=name, autocommit=False))
     try:
         with conn.cursor() as cursor:
