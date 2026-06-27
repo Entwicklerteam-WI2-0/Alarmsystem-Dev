@@ -22,6 +22,8 @@ Backend-Repo der Gruppe 2 (FastAPI · MySQL/MariaDB · rohes PyMySQL, kein ORM).
     pip install -r requirements-dev.txt
     # MariaDB: native — Pi via SSH-Tunnel ODER lokale Installation (kein Docker, E-35)
     # Zugangsdaten über .env (s. .env.example), nie committen
+    # Schreibzugriff (PUT /v1/thresholds, DTB-63/NF-07): G2_API_KEY in .env setzen;
+    # ungesetzt -> Schreib-Endpoints antworten fail-safe mit 503. TLS am Reverse-Proxy.
     uvicorn src.main:app --reload    # -> http://127.0.0.1:8000
 
 ## Schema & DB-Rechte einspielen (DDL, ersetzt Alembic — E-35)
@@ -122,5 +124,7 @@ G2 ist **Server**; G3 konsumiert per `GET` (REST). Alle Endpoints unter `/v1/` (
 - **Alarme = Push (E-37):** `GET /v1/alarms/stream` (SSE — G2 pusht Alarme live) + `GET /v1/alarms` (Zustands-Abfrage/Resync, **kein** Poll-Scan)
 - `POST /v1/alarms/{id}/ack` (Quittierung — reine UI-/Audit-Aktion, **kein** Bahn-Aktor, RB-01)
 - `GET /v1/readings` — Historie
+- `GET /v1/thresholds` — aktuelle Schwellenwerte lesen (DTB-62)
+- `PUT /v1/thresholds` — Schwellenwerte versioniert ändern (**Auth: `Authorization: Bearer <G2_API_KEY>`**, DTB-63); greift beim nächsten Reload (kein Live-Swap), versioniert per `threshold_set` + Audit (NF-09)
 
 **Kein** Freigabe-/Sperr-Endpoint (RB-01). Stale/Ausfall → `unknown`, nie GRÜN (NF-01).
