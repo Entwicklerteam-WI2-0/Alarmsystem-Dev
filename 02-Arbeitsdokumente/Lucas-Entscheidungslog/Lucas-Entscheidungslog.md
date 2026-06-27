@@ -1,11 +1,22 @@
 # Persönliches Entscheidungslog — Lucas Vöhringer (G2)
-> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-26
+> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-27
 > **Autor:** Lucas Vöhringer (Systemarchitekt) · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 > Persönliches Log (Einzelleistung). Das zentrale Architektur-Logbuch des Teams ist
 > `Entscheidungslog-Lucas-Systemarchitektur.md` (ADR-Format E-xx); je Eintrag steht der Querverweis dorthin.
 
 ---
+
+## 2026-06-27 — PR #114: GET /v1/health auf Contract-v1-Schema + 503-Readiness heben
+- **Kontext/Task:** P0.3 · DTB-64 (Laufzeit-Verdrahtung / Health-Contract-Polish) · FA-03 (Systemstatus abfragen) · NF-01 (Fail-safe) · E-36 (flacher Wire-Response / Error-Envelope) · eingefrorener Contract v1 (`docs/API_FROZEN_v1.md`, `openapi.yaml`). Betrifft `src/main.py` und `tests/test_health.py`.
+- **Entscheidung:** Den bisherigen einfachen `GET /v1/health`-Endpoint (Dictionary-Response `{"status":"ok"}`) auf das Pydantic-Schema `Health {status: "ok"}` heben und einen 503-Readiness-Pfad hinzufügen. Der Endpoint verwendet `Depends(get_runtime)` als Ready-Gate: solange der Runtime-/DI-Graph (lifespan) nicht steht, wirft die Dependency `RuntimeNotReadyError`, der registrierte Exception-Handler bildet ihn contract-konform als `503 Error {code, message}` ab. Auf dem 200-Pfad wird zusätzlich `Cache-Control: no-store` gesetzt.
+- **Begründung:** Der eingefrorene Contract v1 schreibt für `/v1/health` ein `200 Health {status:"ok"}` vor und erlaubt einen 503-Fehlerpfad mit dem Contract-Error-Format (nicht FastAPIs `{detail}`). Die bisherige Implementierung lieferte zwar 200, aber als ungetyptes Dictionary und ohne 503-Pfad — ein Drift gegen die Naht. Der 503-Pfad ist sicherheitsrelevant: G2 darf während des Starts oder bei internem Ausfall nicht als „erreichbar & gesund" signalisieren, solange der DI-Graph (DB-Verbindung, Repositories, Thresholds) noch nicht steht. `Cache-Control: no-store` auf dem 200-Pfad verhindert, dass Proxies einen kurzen Moment der Erreichbarkeit cachen und als veraltetes Sicherheitssignal liefern (NF-01).
+- **Alternativen (erwogen/verworfen):**
+  - *Einfachen Dict-Response beibehalten und nur Docstring anpassen:* verworfen — würde die Contract-Treue nur auf dem Papier, nicht im Wire-Format erfüllen; Pydantic garantiert Schema + Validierung.
+  - *Separaten `/v1/ready`-Endpoint neben `/v1/health` einführen:* verworfen — Contract v1 sieht nur einen Health-Endpoint vor; eine zusätzliche Ressource würde die Naht erweitern und G3 überraschen.
+  - *503 durch explizite Prüfung von `app.state.runtime` im Endpoint erzeugen:* verworfen — würde den Endpoint mit Lifespan-Details vermischen und schlechter testbar machen; `Depends(get_runtime)` ist das bestehende, über `dependency_overrides` testbare Ready-Gate.
+  - *Kein `Cache-Control` auf 200 setzen:* verworfen — ein gecachter Health-200 könnte nach einem Ausfall/Neustart als veraltetes „alles ok"-Signal verwendet werden; no-store ist Teil des Fail-safe-Designs.
+- **Ergebnis/Status:** umgesetzt in `fix/dtb-64-health-contract` (PR #114); Tests erweitert auf Ready-200 und Not-Ready-503; alle CI-Checks grün; Review durch KI-Reviewer freigegeben; PR in `main` gemergt. Querverweis zentrales Log: **E-36**.
 
 ## 2026-06-26 — Build-Fix PR #93: Schwellen-Guard um technische Guards erweitert statt noqa-Marker
 - **Kontext/Task:** PR #93 Review-Fix-Commits (DTB-58 Poller-Stale + DTB-60 dew_point-Integration) · NF-05 (Schwellen parametrierbar) · DTB-22 (No-Hardcode-Guard). Auslöser: `timeout_s <= 0`-Guard in `src/assessment/failsafe.py` ließ den CI-Job `Lint Config` rot werden.
