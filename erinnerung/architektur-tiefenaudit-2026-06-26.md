@@ -1,5 +1,61 @@
 # Architektur-Tiefenaudit — 2026-06-26
 
+> ## ⚠️ ÜBERHOLT — Re-Verifikation 2026-06-27 (gegen aktuelles `main`, HEAD `a47f600`)
+>
+> **Der Befund unterhalb dieser Box ist eine Momentaufnahme von HEAD `6ca916f` (2026-06-26).** Seither ist eine
+> **Merge-Welle** auf `main` gelandet (DTB-64 #105, DTB-27 #107, DTB-43 #108, DTB-62 #99, DTB-41/49 #111, DTB-48 #109),
+> die den **Großteil der damaligen CRITICALs schließt**. Diese Box ist die **code-verifizierte Korrektur**
+> (4 parallele Read-only-Agenten gegen `04-Source-code/src` + ausgeführte Suite, 2026-06-27). **Bei Konflikt
+> gewinnt diese Box;** das Original darunter bleibt unverändert als Historie stehen.
+>
+> ### Kurzantwort: Haben wir aktuell „11 CRITICAL-Bugs im Code"? → **Nein.**
+> Das Original-Audit war eine **ehrliche Momentaufnahme eines bewusst bottom-up gebauten, noch nicht
+> verdrahteten** Standes — **keine Liste aktiver Produktionsbugs.** Die zentrale Integrationsarbeit ist
+> inzwischen gemergt. **Neues Gesamt-Verdikt: Die T0/T1-Wirbelsäule ist verdrahtet und läuft im Test
+> end-to-end.** Suite **522 passed · 0 failed · 16 skip** (live-MariaDB, erwartet) · **92 % Coverage · ruff clean** (Py 3.14).
+>
+> ### Was die Merge-Welle geschlossen hat (verifiziert, `datei:zeile`)
+> | Audit-Befund (Stand `6ca916f`) | Heute auf `main` | Beleg |
+> |---|:--:|---|
+> | „`main.py` = 19-Zeilen-Stub, kein Scheduler/Lifespan/DI" | ✅ behoben | `main.py` jetzt **313 Z.**: Lifespan `:197-218`, DI `build_runtime() :76-103`, Scheduler `run_scheduler() :133-190` (DTB-64) |
+> | F16 `GET /v1/assessment/current` fehlt (Kernprodukt) | ✅ behoben | `main.py:247-312`, liefert `AssessmentCurrent` (DTB-43) |
+> | F07 / NF-01 zur Laufzeit unenforced | ✅ behoben | Assess-Zeit `service.py:89-102` **+** Serve-Zeit `service.py:205-228`: stale/fault → `unknown`, **nie GRÜN** |
+> | F06 Kaskade `assess_ice_risk` nie aufgerufen | ✅ behoben | `service.py:113` ruft `assess_ice_risk`; im Zyklus `main.py:122` |
+> | F05 Taupunkt + ΔT laufen nie | ✅ behoben | über Service-Pfad aktiv (`service.py`) |
+> | F11 Alarm-Erzeugung fehlt | ✅ behoben | Severity-Map `alarm/generation.py:22-35`, Erzeugung `alarm/service.py:55-116`, verdrahtet `main.py:130` (DTB-27) |
+> | F08 Hysterese / On-Delay fehlt | ✅ behoben | `alarm/hysterese.py:44-198` (On-Delay) + `alarm/riskhysterese.py:38-127` + Config `thresholds.json:15-20` |
+> | F10 Assessment-Persistenz fehlt | ✅ behoben | `storage/assessment_repository.py` (append-only INSERT), verdrahtet `main.py:80,88` |
+> | F14 Config: `poll_interval`/`on_delay`/Hysterese fehlen; `load_thresholds()` nie aufgerufen | ✅ behoben | `thresholds.json:15-20,37-39`; `load_thresholds()` `main.py:78` |
+> | F15 `AssessmentCurrent`/`AckRequest`/`Error`/`Health`-Schemas fehlen; `maxLength` fehlt | ✅ behoben | `schemas.py:130-149 / 167-171 / 160-164 / 152-157`; `max_length` auf allen String-Feldern |
+> | Vorfall-2-Test (ΔT=+0,2 → ORANGE, falsch) | ✅ behoben | `test_assessment.py:77-87` jetzt ΔT≤0 → ROT (Reif) |
+> | F13 Audit-Log komplett unverdrahtet | ◻ teilweise | Audit-Repo verdrahtet (`main.py:81,88,93`); `assessment_made` `service.py:154-157` + `alarm_raised` `alarm/service.py:99-102` werden geschrieben |
+>
+> ### Was wirklich noch offen ist (echter Rest-Backlog auf `main`, Stand 2026-06-27)
+> | Lücke | Status | Beleg / Ticket |
+> |---|:--:|---|
+> | **HTTP-Alarm-Oberfläche**: `GET /v1/alarms` (F18) · SSE `…/stream` (F19) · `POST …/ack` (F20) · 409 Double-Ack (F12) | ❌ fehlt | nur `AckRequest`-Schema stubbed (`schemas.py:167`), **keine Routen** — DTB-31 / DTB-61 |
+> | **Prognose-Producer** (F23 / FA-06, **Pflicht**) | ❌ auf `main` | `forecast/` = nur `__init__.py`; Producer liegt auf Branch `feat/dtb-33-forecast-producer` (laufende Arbeit, DTB-33) |
+> | `GET /v1/health` als Pydantic `Health` + 503-Pfad (F17) | ◻ offen | Endpoint noch `dict[str,str]` (`main.py:238-244`); `Health`-Schema existiert, aber ungenutzt |
+> | `GET /v1/readings` (F21, T1) | ❌ fehlt | keine Route |
+> | F24 Geoposition / Multi-Sensor in Config | ❌ fehlt | `_SENSOR_ID` noch hart, nicht aus `config/` |
+> | F03 Sprung/Flatline (`check_plausibility`) im Ingest-Pfad | ◻ offen | `failsafe.py:54` definiert, **von keinem Live-Modul aufgerufen**; Range-/NaN-Checks im Poller laufen |
+> | No-Hardcode-Guard auf `ingest`+`api` ausweiten | ◻ offen | `check_hardcoded_thresholds.py:68` scannt nur `assessment`+`forecast` |
+> | NF-07 Auth | ❌ geplant M3 | AE-02 offen |
+>
+> ### Wichtigster Betriebs-Vorbehalt
+> Der periodische **Scheduler/Poller-Loop ist vollständig gebaut, aber per Default AUS** (`G2_ENABLE_SCHEDULER`,
+> `main.py:193-194, 203-211`) — damit `uvicorn`/Tests ohne DB/G1 laufen. Die Verdrahtung ist erreichbar; sie wird
+> erst scharf, wenn das Flag gesetzt **und** DB/G1 angebunden sind. Bewusst by design: `assess_ice_risk` hat
+> **keinen** internen stale/fault-Guard (`core.py:27-91`) — der Fail-safe liegt korrekt in der Service-Schicht
+> (`service.py`), nicht in der reinen Kaskade.
+>
+> **RB-01 (kein Aktor) weiterhin sauber gewahrt:** Alarm-Clearing nur manuell (`hysterese.py:171-198 beenden()`),
+> Persistenz save-only ohne Auto-`cleared_at`, kein Steuer-/Freigabe-Endpoint.
+>
+> *Re-Verifikation: 4 parallele Read-only-Agenten gegen `main` HEAD `a47f600` + ausgeführte pytest/ruff-Suite · 2026-06-27 —architekt*
+
+---
+
 > **Werkzeug:** `uni:architektur-tiefenaudit` (Architekt, read-only) · **Orchestrierung:** Workflow-Maximal,
 > 23 Subagenten (10 Subsystem-Traces via `code-explorer` → je adversariale Gegenprobe + 3 Spezial-Linsen:
 > `silent-failure-hunter`/NF-01, RB-01-Aktor, Contract-Treue). Run `wf_53434d4b-97a`, ~18 min, 2,18 Mio Tokens.
@@ -10,6 +66,9 @@
 ---
 
 ## GESAMT-VERDIKT: Liefert das Backend das Produkt? **NEIN (noch nicht) — „Motor gebaut, nicht verdrahtet".**
+
+> **⚠️ Hinweis (2026-06-27):** Dieses Verdikt galt für HEAD `6ca916f`. Es ist **überwiegend überholt** — siehe
+> die Re-Verifikations-Box ganz oben. Die T0/T1-Wirbelsäule ist inzwischen verdrahtet.
 
 Der `main`-Stand besteht aus **hochwertigen, gut getesteten Einzelmodulen** (reine Funktionen + Repositories),
 die aber **fast nirgends zu einem laufenden Produkt zusammengeschaltet sind**. `src/main.py` ist ein
