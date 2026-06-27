@@ -7,13 +7,14 @@ Runway-Steuerung.
 """
 
 import logging
+from collections.abc import AsyncIterator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
-from src.api.broadcaster import sse_alarm_frames
-from src.api.responses import NO_STORE_HEADERS
+from src.api.broadcaster import StreamCapacityError, sse_alarm_frames
+from src.api.responses import NO_STORE_HEADERS, service_unavailable
 from src.api.runtime import Runtime, get_runtime
 from src.config.loader import Thresholds
 from src.model.schemas import Error
@@ -81,11 +82,29 @@ _SSE_HEADERS = {
     "X-Accel-Buffering": "no",
 }
 
+# Obergrenze fuer den geloggten Last-Event-ID-Wert (Diagnose reicht; verhindert ueberlange
+# client-kontrollierte Log-Zeilen).
+_MAX_LOGGED_HEADER_LEN = 64
+
+
+def _sanitize_header_value(value: str) -> str:
+    """Entfernt CR/LF und begrenzt die Laenge eines client-kontrollierten Headerwerts.
+
+    Schutz gegen Log-Injection/-Forging (NF-09 Log-Integritaet): ein eingeschmuggelter
+    Zeilenumbruch im (von G3 gesendeten) Last-Event-ID-Header koennte sonst eine
+    gefaelschte Log-Zeile erzeugen. Wir loggen nur den bereinigten, begrenzten Wert.
+    """
+    return value.replace("\r", "").replace("\n", "")[:_MAX_LOGGED_HEADER_LEN]
+
 
 @router.get(
     "/alarms/stream",
     summary="Live-Alarm-Stream (Server-Sent Events)",
     tags=["Alarms"],
+    # Union-Rueckgabe (StreamingResponse | JSONResponse) ist kein Pydantic-Response-Model;
+    # FastAPI soll daraus KEINS ableiten (200 = SSE-Stream, 503 = Error sind in `responses`
+    # dokumentiert). Ohne dies wirft FastAPI beim Start einen FastAPIError.
+    response_model=None,
     responses={
         200: {
             "content": {"text/event-stream": {}},
@@ -93,15 +112,22 @@ _SSE_HEADERS = {
         },
         503: {
             "model": Error,
-            "description": "G2 (noch) nicht lieferfaehig (Runtime nicht bereit).",
+            "description": (
+                "G2 (noch) nicht lieferfaehig (Runtime nicht bereit) ODER Stream-Kapazitaet "
+                "erreicht (zu viele gleichzeitige Verbindungen)."
+            ),
         },
     },
 )
 async def stream_alarms(
     runtime: Annotated[Runtime, Depends(get_runtime)],
     request: Request,
-) -> StreamingResponse:
+) -> StreamingResponse | JSONResponse:
     """Pusht ausgeloeste Alarme live an G3 (E-37) — kein Polling, kein Aktor (RB-01).
+
+    Bei voller Stream-Kapazitaet (zu viele gleichzeitige Verbindungen) wird die neue
+    Verbindung mit 503 (`Error {code, message}`) abgewiesen, statt unbegrenzt Speicher zu
+    binden — rein abweisend, kein Aktor.
 
     Der Client haelt eine offene Verbindung; G2 sendet pro neuem Alarm ein SSE-Event
     (`id:` = Alarm-ID fuer Reconnect via Last-Event-ID, `data:` = Alarm-JSON) und alle
@@ -123,13 +149,24 @@ async def stream_alarms(
         logger.info(
             "SSE-Reconnect mit Last-Event-ID=%s — G3 sollte via GET /v1/alarms resyncen "
             "(DTB-31); G2 liefert keine Historie nach.",
-            last_event_id,
+            _sanitize_header_value(last_event_id),
         )
-    broadcaster = runtime.alarm_broadcaster
 
-    async def _frames() -> object:
-        async with broadcaster.subscribe() as queue:
+    broadcaster = runtime.alarm_broadcaster
+    try:
+        # Abo SYNCHRON reservieren (race-frei) -> bei voller Kapazitaet kann der Endpoint
+        # noch contract-konform mit 503 antworten, BEVOR ein StreamingResponse (200) beginnt.
+        queue = broadcaster.reserve()
+    except StreamCapacityError as exc:
+        logger.warning("SSE-Stream-Kapazitaet erreicht — Verbindung mit 503 abgewiesen: %s", exc)
+        return service_unavailable("Stream-Kapazitaet erreicht; bitte spaeter erneut verbinden.")
+
+    async def _frames() -> AsyncIterator[str]:
+        try:
             async for frame in sse_alarm_frames(queue, request.is_disconnected):
                 yield frame
+        finally:
+            # Abo am Verbindungsende abmelden (Kapazitaet freigeben, Leak verhindern).
+            broadcaster.release(queue)
 
     return StreamingResponse(_frames(), media_type="text/event-stream", headers=_SSE_HEADERS)

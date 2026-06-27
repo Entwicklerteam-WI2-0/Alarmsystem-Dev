@@ -22,10 +22,13 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
 
+import pytest
+
 from src.api.broadcaster import (
     _DEFAULT_MAX_QUEUE,
     _HEARTBEAT_S,
     AlarmBroadcaster,
+    StreamCapacityError,
     sse_alarm_frames,
 )
 from src.model.enums import AlarmSeverity, AlarmState
@@ -315,6 +318,53 @@ def test_drop_oldest_is_isolated_per_queue_in_fan_out():
     # slow: aeltester (id=1) gedroppt, neueste ueberleben -> [2, 3]. fast hat oben bereits
     # lueckenlos [1, 2, 3] erhalten -> Backpressure des langsamen Clients ist pro Queue isoliert.
     assert slow_ids == [2, 3]
+
+
+def test_reserve_rejects_new_abo_at_capacity():
+    # Schutz gegen unbegrenzte gleichzeitige SSE-Verbindungen (Speicher-/Ressourcen-DoS):
+    # ab max_subscribers lehnt reserve() ein weiteres Abo ab (StreamCapacityError) -> der
+    # Endpoint kann das als 503 melden, statt den Broadcaster beliebig wachsen zu lassen.
+    async def scenario() -> None:
+        bc = AlarmBroadcaster(max_subscribers=2)
+        bc.reserve()
+        bc.reserve()
+        assert bc.subscriber_count == 2
+        with pytest.raises(StreamCapacityError):
+            bc.reserve()  # 3. Verbindung -> abgelehnt
+
+    asyncio.run(scenario())
+
+
+def test_release_frees_capacity_for_new_abo():
+    # Nach Verbindungsende (release) ist wieder Platz -> ein neuer Client darf abonnieren.
+    # Pinnt, dass die Kapazitaet nicht dauerhaft "verbraucht" wird (sonst stuende der Stream
+    # nach max_subscribers Reconnects bis zum Neustart fuer alle auf 503).
+    async def scenario() -> None:
+        bc = AlarmBroadcaster(max_subscribers=1)
+        queue = bc.reserve()
+        with pytest.raises(StreamCapacityError):
+            bc.reserve()
+        bc.release(queue)
+        assert bc.subscriber_count == 0
+        bc.reserve()  # wieder frei -> kein Fehler
+        assert bc.subscriber_count == 1
+
+    asyncio.run(scenario())
+
+
+def test_subscribe_enforces_capacity_as_backstop():
+    # subscribe() baut auf reserve()/release() auf -> setzt dieselbe Obergrenze durch und
+    # raeumt das Abo am Verbindungsende wieder ab (Symmetrie zu den reserve/release-Tests).
+    async def scenario() -> None:
+        bc = AlarmBroadcaster(max_subscribers=1)
+        async with bc.subscribe():
+            assert bc.subscriber_count == 1
+            with pytest.raises(StreamCapacityError):
+                async with bc.subscribe():
+                    pass
+        assert bc.subscriber_count == 0  # erstes Abo nach Verlassen abgebaut
+
+    asyncio.run(scenario())
 
 
 # ---------------------------------------------------------------------------

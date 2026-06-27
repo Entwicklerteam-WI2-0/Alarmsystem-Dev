@@ -33,18 +33,36 @@ logger = logging.getLogger(__name__)
 # leert die Queue sofort; der Puffer faengt nur kurze Lastspitzen / langsame Verbraucher ab.
 _DEFAULT_MAX_QUEUE = 100
 
+# Max. gleichzeitige SSE-Abos. Schutz gegen unbegrenztes Verbindungswachstum (Speicher/
+# Ressourcen): G3 haelt im Normalbetrieb EINE Verbindung; der Spielraum deckt mehrere
+# Operator-Screens + ueberlappende Reconnects ab. Darueber weist der Endpoint mit 503 ab.
+_DEFAULT_MAX_SUBSCRIBERS = 64
+
 # Heartbeat-Intervall (s): Contract ~15 s SSE-Kommentarzeile, damit G3 einen still
 # gestorbenen Stream von einem nur ruhigen unterscheidet.
 _HEARTBEAT_S = 15.0
 _HEARTBEAT_FRAME = ":keep-alive\n\n"
 
 
+class StreamCapacityError(Exception):
+    """Obergrenze gleichzeitiger SSE-Abos erreicht.
+
+    `reserve()` wirft sie, BEVOR ein Abo angelegt wird; der Endpoint (stream_alarms)
+    faengt sie und antwortet contract-konform mit 503 (es beginnt kein StreamingResponse).
+    """
+
+
 class AlarmBroadcaster:
     """Verteilt ausgeloeste Alarme an alle offenen SSE-Abos (In-Process Pub/Sub)."""
 
-    def __init__(self, max_queue: int = _DEFAULT_MAX_QUEUE) -> None:
+    def __init__(
+        self,
+        max_queue: int = _DEFAULT_MAX_QUEUE,
+        max_subscribers: int = _DEFAULT_MAX_SUBSCRIBERS,
+    ) -> None:
         self._subscribers: set[asyncio.Queue[Alarm]] = set()
         self._max_queue = max_queue
+        self._max_subscribers = max_subscribers
 
     @property
     def subscriber_count(self) -> int:
@@ -72,19 +90,40 @@ class AlarmBroadcaster:
             except Exception:  # noqa: BLE001 - Push best-effort (NF-01): nie den Zyklus stoppen
                 logger.exception("Alarm-Push an einen Abonnenten fehlgeschlagen (uebersprungen).")
 
-    @contextlib.asynccontextmanager
-    async def subscribe(self) -> AsyncIterator[asyncio.Queue[Alarm]]:
-        """Registriert ein Abo und baut es bei Verbindungsende garantiert wieder ab.
+    def reserve(self) -> asyncio.Queue[Alarm]:
+        """Legt ein neues Abo an und gibt dessen Queue zurueck — synchron + atomar.
 
-        Die `finally`-Abmeldung verhindert, dass die Queue eines getrennten Clients im
-        Broadcaster zurueckbleibt (Leak) und bei jedem `publish` weiter befuellt wird.
+        Synchron (kein await) und damit race-frei auf dem Event-Loop: zwischen Kapazitaets-
+        pruefung und Registrierung laeuft keine andere Coroutine, die das Limit unterlaufen
+        koennte. Bei erreichter Obergrenze -> StreamCapacityError (Endpoint -> 503), statt den
+        Broadcaster unbegrenzt wachsen zu lassen (Speicher-/Ressourcenschutz).
         """
+        if len(self._subscribers) >= self._max_subscribers:
+            raise StreamCapacityError(
+                f"max. {self._max_subscribers} gleichzeitige SSE-Abos erreicht"
+            )
         queue: asyncio.Queue[Alarm] = asyncio.Queue(maxsize=self._max_queue)
         self._subscribers.add(queue)
+        return queue
+
+    def release(self, queue: asyncio.Queue[Alarm]) -> None:
+        """Meldet ein Abo ab (Verbindungsende) und gibt die Kapazitaet wieder frei."""
+        self._subscribers.discard(queue)
+
+    @contextlib.asynccontextmanager
+    async def subscribe(self) -> AsyncIterator[asyncio.Queue[Alarm]]:
+        """Registriert ein Abo (via reserve) und baut es bei Verbindungsende garantiert ab.
+
+        Dieselbe Kapazitaetsgrenze + Leak-Schutz wie reserve()/release(): die `finally`-
+        Abmeldung verhindert, dass die Queue eines getrennten Clients zurueckbleibt und bei
+        jedem `publish` weiter befuellt wird. Der Endpoint nutzt reserve()/release() direkt,
+        um die Kapazitaets-Ablehnung VOR dem StreamingResponse als 503 zu melden.
+        """
+        queue = self.reserve()
         try:
             yield queue
         finally:
-            self._subscribers.discard(queue)
+            self.release(queue)
 
 
 def _frame(alarm: Alarm) -> str:

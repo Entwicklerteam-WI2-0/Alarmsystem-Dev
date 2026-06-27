@@ -280,6 +280,52 @@ def test_stream_does_not_log_reconnect_on_first_connection(caplog):
     asyncio.run(scenario())
 
 
+def test_stream_returns_503_when_at_capacity():
+    # Connection-Cap (Ressourcenschutz): ist der Broadcaster voll (max gleichzeitige Abos),
+    # weist der Endpoint die neue SSE-Verbindung mit 503 + Contract-Error ab, statt unbegrenzt
+    # Speicher zu binden. Rein abweisend (RB-01), kein Aktor; kein StreamingResponse.
+    async def scenario() -> None:
+        broadcaster = AlarmBroadcaster(max_subscribers=1)
+        broadcaster.reserve()  # Kapazitaet voll belegt
+        runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
+        request = SimpleNamespace(is_disconnected=_never_disconnected, headers=Headers({}))
+
+        response = await stream_alarms(runtime=runtime, request=request)
+
+        assert not isinstance(response, StreamingResponse)
+        assert response.status_code == 503
+        body = json.loads(response.body)
+        assert set(body) == {"code", "message"}
+        assert body["code"] == "SERVICE_UNAVAILABLE"
+
+    asyncio.run(scenario())
+
+
+def test_stream_sanitizes_last_event_id_in_log(caplog):
+    # Log-Injection-Schutz (NF-09 Log-Integritaet): der client-kontrollierte Last-Event-ID-
+    # Header darf keine gefaelschten Log-Zeilen erzeugen. CR/LF werden entfernt + der Wert
+    # begrenzt -> die Diagnose bleibt, aber ohne eingeschmuggelte Zeile.
+    async def scenario() -> None:
+        broadcaster = AlarmBroadcaster()
+        runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
+        request = SimpleNamespace(
+            is_disconnected=_never_disconnected,
+            headers=Headers({"last-event-id": "7\r\nINFO:root:GEFAELSCHT"}),
+        )
+        with caplog.at_level(logging.INFO, logger="src.api.v1"):
+            response = await stream_alarms(runtime=runtime, request=request)
+            await response.body_iterator.aclose()
+        messages = [record.getMessage() for record in caplog.records]
+        joined = "\n".join(messages)
+        # Sanitisierter Wert (ohne CR/LF) ist geloggt ...
+        assert any("7INFO:root:GEFAELSCHT" in m for m in messages)
+        # ... aber KEIN eingeschmuggelter Zeilenumbruch im ID-Wert.
+        assert "7\r\n" not in joined
+        assert "7\nINFO" not in joined
+
+    asyncio.run(scenario())
+
+
 def test_stream_runtime_not_ready_returns_503():
     # Runtime nicht bereit (lifespan unvollstaendig) -> get_runtime wirft -> Exception-Handler
     # liefert 503 mit dem Contract-Fehlerformat {code, message}, nie ein rohes 500/{detail}.
