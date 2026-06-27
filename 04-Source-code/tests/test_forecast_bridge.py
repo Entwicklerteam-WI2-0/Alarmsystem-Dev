@@ -77,3 +77,18 @@ def test_leere_zeitreihe_ist_failsafe_none():
     result = compute_forecast_for_cycle(_reading(0, 1.0), repo, _PROGNOSE, _NOW)
     assert result is None
     assert len(repo.calls) == 1  # DB wurde abgefragt (kein Kurzschluss)
+
+
+def test_naives_now_propagiert_valueerror_statt_failsafe_none():
+    # bridge.py (Docstring + Inline-Kommentar) haelt fest: ein naives `now` ist ein
+    # Programmierfehler, kein transienter Datenlayer-Fehler. Der ValueError-Guard aus
+    # trend.py wird daher bewusst NICHT als "keine Prognose" (None) maskiert, sondern
+    # propagiert sichtbar -- nur RepositoryError ist fail-safe. Regressions-Guard fuer
+    # genau diese Intention (sonst koennte ein spaeteres try/except den Fehler still
+    # verschlucken und die Vorwarnung waere unbemerkt tot).
+    series = [_reading(20, 2.0), _reading(10, 1.0), _reading(0, 0.0)]
+    repo = _FakeReadingRepo(series)
+    naive_now = _NOW.replace(tzinfo=None)
+
+    with pytest.raises(ValueError):
+        compute_forecast_for_cycle(series[-1], repo, _PROGNOSE, naive_now)
