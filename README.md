@@ -89,7 +89,7 @@ Alarmsystem-Dev/
 
 ---
 
-> **Hinweis zur Struktur:** Der Backend-Code liegt unter **`04-Source-code/`**. Über das P0-Grundgerüst hinaus sind **Laufzeit-Verdrahtung (DI/Lifespan + Scheduler, DTB-64), die 4-Stufen-Bewertungslogik, `GET /v1/assessment/current` (DTB-43) und die Alarm-Generierung** real verdrahtet (Stand 27.06.; Priorisierung s. `erinnerung/task-prioritaet-nach-audit-2026-06-26.md`). MariaDB-Setup **nativ** (Pi via Tunnel / lokal; kein Docker → E-35). Struktur-/Setup-Detail siehe `04-Source-code/README.md` und `Backend-Konzept §7`. **CI/CD ist aktiv** (`.github/workflows/`: `test`, `lint-config`, `claude-review`; `test` + `lint-config` sind Pflicht-Status-Checks).
+> **Hinweis zur Struktur:** Der Backend-Code liegt unter **`04-Source-code/`**. Über das P0-Grundgerüst hinaus sind **Laufzeit-Verdrahtung (DI/Lifespan + Scheduler, DTB-64), die 4-Stufen-Bewertungslogik, `GET /v1/assessment/current` (DTB-43) und die Alarm-Generierung** real verdrahtet (Stand 27.06.; Priorisierung s. `erinnerung/task-prioritaet-aktuell.md`). MariaDB-Setup **nativ** (Pi via Tunnel / lokal; kein Docker → E-35). Struktur-/Setup-Detail siehe `04-Source-code/README.md` und `Backend-Konzept §7`. **CI/CD ist aktiv** (`.github/workflows/`: `test`, `lint-config`, `claude-review`; `test` + `lint-config` sind Pflicht-Status-Checks).
 
 
 
