@@ -265,7 +265,7 @@ def test_stream_returns_503_when_at_capacity():
     # Speicher zu binden. Rein abweisend (RB-01), kein Aktor; kein StreamingResponse.
     async def scenario() -> None:
         broadcaster = AlarmBroadcaster(max_subscribers=1)
-        broadcaster.reserve()  # Kapazitaet voll belegt
+        occupied = broadcaster.reserve()  # Kapazitaet voll belegt
         runtime = SimpleNamespace(alarm_broadcaster=broadcaster)
         request = SimpleNamespace(is_disconnected=never_disconnected, headers=Headers({}))
 
@@ -276,6 +276,10 @@ def test_stream_returns_503_when_at_capacity():
         body = json.loads(response.body)
         assert set(body) == {"code", "message"}
         assert body["code"] == "SERVICE_UNAVAILABLE"
+        # Der 503-Pfad darf KEINEN zweiten Slot reserviert haben (reserve() wirft VOR der
+        # Registrierung) -> der Stand bleibt bei dem einen vorbelegten Abo.
+        assert broadcaster.subscriber_count == 1
+        broadcaster.release(occupied)  # reserve/release-Symmetrie
 
     asyncio.run(scenario())
 

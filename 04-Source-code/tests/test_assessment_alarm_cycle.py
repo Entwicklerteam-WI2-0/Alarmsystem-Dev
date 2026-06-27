@@ -28,6 +28,7 @@ from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
 from src.storage.repository import RepositoryError
+from tests.sse_helpers import subscribed
 
 _T0 = datetime(2026, 6, 26, 12, 0, 0, tzinfo=UTC)
 _THR = load_thresholds()  # Default-Schwellen: gefrierpunkt 0, feucht 1; on_delay 60 s
@@ -319,7 +320,7 @@ def test_scheduler_pusht_ausgeloesten_alarm_an_broadcaster(monkeypatch):
 
         monkeypatch.setattr(broadcaster, "publish", _spy)
 
-        async with broadcaster._subscribe() as queue:
+        async with subscribed(broadcaster) as queue:
             task = asyncio.create_task(run_scheduler(runtime, interval_s=0.01))
             try:
                 got = await asyncio.wait_for(queue.get(), timeout=1)
@@ -354,7 +355,7 @@ def test_scheduler_pusht_nicht_wenn_kein_alarm(monkeypatch):
         # Kein Alarm im Zyklus -> kein publish -> der Abo-Queue bleibt leer.
         monkeypatch.setattr("src.main.run_assessment_cycle", _kein_alarm)
 
-        async with broadcaster._subscribe() as queue:
+        async with subscribed(broadcaster) as queue:
             task = asyncio.create_task(run_scheduler(runtime, interval_s=0.01))
             try:
                 # Statt Fixsleep: warten bis der 2. Zyklus BEGONNEN hat (calls>=2). Der Beginn des
@@ -393,7 +394,7 @@ def test_scheduler_pusht_nicht_bei_audit_error(monkeypatch, caplog):
         monkeypatch.setattr("src.main.run_assessment_cycle", _audit_boom)
 
         with caplog.at_level(logging.ERROR, logger="src.main"):
-            async with broadcaster._subscribe() as queue:
+            async with subscribed(broadcaster) as queue:
                 task = asyncio.create_task(run_scheduler(runtime, interval_s=0.01))
                 try:
                     # Statt Fixsleep: bis der 2. Zyklus BEGONNEN hat (calls>=2). Der Beginn des
@@ -442,7 +443,7 @@ def test_scheduler_ueberlebt_werfenden_zyklus(monkeypatch):
         )
         monkeypatch.setattr("src.main.run_assessment_cycle", _erst_werfen_dann_alarm)
 
-        async with broadcaster._subscribe() as queue:
+        async with subscribed(broadcaster) as queue:
             task = asyncio.create_task(run_scheduler(runtime, interval_s=0.01))
             try:
                 got = await asyncio.wait_for(queue.get(), timeout=1)
@@ -487,7 +488,7 @@ def test_scheduler_ueberlebt_generischen_fehler_und_loggt_exception(monkeypatch,
         monkeypatch.setattr("src.main.run_assessment_cycle", _erst_runtimeerror_dann_alarm)
 
         with caplog.at_level(logging.ERROR, logger="src.main"):
-            async with broadcaster._subscribe() as queue:
+            async with subscribed(broadcaster) as queue:
                 task = asyncio.create_task(run_scheduler(runtime, interval_s=0.01))
                 try:
                     got = await asyncio.wait_for(queue.get(), timeout=1)
@@ -541,7 +542,7 @@ def test_scheduler_ueberlebt_werfende_poll_schicht(monkeypatch):
         # Zyklus auf einen festen Alarm patchen -> isoliert das Poll-Restnetz vom Engine-Timing.
         monkeypatch.setattr("src.main.run_assessment_cycle", lambda *a, **k: raised)
 
-        async with broadcaster._subscribe() as queue:
+        async with subscribed(broadcaster) as queue:
             task = asyncio.create_task(run_scheduler(runtime, interval_s=0.01))
             try:
                 got = await asyncio.wait_for(queue.get(), timeout=1)
@@ -585,7 +586,7 @@ def test_scheduler_ueberlebt_invariantenbruch_und_loggt_critical(monkeypatch, ca
         monkeypatch.setattr("src.main.run_assessment_cycle", _erst_valueerror_dann_alarm)
 
         with caplog.at_level(logging.CRITICAL, logger="src.main"):
-            async with broadcaster._subscribe() as queue:
+            async with subscribed(broadcaster) as queue:
                 task = asyncio.create_task(run_scheduler(runtime, interval_s=0.01))
                 try:
                     # Alarm aus dem 2. Zyklus -> der 1. (ValueError) hat den Loop nicht gekillt.

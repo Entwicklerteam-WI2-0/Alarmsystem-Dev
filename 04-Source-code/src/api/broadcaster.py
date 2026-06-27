@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 
 from src.model.schemas import Alarm
 
@@ -143,23 +143,6 @@ class AlarmBroadcaster:
         with contextlib.suppress(ValueError):
             self._subscribers.remove(queue)
 
-    @contextlib.asynccontextmanager
-    async def _subscribe(self) -> AsyncIterator[asyncio.Queue[Alarm]]:
-        """TEST-ONLY (Unterstrich = nicht Teil der Produktions-API): registriert ein Abo (via
-        reserve) + baut es garantiert ab. Der `finally`-Abbau verhindert, dass die Queue eines
-        getrennten Clients zurueckbleibt und bei jedem `publish` weiter befuellt wird.
-
-        Bewusst NICHT im Produktionspfad: der Endpoint `stream_alarms` (api/v1.py) ruft
-        reserve()/release() DIREKT — reserve() muss VOR dem StreamingResponse laufen, damit bei
-        vollem Cap noch ein 503 (statt 200-Stream) moeglich ist. Wer _subscribe() versehentlich
-        im Endpoint einsetzte, braeche genau diese 503-vor-200-Invariante still -> daher privat.
-        """
-        queue = self.reserve()
-        try:
-            yield queue
-        finally:
-            self.release(queue)
-
 
 def _frame(alarm: Alarm) -> str:
     """Ein SSE-Event: `id:` = Alarm-ID (Reconnect via Last-Event-ID), `data:` = Alarm-JSON.
@@ -189,7 +172,8 @@ async def sse_alarm_frames(
     Wartet je Runde bis `heartbeat_s` auf den naechsten Alarm; bleibt er aus, geht eine
     `:keep-alive`-Kommentarzeile raus (Liveness-Signal). `is_disconnected` wird zwischen
     den Frames geprueft, damit ein getrennter Client sauber beendet wird (das Abo raeumt der
-    Aufrufer ab: der Endpoint via `_frames`-finally -> release(), die Tests via `_subscribe`).
+    Aufrufer ab: der Endpoint via `_frames`-finally -> release(), die Tests via dem
+    `subscribed()`-Helfer in tests/sse_helpers.py).
 
     Disconnect-Latenz: `is_disconnected` wird erst NACH dem `wait_for` geprueft -> ein nur
     per Poll als getrennt erkannter Client haelt seinen Subscriber-Slot bis zu `heartbeat_s`

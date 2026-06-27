@@ -35,7 +35,7 @@ from src.api.broadcaster import (
 )
 from src.model.enums import AlarmSeverity, AlarmState
 from src.model.schemas import Alarm
-from tests.sse_helpers import disconnect_after
+from tests.sse_helpers import disconnect_after, subscribed
 
 _T0 = datetime(2026, 6, 26, 12, 0, 0, tzinfo=UTC)
 
@@ -62,7 +62,7 @@ async def _drain(gen: AsyncIterator[str]) -> list[str]:
 def test_publish_delivers_alarm_to_subscriber():
     async def scenario() -> None:
         bc = AlarmBroadcaster()
-        async with bc._subscribe() as queue:
+        async with subscribed(bc) as queue:
             bc.publish(_alarm(1))
             got = await asyncio.wait_for(queue.get(), timeout=1)
         assert got.id == 1
@@ -74,7 +74,7 @@ def test_publish_delivers_alarm_to_subscriber():
 def test_publish_fans_out_to_all_subscribers():
     async def scenario() -> None:
         bc = AlarmBroadcaster()
-        async with bc._subscribe() as q1, bc._subscribe() as q2:
+        async with subscribed(bc) as q1, subscribed(bc) as q2:
             assert bc.subscriber_count == 2
             bc.publish(_alarm(5))
             a1 = await asyncio.wait_for(q1.get(), timeout=1)
@@ -88,7 +88,7 @@ def test_subscribe_cleans_up_on_exit():
     async def scenario() -> None:
         bc = AlarmBroadcaster()
         assert bc.subscriber_count == 0
-        async with bc._subscribe():
+        async with subscribed(bc):
             assert bc.subscriber_count == 1
         # Verbindungsende -> Abo abgebaut (kein Leak langlebiger Queues).
         assert bc.subscriber_count == 0
@@ -117,7 +117,7 @@ def test_publish_before_subscribe_is_not_replayed():
     async def scenario() -> None:
         bc = AlarmBroadcaster()
         bc.publish(_alarm(1))  # OHNE Abonnent -> darf nirgends gepuffert werden
-        async with bc._subscribe() as queue:
+        async with subscribed(bc) as queue:
             # Neu verbundener Client sieht keinen vor-Abo-Alarm (kein Replay).
             assert queue.empty()
 
@@ -131,7 +131,7 @@ def test_publish_swallows_subscriber_error():
     # _subscribers): das put_nowait des realen Abo-Queues wirft.
     async def scenario() -> bool:
         bc = AlarmBroadcaster()
-        async with bc._subscribe() as queue:
+        async with subscribed(bc) as queue:
             fired = {"x": False}
 
             def _boom(_item: object) -> None:
@@ -161,12 +161,12 @@ def test_publish_isolates_failing_subscriber_from_others(caplog):
     async def scenario() -> list[Alarm]:
         bc = AlarmBroadcaster()
         async with (
-            bc._subscribe() as bad,
-            bc._subscribe() as g1,
-            bc._subscribe() as g2,
-            bc._subscribe() as g3,
-            bc._subscribe() as g4,
-            bc._subscribe() as g5,
+            subscribed(bc) as bad,
+            subscribed(bc) as g1,
+            subscribed(bc) as g2,
+            subscribed(bc) as g3,
+            subscribed(bc) as g4,
+            subscribed(bc) as g5,
         ):
             gute = [g1, g2, g3, g4, g5]
 
@@ -221,7 +221,7 @@ def test_default_queue_is_bounded():
 
     async def scenario() -> int:
         # Verhaltensbasiert: das real verdrahtete Default-Abo MUSS eine bounded Queue liefern.
-        async with AlarmBroadcaster()._subscribe() as queue:
+        async with subscribed(AlarmBroadcaster()) as queue:
             assert queue.maxsize == _DEFAULT_MAX_QUEUE
             assert queue.maxsize > 0  # 0 waere unbounded -> Speichersicherheit gebrochen
             return queue.maxsize
@@ -258,7 +258,7 @@ def test_publish_skips_and_logs_alarm_without_id(caplog):
     # zu verteilen. publish wirft dabei nicht (NF-01). _frame() haelt zusaetzlich als letzte Linie.
     async def scenario() -> None:
         bc = AlarmBroadcaster()
-        async with bc._subscribe() as queue:
+        async with subscribed(bc) as queue:
             with caplog.at_level(logging.ERROR, logger="src.api.broadcaster"):
                 bc.publish(_alarm(1).model_copy(update={"id": None}))  # darf nicht werfen
             assert queue.empty()  # nichts zugestellt
@@ -270,7 +270,7 @@ def test_publish_skips_and_logs_alarm_without_id(caplog):
 def test_publish_drops_oldest_when_queue_full(caplog):
     async def scenario() -> list[int]:
         bc = AlarmBroadcaster(max_queue=2)
-        async with bc._subscribe() as queue:
+        async with subscribed(bc) as queue:
             # 3 Alarme ohne Konsum -> Puffer (2) laeuft ueber -> aeltester (id=1) faellt raus.
             with caplog.at_level(logging.WARNING, logger="src.api.broadcaster"):
                 bc.publish(_alarm(1))
@@ -314,7 +314,7 @@ def test_drop_oldest_is_isolated_per_queue_in_fan_out():
     # 3. Alarm braechte (sein fast.get() liefe sonst in den Timeout -> Test rot).
     async def scenario() -> list[int]:
         bc = AlarmBroadcaster(max_queue=2)
-        async with bc._subscribe() as slow, bc._subscribe() as fast:
+        async with subscribed(bc) as slow, subscribed(bc) as fast:
             bc.publish(_alarm(1))
             assert (await asyncio.wait_for(fast.get(), timeout=1)).id == 1
             bc.publish(_alarm(2))
@@ -379,10 +379,10 @@ def test_subscribe_enforces_capacity_as_backstop():
     # raeumt das Abo am Verbindungsende wieder ab (Symmetrie zu den reserve/release-Tests).
     async def scenario() -> None:
         bc = AlarmBroadcaster(max_subscribers=1)
-        async with bc._subscribe():
+        async with subscribed(bc):
             assert bc.subscriber_count == 1
             with pytest.raises(StreamCapacityError):
-                async with bc._subscribe():
+                async with subscribed(bc):
                     pass
         assert bc.subscriber_count == 0  # erstes Abo nach Verlassen abgebaut
 
