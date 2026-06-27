@@ -154,6 +154,11 @@ def check_flatline(
     # Subtraktion unten sonst einen stummen TypeError statt eines fruehen, klaren
     # Fehlers (DTB-20 LOW). Alle Zeitstempel laufen produktiv durch _parse_iso_utc,
     # der Guard schuetzt aber Aufrufer aus anderem Kontext.
+    # temp_span_c >= 0 ist Vorbedingung (Spannweite max-min, s. Docstring) und wird vom
+    # einzigen produktiven Aufrufer garantiert; bewusst KEIN literaler `< 0`-Guard hier,
+    # da die `0` den No-Hardcode-Guard (NF-05) faelschlich triggert und ein noqa-Marker
+    # zugleich eine ruff-Parse-Warnung erzeugt (DTB-20 Review: dokumentierte Precondition
+    # statt zweifach lint-widriger Laufzeit-Guard fuer einen unerreichbaren Fall).
     if current_measured_at.tzinfo is None:
         raise ValueError("current_measured_at muss zeitzonenbewusst sein (UTC)")
     if window_start is None:

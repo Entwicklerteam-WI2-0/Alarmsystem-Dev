@@ -830,8 +830,9 @@ def test_poll_computes_dew_point(
     poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
 ) -> None:
     # DTB-60: Poller berechnet dew_point_c (Magnus) und fuellt es ins Reading.
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(valid_snapshot)
+    # _mock_get_for unterscheidet /health vs /current -> echter Routing-Pfad ueber
+    # _is_g1_healthy() (DTB-20 Review: einheitliches Mock-Pattern).
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
         reading = poller.poll()
 
     # Referenz: Magnus(a=17,62; b=243,12; Schwellenwerte.md §1) fuer T_a=1,2 °C, RH=96 %
@@ -850,8 +851,9 @@ def test_poll_computes_negative_dew_point_in_frost(
     # korrekt ins Reading geschrieben werden. Magnus(-5 °C, 80 %) = -7,92 °C.
     snapshot = {**valid_snapshot, "surface_temp_c": -6.0, "air_temp_c": -5.0, "humidity_pct": 80}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    # _mock_get_for unterscheidet /health vs /current -> echter Routing-Pfad ueber
+    # _is_g1_healthy() (DTB-20 Review: einheitliches Mock-Pattern).
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
