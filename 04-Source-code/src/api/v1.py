@@ -91,11 +91,15 @@ def read_thresholds(
         },
     },
 )
-def update_thresholds(
+def create_threshold_version(
     payload: ThresholdUpdateRequest,
     runtime: Annotated[Runtime, Depends(get_runtime)],
 ) -> ThresholdSet | JSONResponse:
     """Legt einen neuen, versionierten Schwellensatz an (DTB-63, NF-07/NF-05).
+
+    Bewusst `create_…` statt `update_…`: der Endpoint ist append-only (INSERT/
+    Supersession per `valid_from`, nie UPDATE), passend zur OpenAPI-operationId
+    `createThresholdVersion`.
 
     Auth-geschuetzt (`Authorization: Bearer <key>`, `require_api_key`). Schreibt den
     Satz append-only als neuen `threshold_set` (Supersession per `valid_from`, DTB-54)

@@ -53,6 +53,10 @@ def test_post_without_auth_returns_401_contract(monkeypatch: pytest.MonkeyPatch)
     assert body["code"] == "UNAUTHORIZED"
     assert "detail" not in body  # FastAPI-Default {detail} wuerde die Naht brechen
     assert resp.headers["cache-control"] == "no-store"
+    # RFC 6750 §3: ein 401 auf dem Bearer-geschuetzten Schreibweg MUSS den
+    # WWW-Authenticate-Challenge tragen (sonst weiss ein konformer Client nicht,
+    # dass Bearer-Auth erwartet wird).
+    assert resp.headers["www-authenticate"] == 'Bearer realm="G2-Write-API"'
 
 
 def test_post_valid_persists_version_and_audit(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -127,3 +131,14 @@ def test_post_repo_failure_returns_503(monkeypatch: pytest.MonkeyPatch) -> None:
     resp = client.post("/v1/thresholds", json=_valid_body(), headers=_AUTH)
     assert resp.status_code == 503
     assert resp.json()["code"] == "SERVICE_UNAVAILABLE"
+
+
+def test_post_too_many_threshold_keys_returns_422(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Payload-Schutz: mehr Top-Level-Keys als maxProperties (64) -> 422 bereits am
+    # Schema, bevor parse_thresholds ueber alle Keys iteriert.
+    monkeypatch.setenv(API_KEY_ENV, _KEY)
+    _override_runtime()
+    oversized = {f"k{i}": {} for i in range(65)}  # > 64
+    resp = client.post("/v1/thresholds", json=_valid_body(thresholds=oversized), headers=_AUTH)
+    assert resp.status_code == 422
+    assert resp.json()["code"] == "UNPROCESSABLE_ENTITY"

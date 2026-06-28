@@ -29,6 +29,7 @@ from typing import Any
 import pymysql
 
 from src.model.schemas import AuditLogEntry, ThresholdSet
+from src.storage.audit_repository import MySqlAuditRepository
 from src.storage.database import (
     DatabaseConfig,
     DatabaseConfigError,
@@ -118,13 +119,6 @@ class MySqlThresholdSetRepository(ThresholdSetRepository):
         "SELECT id, name, params, valid_from, changed_by "
         "FROM threshold_set ORDER BY valid_from DESC, id DESC LIMIT 1"
     )
-    # Spiegelt MySqlAuditRepository._INSERT_SQL (audit_log) — hier inline, weil der
-    # Audit-Eintrag in DERSELBEN Transaktion wie der Schwellensatz geschrieben wird
-    # (NF-09-Atomaritaet). Die kanonische Form lebt in audit_repository.py.
-    _AUDIT_INSERT_SQL = (
-        "INSERT INTO audit_log (ts, event_type, entity_type, entity_id, actor, detail) "
-        "VALUES (%s, %s, %s, %s, %s, %s)"
-    )
 
     def __init__(self, config: DatabaseConfig | None = None) -> None:
         self._config = config
@@ -145,11 +139,6 @@ class MySqlThresholdSetRepository(ThresholdSetRepository):
 
     def append(self, threshold_set: ThresholdSet, audit_entry: AuditLogEntry) -> int:
         params_json = _dumps_or_repo_error(threshold_set.params, "threshold_set.params")
-        detail_json = (
-            None
-            if audit_entry.detail is None
-            else _dumps_or_repo_error(audit_entry.detail, "Audit-Detail")
-        )
         try:
             with transaction(self._config) as conn, conn.cursor() as cursor:
                 cursor.execute(
@@ -169,19 +158,15 @@ class MySqlThresholdSetRepository(ThresholdSetRepository):
                         "INSERT lieferte keine gueltige ID "
                         "(AUTO_INCREMENT auf 'threshold_set' pruefen)"
                     )
-                cursor.execute(
-                    self._AUDIT_INSERT_SQL,
-                    (
-                        audit_entry.ts,
-                        audit_entry.event_type.value,
-                        audit_entry.entity_type,
-                        new_id,  # Audit an den gerade angelegten Satz binden
-                        audit_entry.actor,
-                        detail_json,
-                    ),
+                # Audit-Eintrag in DERSELBEN Transaktion ueber die kanonische Audit-Schreibform
+                # (kein dupliziertes SQL, Schemaaenderung an audit_log nur an einer Stelle):
+                # an die gerade vergebene Satz-ID binden (NF-09-Atomaritaet).
+                MySqlAuditRepository._write_entry(
+                    cursor, audit_entry.model_copy(update={"entity_id": new_id})
                 )
         except RepositoryError:
-            # Bereits eine Domaenen-Exception (z. B. fehlende ID) -> unveraendert weiter.
+            # Bereits eine Domaenen-Exception (z. B. fehlende ID, nicht serialisierbares
+            # Audit-Detail) -> unveraendert weiter.
             raise
         except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
             raise RepositoryError("Schwellensatz konnte nicht gespeichert werden") from exc

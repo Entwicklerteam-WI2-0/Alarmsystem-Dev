@@ -184,4 +184,9 @@ class ThresholdUpdateRequest(_Base):
 
     changed_by: str = Field(min_length=1, max_length=128)
     name: str = Field(default="manuelle Aktualisierung", min_length=1, max_length=128)
-    thresholds: dict[str, Any]
+    # max_length = Obergrenze der Top-Level-Sektionen (OpenAPI maxProperties): die gueltige
+    # Struktur hat 6 (parse_thresholds), 64 laesst Spielraum fuer optionale Kommentar-Keys.
+    # Bremst pathologisch breite Payloads bereits am Schema, bevor parse_thresholds ueber
+    # alle Keys iteriert. Ein echtes Byte-Groessen-Limit gehoert an Server/Proxy
+    # (Request-Body-Limit), nicht ins Schema -- dies bindet nur die Schluessel-Anzahl.
+    thresholds: dict[str, Any] = Field(max_length=64)
