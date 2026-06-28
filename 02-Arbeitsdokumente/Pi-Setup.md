@@ -43,15 +43,15 @@ ssh pi@icedetection.local      # oder: ssh pi@<pi-ip>
 Im VS-Code-Remote-Terminal (auf dem Pi):
 
 ```bash
-# Erstes Mal:
-git clone <repo-url>
+# Erstes Mal (URL aus GitHub kopieren -> Org "Entwicklerteam-WI2-0", Repo "Alarmsystem-Dev"):
+git clone https://github.com/Entwicklerteam-WI2-0/Alarmsystem-Dev.git
 cd Alarmsystem-Dev/04-Source-code
 # Bei Updates stattdessen:  git pull
 
 # Virtuelle Umgebung + Abhängigkeiten (Python >= 3.12):
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
-.venv/bin/pip install "fastapi>=0.115" "uvicorn[standard]>=0.30" "pymysql>=1.1" "httpx>=0.27" "pydantic>=2.0"
+.venv/bin/pip install -r requirements.txt   # eine Quelle fuer alle Envs -> Pi und Dev-Laptops identisch
 ```
 
 > Alle weiteren Befehle gehen vom Ordner **`04-Source-code/`** aus.
@@ -88,6 +88,11 @@ sudo mariadb alarmsystem < migrations/schema.sql
 #     im Repo bleibt UNVERÄNDERT. --force: harmlose REVOKE-Hinweise auf frischem User überspringen.
 sed "s/'alarm'@'localhost'/'alarm'@'127.0.0.1'/g" migrations/grants.sql | sudo mariadb --force alarmsystem
 ```
+
+> ⚠️ **Setzt voraus, dass `grants.sql` `'alarm'@'localhost'` nutzt** (aktueller Stand). Wird die Datei je
+> auf `@'%'` oder direkt `@'127.0.0.1'` umgestellt, greift das `sed`-Mapping **lautlos nicht** — der User
+> bekäme dann ggf. falsche/keine Rechte. Bei Änderung an `grants.sql`: diesen `sed` anpassen **oder** ganz
+> weglassen (`sudo mariadb --force alarmsystem < migrations/grants.sql`) und die Verifikation unten prüfen.
 
 **Verifikation (als Admin):**
 ```bash
