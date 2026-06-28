@@ -5,17 +5,20 @@ unterstuetzt Pagination (limit/offset) und Sortierung, validiert Query-Parameter
 bleibt bei Persistenzfehlern/Nicht-Verfuegbarkeit fail-safe (503 im Contract-Format).
 """
 
+import asyncio
+import json
 from collections.abc import Generator
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
+from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 
 from src.api.exceptions import RuntimeNotReadyError
 from src.api.responses import NO_STORE_HEADERS
 from src.api.runtime import get_runtime
-from src.main import app
+from src.main import _request_validation_error_handler, app
 from src.model.enums import SensorStatus, Source
 from src.model.schemas import Reading, ReadingResponse
 from src.storage.repository import InMemoryReadingRepository, RepositoryError
@@ -346,3 +349,23 @@ def test_get_readings_limit_at_max_returns_200(
 
     assert resp.status_code == 200
     assert len(resp.json()) == 5
+
+
+def test_request_validation_handler_caps_message_to_512_no_500() -> None:
+    """Viele/lange Validierungsfehler duerfen Error.message (max_length 512) nicht sprengen.
+
+    Regression (HIGH, DTB-34-Review): ungekappt wuerde Error(...) eine ValidationError
+    IM Exception-Handler werfen -> unkontrollierter Folge-500. Der Handler muss stattdessen
+    immer ein gueltiges Error{code, message} mit Status 400 liefern.
+    """
+    errors = [
+        {"loc": ("query", f"param_{i}"), "msg": "x" * 100, "type": "value_error"} for i in range(10)
+    ]
+    exc = RequestValidationError(errors)
+
+    response = asyncio.run(_request_validation_error_handler(None, exc))
+    body = json.loads(response.body)
+
+    assert response.status_code == 400
+    assert body["code"] == "BAD_REQUEST"
+    assert len(body["message"]) <= 512

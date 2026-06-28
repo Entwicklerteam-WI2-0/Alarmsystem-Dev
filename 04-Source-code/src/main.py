@@ -359,6 +359,11 @@ async def _request_validation_error_handler(
     message = "; ".join(
         f"{' -> '.join(str(loc) for loc in err['loc'])}: {err['msg']}" for err in errors
     )
+    # Error.message ist auf max_length=512 begrenzt (schemas.py). Bei mehreren/langen
+    # Validierungsfehlern wuerde Error(...) sonst SELBST eine ValidationError werfen und
+    # so einen unkontrollierten Folge-500 IM Handler ausloesen (vgl. Kommentar v1.py).
+    # Defensiv kappen -> der Handler liefert immer ein gueltiges Error{code, message}.
+    message = message[:512]
     if has_body_error:
         return JSONResponse(
             status_code=422,
