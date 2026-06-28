@@ -637,12 +637,13 @@ def test_poll_repository_error_is_failsafe(
             raise RepositoryError("DB nicht erreichbar")
 
         def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
-            raise RepositoryError("DB nicht erreichbar")
+            # Vorheriges Lesen funktioniert; erst das Speichern scheitert.
+            return ()
 
         def get_since(
             self, sensor_id: str, since: datetime, limit: int = 1000
         ) -> Sequence[Reading]:
-            raise RepositoryError("DB nicht erreichbar")
+            return ()
 
         def get_between(
             self,
@@ -653,7 +654,7 @@ def test_poll_repository_error_is_failsafe(
             offset: int = 0,
             order: Literal["asc", "desc"] = "desc",
         ) -> Sequence[Reading]:
-            raise RepositoryError("DB nicht erreichbar")
+            return ()
 
     repo = RaisingRepository()
     poller = Poller(
@@ -1043,3 +1044,119 @@ def test_poll_health_ok_then_current_saves(
     assert reading is not None
     assert len(fake_repo.readings) == 1
     assert mock_get.call_count == 2
+
+
+# -----------------------------------------------------------------------------
+# Plausibilitaets-Verdrahtung (E-40 Schicht 3)
+# -----------------------------------------------------------------------------
+
+
+def _store_previous(
+    fake_repo: FakeRepository, measured_at: datetime, surface_temp_c: float
+) -> None:
+    previous = Reading(
+        sensor_id="anr-rwy-01",
+        measured_at=measured_at,
+        surface_temp_c=surface_temp_c,
+        air_temp_c=1.2,
+        humidity_pct=96.0,
+        received_at=measured_at,
+    )
+    fake_repo.save(previous)
+
+
+def test_poll_plausibility_normal_change_saves(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    _store_previous(fake_repo, datetime(2026, 6, 23, 9, 59, 0, tzinfo=UTC), -0.5)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
+        reading = poller.poll()
+    assert reading is not None
+    assert len(fake_repo.readings) == 2
+
+
+def test_poll_plausibility_jump_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # 6 C in 1 min -> 6 C/min > Limit 5 C/min
+    _store_previous(fake_repo, datetime(2026, 6, 23, 9, 59, 0, tzinfo=UTC), -6.4)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
+        reading = poller.poll()
+    assert reading is None
+    assert len(fake_repo.readings) == 1
+    assert "Reading unplausibel" in caplog.text
+    assert "jump" in caplog.text
+
+
+def test_poll_plausibility_flatline_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    _store_previous(fake_repo, datetime(2026, 6, 23, 9, 45, 0, tzinfo=UTC), -0.4)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
+        reading = poller.poll()
+    assert reading is None
+    assert len(fake_repo.readings) == 1
+    assert "Reading unplausibel" in caplog.text
+    assert "flatline" in caplog.text
+
+
+def test_poll_plausibility_invalid_timestamp_order_does_not_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    _store_previous(fake_repo, datetime(2026, 6, 23, 10, 2, 0, tzinfo=UTC), -0.4)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
+        reading = poller.poll()
+    assert reading is None
+    assert len(fake_repo.readings) == 1
+    assert "Reading unplausibel" in caplog.text
+    assert "invalid timestamp order" in caplog.text
+
+
+def test_poll_get_latest_repository_error_is_failsafe(
+    caplog,
+    quality_thresholds: DatenqualitaetSchwellen,
+    plausibility_thresholds: PlausibilitaetSchwellen,
+) -> None:
+    class RaisingGetLatestRepository(Repository):
+        def save(self, reading: Reading) -> int:
+            return 1
+
+        def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+            raise RepositoryError("DB nicht erreichbar")
+
+        def get_since(
+            self, sensor_id: str, since: datetime, limit: int = 1000
+        ) -> Sequence[Reading]:
+            return ()
+
+        def get_between(
+            self,
+            sensor_id: str,
+            from_dt: datetime | None = None,
+            to_dt: datetime | None = None,
+            limit: int = 100,
+            offset: int = 0,
+            order: Literal["asc", "desc"] = "desc",
+        ) -> Sequence[Reading]:
+            return ()
+
+    poller = Poller(
+        base_url="http://g1.test",
+        repository=RaisingGetLatestRepository(),
+        data_quality_thresholds=quality_thresholds,
+        plausibility_thresholds=plausibility_thresholds,
+    )
+    snapshot = {
+        "measured_at": "2026-06-23T10:00:00Z",
+        "sensor_id": "anr-rwy-01",
+        "surface_temp_c": -0.4,
+        "air_temp_c": 1.2,
+        "humidity_pct": 96,
+        "status": "ok",
+    }
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is None
+    assert "Lesen des vorherigen Readings fehlgeschlagen" in caplog.text

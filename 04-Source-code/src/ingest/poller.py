@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from src.assessment.failsafe import check_plausibility
 from src.assessment.utils import calculate_dew_point
 from src.config.loader import DatenqualitaetSchwellen, PlausibilitaetSchwellen
 from src.model.enums import SensorStatus, Source
@@ -103,7 +104,15 @@ class Poller:
         if reading is None:
             return None
 
-        # 5. Reading ueber das Repository-Interface speichern.
+        # 5. Plausibilitaet gegen das vorherige Reading desselben Sensors pruefen
+        #    (E-40 Schicht 3). Sprung/Flatline/ungueltiger Zeitstempel -> fail-safe
+        #    verwerfen, damit downstream nie still GRUEN entsteht (NF-01).
+        reason = self._plausibility_reason(reading)
+        if reason is not None:
+            logger.error("Reading unplausibel: %s", reason)
+            return None
+
+        # 6. Reading ueber das Repository-Interface speichern.
         try:
             reading_id = self.repository.save(reading)
         except RepositoryError as exc:
@@ -132,6 +141,20 @@ class Poller:
             logger.error("G1-Health-Check fehlgeschlagen: %s", exc)
             return False
         return True
+
+    def _plausibility_reason(self, reading: Reading) -> str | None:
+        """Prueft das Reading gegen das vorherige desselben Sensors.
+
+        Returns:
+            Menschenlesbaren Grund, wenn unplausibel oder die Vorhistory
+            nicht lesbar ist; sonst None.
+        """
+        try:
+            previous_readings = self.repository.get_latest(reading.sensor_id, limit=1)
+        except RepositoryError as exc:
+            return f"Lesen des vorherigen Readings fehlgeschlagen: {exc}"
+        previous = previous_readings[0] if previous_readings else None
+        return check_plausibility(reading, previous, self.data_quality_thresholds)
 
     def _build_reading(self, data: object) -> Reading | None:
         # Pruefung: G1 muss ein JSON-Objekt liefern, keine Liste/Zahl.
