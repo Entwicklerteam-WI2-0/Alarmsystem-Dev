@@ -62,7 +62,11 @@ DEFAULT_ZIELE: tuple[Path, ...] = (
 )
 
 _TOP_LEVEL_KEY_RE = re.compile(r"^[A-Za-z0-9_.-]+:\s*(?:#.*)?$")
-_OPENAPI_PATH_RE = re.compile(r"^\s+(/[^:]*):\s*(?:#.*)?$")
+# (/.*) ist bewusst greedy bis zum Schluss-Doppelpunkt (dem YAML-Key-Terminator):
+# So bleiben AIP-Style-Custom-Verben wie `/v1/runway:execute:` vollstaendig Teil des
+# Pfads und damit sichtbar fuer den Keyword-Check. `[^:]*` haette schon am ersten
+# Doppelpunkt abgeschnitten und `execute` unsichtbar gemacht.
+_OPENAPI_PATH_RE = re.compile(r"^\s+(/.*):\s*(?:#.*)?$")
 
 
 @dataclass(frozen=True)

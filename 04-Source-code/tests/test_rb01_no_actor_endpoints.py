@@ -215,6 +215,36 @@ paths:
     assert finde_verstoesse_in_openapi_text(yaml_text, "docs/api/v1/openapi.yaml") == []
 
 
+def test_openapi_aip_style_colon_pfad_mit_execute_wird_blockiert():
+    # AIP-Style-Custom-Verb (`:execute`) haengt per Doppelpunkt am Pfad. Der Pfad-Key
+    # muss vollstaendig gelesen werden, sonst bleibt `execute` unsichtbar (PR #153).
+    yaml_text = """
+paths:
+  /v1/runway:execute:
+    post:
+      summary: AIP-Style Custom-Verb
+"""
+
+    verstoesse = finde_verstoesse_in_openapi_text(yaml_text, "docs/api/v1/openapi.yaml")
+
+    assert len(verstoesse) == 1
+    assert verstoesse[0].keyword == "execute"
+    assert verstoesse[0].endpoint == "/v1/runway:execute"
+
+
+def test_openapi_colon_pfad_ohne_aktor_vokabular_ist_sauber():
+    # Gegenprobe: Colon-Pfad ohne verbotenes Keyword bleibt sauber und wird vollstaendig
+    # (inkl. Custom-Verb) gelesen — kein Fehlalarm durch das greedy Pfad-Capture.
+    yaml_text = """
+paths:
+  /v1/readings:batchGet:
+    get:
+      summary: AIP-Style ohne Aktor-Vokabular
+"""
+
+    assert finde_verstoesse_in_openapi_text(yaml_text, "docs/api/v1/openapi.yaml") == []
+
+
 def test_main_schreibt_verstoesse_auf_stderr(tmp_path, capsys):
     openapi = tmp_path / "openapi.yaml"
     openapi.write_text(
