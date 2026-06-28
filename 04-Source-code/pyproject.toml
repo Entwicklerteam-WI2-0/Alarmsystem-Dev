@@ -24,3 +24,12 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.format]
+# Explizites Format-Profil (DTB-68) — entspricht ruff-Standard (= black-kompatibel).
+# CI-Gate: `ruff format --check .` in test.yml prueft Konformitaet vor jedem Merge.
+# Lokal korrigieren mit: ruff format .
+# Exakt gepinnte ruff-Version (requirements-dev.txt) stellt sicher, dass lokal == CI.
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
