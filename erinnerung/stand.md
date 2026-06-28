@@ -418,3 +418,24 @@ PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separ
 - **Branch mit `main` synchronisiert** (Merge-Commit `1aa2485` / Folge-Merge nach PR #107/#99/#112); keine offenen Konflikte.
 - **Entscheidungen:** 3 Einträge im persönlichen `Hartling-Entscheidungslog`.
 - **Offen:** PR #110 Reviewer-Freigabe, Merge durch Lucas.
+
+## Update [28.06., ~04:30] — Autonome Nachtschicht: 3 Dev-Zyklen + 4 Merge-Konflikte gelöst (backenddev)
+**Kontext:** Über Nacht autonom abgearbeitet (Lucas schlief, /goal autorisierte Push/PR). Jeder Zyklus:
+Plan→TDD→Impl→Quality-Gate→**Selbst-Review (Subagent)**→Fix→Push→PR→**unabhängiges PR-Review (Subagent)**→Re-Fix.
+
+- **Merge-Konflikte gelöst & gepusht** (alle jetzt MERGEABLE): **#131** (DTB-34, davor reviewt+iteriert, inzwischen in `main`),
+  **#128** (DTB-20, `test_ingest.py`-Imports), **#130** (DTB-63, `v1.py` POST /thresholds ↔ GET /readings + `main.py`),
+  **#132** (DTB-24, `v1.py` ack ↔ readings + `conftest._SENSOR_ID`→`DEFAULT_SENSOR_ID`). Muster: beide Endpoints behalten, Imports als Union.
+- **Zyklus DTB-49 → PR #135** (`feat/dtb-49-failsafe-integration`): neue `tests/test_failsafe_integration.py`,
+  8 Testfunktionen über die **6 E-40-Fail-safe-Schichten** (nie GRÜN bei stale/fault/defekt/DB-Ausfall/Kaskade/Serve-Zeit).
+  Unabh. Review fand HIGH (Schicht-2-Test traf toten service-Branch) → echter Poller-Fault-Test ergänzt. 653 passed, ruff sauber. CI grün.
+- **Zyklus DTB-66 → PR #136** (`feat/dtb-66-driving-factor`): `driving_factor`/`explanation` in AssessmentCurrent je Stufe befüllt
+  (Wire-Contract unverändert, nur Befüllung). Unabh. Review fand **echten HIGH-Logik-Bug** (GELB-Forecast-Zweig prüfte Schwelle
+  nicht → widersprüchlicher Operatortext + falscher driving_factor) → behoben+verifiziert. 662 passed, Assessment-Cov **100 %**. CI grün.
+- **Zyklus DTB-68 → PR #134** (`feat/dtb-68-ci-format-gate`): `ruff format`-Defaults explizit in `pyproject.toml`
+  (Step lag bereits seit #113 vor → Scope korrekt verkleinert, kein Format-Churn). Unabh. Review APPROVE. CI grün.
+- **⚠️ ENTDECKTER BEFUND (Folge-Ticket nötig):** `check_plausibility()` in `src/assessment/failsafe.py` (Sprung/Flatline,
+  E-40 §3) ist **totes Code** — im Produktionspfad (Poller/Service) **nirgends verdrahtet**. Per grep + 2 unabh. Reviews bestätigt.
+  E-40 §3 nennt Sprung/Flatline als Teil von Schicht 3, greift im Live-Fluss aber nicht. **Empfehlung: Ticket „check_plausibility im Poller verdrahten".**
+- **Offen:** Reviewer-Freigabe + Merge für #134/#135/#136 (+#128/#130/#132) durch Mensch (WP6). Bericht: `~/Desktop/Nachtschicht-Bericht-2026-06-28.md`.
+—backenddev
