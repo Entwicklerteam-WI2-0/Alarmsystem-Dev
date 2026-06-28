@@ -58,16 +58,17 @@ def _state_path() -> str:
 def _load_state() -> dict:
     """Liest die State-Datei bei jedem Request (Live-Umschaltung); sonst Gruen-Default.
 
-    Robust gegen Hand-Editierfehler: invalides/fehlendes JSON -> Gruen-Default; unbekannte
-    Keys (Tippfehler wie 'health_dow') und ein status ausserhalb [ok, fault] werden auf stderr
-    gewarnt (kein harter Fehler), damit der Dev nicht im G2-Stack nach der Ursache sucht.
+    Robust gegen Hand-Editierfehler: invalides/fehlendes/nicht lesbares JSON -> Gruen-Default;
+    unbekannte Keys (Tippfehler wie 'health_dow') und ein status ausserhalb [ok, fault] werden
+    auf stderr gewarnt (kein harter Fehler), damit der Dev nicht im G2-Stack nach der Ursache sucht.
     """
     try:
         with open(_state_path(), encoding="utf-8") as fh:
             raw = json.load(fh)
-    except (FileNotFoundError, json.JSONDecodeError):
-        # Beim Live-Editieren ist die State-Datei kurzzeitig invalides JSON -> nicht mit
-        # HTTP 500 crashen, sondern auf den Gruen-Default zurueckfallen (Dev-Komfort).
+    except (OSError, json.JSONDecodeError):
+        # Datei fehlt / nicht lesbar / kurzzeitig invalides JSON beim Live-Editieren -> nicht mit
+        # HTTP 500 crashen, sondern Gruen-Default. OSError deckt FileNotFoundError UND
+        # PermissionError/IsADirectoryError in einem ab (Review #144).
         return dict(_DEFAULT_STATE)
     if not isinstance(raw, dict):
         _warn(f"State-JSON ist kein Objekt ({type(raw).__name__}) -> Gruen-Default")
@@ -77,6 +78,10 @@ def _load_state() -> dict:
         _warn(f"unbekannte State-Keys (Tippfehler?): {sorted(unknown)}")
     status = raw.get("status")
     if status is not None and status not in _VALID_STATUS:
+        # Bewusst NUR warnen, NICHT auf 'ok' klemmen (Review #144): (1) ein Tippfehler 'faul'
+        # darf nicht still zum sicheren 'ok' werden (falsche Fail-safe-Richtung); G2 verwirft
+        # einen ungueltigen status ohnehin -> unknown. (2) Ein Test-Tool soll liefern, was man
+        # ihm sagt, damit bewusste Contract-Verstoesse als Negativtest moeglich bleiben.
         _warn(f"status={status!r} ausserhalb des Contracts {sorted(_VALID_STATUS)}")
     return {**_DEFAULT_STATE, **raw}
 
