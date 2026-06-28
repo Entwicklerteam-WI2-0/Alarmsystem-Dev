@@ -10,10 +10,12 @@ Bezug: Pull-Protokoll E-31; Datenmodell DTB-12; Persistenz DTB-28.
 import json
 import logging
 import math
+import unicodedata
 from datetime import UTC, datetime, timedelta
 
 import httpx
 
+from src.assessment.failsafe import check_flatline, check_plausibility
 from src.assessment.utils import calculate_dew_point
 from src.config.loader import DatenqualitaetSchwellen, PlausibilitaetSchwellen
 from src.model.enums import SensorStatus, Source
@@ -31,6 +33,26 @@ REQUIRED_FIELDS = (
     "humidity_pct",
     "status",
 )
+
+# Unicode-Kategorien, die aus String-Feldern (z. B. sensor_id) entfernt werden, bevor sie
+# geloggt/persistiert werden: Control (Cc, inkl. \n/\r/\t, U+007F), Format (Cf, inkl. U+202E
+# RIGHT-TO-LEFT OVERRIDE und Zero-Width-Zeichen), die Zeilentrenner Zl/Zp (U+2028/U+2029)
+# sowie alle Space-Separatoren Zs (U+0020 SPACE, U+00A0 NBSP, ...). sensor_id hat im
+# Schema (src/model/schemas.py) KEIN Whitelist-Pattern; ein eingebettetes Leerzeichen
+# ("anr rwy 01") wuerde sonst durchrutschen und als DB-Primaer-/Dictionary-Schluessel zu
+# subtilen Lookup-Fehlern fuehren (DTB-20 Review L-2). Verhindert zusammen Log-/Audit-
+# Injection, optische Manipulation und Schluessel-Drift. Konsistent mit und etwas strenger
+# als _sanitize_reason in failsafe.py.
+_UNSAFE_STRING_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Zs"})
+
+# Nach so vielen UNUNTERBROCHENEN Flatline-Verwerfungen desselben Pollers wird EINMALIG eine
+# WARN-Zeile gesetzt (DTB-20 Review M-1). Zweck: ein echt eingefrorener Sensor und ein
+# gesunder Sensor bei stabiler Kaelte erzeugen beide eine Dauer-Flatline-Sperre (E-42, K1);
+# die WARN gibt dem Betriebs-Monitoring ein dediziertes Signal "dauerhaft kein Reading, aber
+# kein Stale/Timeout" zum Nachsehen. Reine Log-Kadenz, KEINE Sicherheits-/Bewertungsschwelle
+# -> bewusst Modul-Konstante (faellt nicht unter den config-Zwang NF-05, da sie kein
+# Bewertungs-/Fail-safe-Verhalten aendert). 10 Polls = 5 min bei 30-s-Polling.
+_FLATLINE_WARN_AFTER_N = 10
 
 
 def _now() -> datetime:
@@ -62,6 +84,26 @@ class Poller:
         self.plausibility_thresholds = plausibility_thresholds
         # Timeout fuer den HTTP-Request (Netzwerk/Sensor-Ausfall).
         self.timeout = timeout
+        # Letztes erfolgreich gespeichertes (plausibles) Reading desselben Sensors —
+        # In-Memory-Referenz fuer die SPRUNG-Erkennung (DTB-20). Im Normalbetrieb aus dem
+        # vorigen Poll. Nach einem Prozess-Neustart ist sie None und wird beim naechsten poll()
+        # EINMALIG aus der DB nachgeladen (_load_baseline, PR#138 best-of-both mit DTB-20),
+        # damit auch das erste Reading nach einem Neustart gegen den letzten persistierten Wert
+        # auf Sprung geprueft wird. Der DB-Read ist best-effort -> bei Lesefehler
+        # Cold-Start-Fallback (ein Zyklus ohne Sprung-Vergleich, fail-safe unkritisch).
+        self._last_reading: Reading | None = None
+        # Flatline-Fenster: Beginn (measured_at) der aktuellen Konstanz-Phase plus die ueber
+        # das Fenster laufende Min/Max der Oberflaechentemperatur. Flatline prueft die
+        # SPANNWEITE (max-min) ueber ein Zeitfenster (>= flatline_timeout_min), nicht den
+        # Abstand zum unmittelbaren Vorgaenger — sonst waere die Erkennung bei dichtem Polling
+        # wirkungslos und gegen Rauschen nicht robust (DTB-20 santa-loop, 2 Runden).
+        self._flatline_window_start: datetime | None = None
+        self._flatline_temp_min: float = 0.0
+        self._flatline_temp_max: float = 0.0
+        # Zaehler ununterbrochener Flatline-Verwerfungen (DTB-20 Review M-1). Wird bei jedem
+        # erfolgreichen Save zurueckgesetzt; erreicht er _FLATLINE_WARN_AFTER_N, geht einmalig
+        # eine WARN-Zeile raus (Eskalations-/Monitoring-Signal, kein Verhaltenswechsel).
+        self._consecutive_flatline_rejections: int = 0
 
     def poll(self) -> Reading | None:
         """Holt Snapshot von G1, validiert ihn und speichert ein Reading.
@@ -81,7 +123,7 @@ class Poller:
         url = f"{self.base_url}/current"
 
         # 2. HTTP-Request an G1 senden.
-        # TODO: Wiederverwendeten httpx.Client einfuehren (Effizienz, DTB-??).
+        # TODO (noch kein Jira-Ticket): wiederverwendeten httpx.Client einfuehren (Effizienz).
         # Aktuell bewusst httpx.get, weil ein Client-Wechsel alle Poller-Tests
         # umstellen wuerde; sollte in einem dedizierten Refactoring erfolgen.
         try:
@@ -103,12 +145,88 @@ class Poller:
         if reading is None:
             return None
 
-        # 5. Reading ueber das Repository-Interface speichern.
+        # 5. Sensor-Defekt-Erkennung (DTB-20, FA-04/NF-01): Sprung + Flatline gegen die
+        # bisherigen Referenzen DESSELBEN Sensors. Unplausibel -> fail-safe verwerfen (nicht
+        # speichern); die Referenzen bleiben die letzten GUTEN Werte, damit ein einzelner
+        # Ausreisser sie nicht vergiftet.
+        # Neustart-Robustheit (PR#138 best-of-both): Ist die In-Memory-Referenz leer (frischer
+        # Prozess), die Sprung-Baseline EINMALIG aus der DB nachladen, statt den ersten Poll
+        # ungeprueft durchzulassen. Nur bei None -> im Normalbetrieb kein zusaetzlicher DB-Read.
+        # Das Flatline-FENSTER wird bewusst NICHT aus der DB rekonstruiert (es baut sich nach
+        # einem Neustart ueber flatline_timeout_min wieder auf; DTB-20-Restart-Verhalten bleibt).
+        if self._last_reading is None:
+            self._last_reading = self._load_baseline(reading.sensor_id)
+
+        if self._last_reading is not None and self._last_reading.sensor_id != reading.sensor_id:
+            # Sensorwechsel: Referenzen verwerfen statt Cross-Sensor zu vergleichen (haelt den
+            # poll()-Contract 'Fehler -> None' ein; check_plausibility wuerfe sonst ValueError).
+            self._last_reading = None
+            self._reset_flatline_window()
+
+        if self._last_reading is not None and reading.measured_at == self._last_reading.measured_at:
+            # Identisches measured_at = G1 hat (noch) keinen neuen Wert geliefert (Poller pollt
+            # ggf. schneller als G1 aktualisiert). Kein Defekt -> still ueberspringen, NICHT als
+            # Fehler loggen (sonst Log-/Audit-Rauschen, vgl. santa-loop).
+            logger.debug(
+                "Kein neuer G1-Wert (gleiches measured_at=%s), uebersprungen",
+                reading.measured_at.isoformat(),
+            )
+            return None
+
+        # Sprung + Zeitstempelordnung gegen das unmittelbare Vorgaenger-Reading.
+        # Hinweis (DTB-20 Review): Referenz UND Flatline-Fenster werden NUR nach einem
+        # erfolgreichen Save aktualisiert. Verworfene Readings (Sprung/Flatline) lassen beide
+        # unveraendert -> die Flatline-Uhr laeuft ab dem letzten GUTEN Reading weiter, auch
+        # wenn dazwischen Werte als Sprung verworfen wurden. Kehrt der Sensor nach
+        # >= flatline_timeout_min auf die alte Baseline zurueck, gilt das (fail-safe
+        # konservativ) als Flatline.
+        jump_reason = check_plausibility(reading, self._last_reading, self.data_quality_thresholds)
+        if jump_reason is not None:
+            # Sprung = reale (zu schnelle) Bewegung, das Gegenteil einer Flatline -> Zaehler
+            # zuruecksetzen, damit "ununterbrochen flat" wirklich ununterbrochen bedeutet.
+            self._consecutive_flatline_rejections = 0
+            logger.error("Reading unplausibel, wird verworfen: %s", jump_reason)
+            return None
+
+        # Flatline gegen das Konstanz-FENSTER (Spannweite ueber >= flatline_timeout_min):
+        # bei dichtem Polling waechst der Abstand zum Vorgaenger nie auf das Timeout, und die
+        # Fenster-Spannweite ist gegen Rauschen robuster als der Abstand zu einem Punkt.
+        span = self._flatline_span_including(reading)
+        flatline_reason = check_flatline(
+            self._flatline_window_start,
+            reading.measured_at,
+            span,
+            self.data_quality_thresholds,
+        )
+        if flatline_reason is not None:
+            self._consecutive_flatline_rejections += 1
+            logger.error("Reading unplausibel, wird verworfen: %s", flatline_reason)
+            # Einmalig beim Erreichen der Schwelle eskalieren (DTB-20 Review M-1): ein gesunder
+            # Sensor bei stabiler Kaelte und ein echt eingefrorener Sensor sehen hier gleich aus;
+            # die WARN markiert die Dauer-Sperre fuers Betriebs-Monitoring, ohne das fail-safe
+            # Verhalten (immer verwerfen) zu aendern.
+            if self._consecutive_flatline_rejections == _FLATLINE_WARN_AFTER_N:
+                logger.warning(
+                    "Sensor %s seit %d aufeinanderfolgenden Polls flatline-gesperrt "
+                    "(stabile Kaelte ODER eingefrorener Sensor) - Betriebspruefung empfohlen; "
+                    "Recovery via Temperaturbewegung > epsilon oder Poller-Neustart (E-42)",
+                    reading.sensor_id,
+                    self._consecutive_flatline_rejections,
+                )
+            return None
+
+        # 6. Reading ueber das Repository-Interface speichern.
         try:
             reading_id = self.repository.save(reading)
         except RepositoryError as exc:
             logger.error("Speichern des Readings fehlgeschlagen: %s", exc)
             return None
+
+        # Save erfolgreich -> Referenzen fuer den naechsten Poll aktualisieren.
+        self._last_reading = reading
+        self._update_flatline_window(reading)
+        # Ein gespeichertes Reading beendet jede laufende Flatline-Sperre -> Zaehler zuruecksetzen.
+        self._consecutive_flatline_rejections = 0
 
         logger.info(
             "Reading gespeichert: id=%s sensor=%s measured_at=%s",
@@ -121,6 +239,75 @@ class Poller:
         # Gutfall-Pfad reading.id != None verlangt (DTB-28-Invariante, service.py). Ohne
         # die id wuerde der Happy-Path des Schedulers mit ValueError brechen.
         return reading.model_copy(update={"id": reading_id})
+
+    def _reset_flatline_window(self) -> None:
+        """Setzt das Flatline-Konstanz-Fenster zurueck (z. B. bei Sensorwechsel).
+
+        Recovery-Hinweis (E-42 / K1): Ein gesunder Sensor bei echtstabiler Kaelte (Span
+        <= flatline_epsilon_c ueber >= flatline_timeout_min) wird dauerhaft als Flatline
+        gesperrt — alle Folge-Readings werden verworfen, bis die Temperatur das Band real
+        verlaesst. Der einzige MANUELLE Entsperr-Pfad ohne Temperaturbewegung ist ein
+        Poller-Neustart (neues Poller-Objekt -> __init__ -> frisches Fenster). Ein
+        automatischer Reset bei Flatline-Erkennung ist bewusst NICHT implementiert: er wuerde
+        einen echt eingefrorenen Sensor periodisch wieder als gueltig akzeptieren
+        (NF-01-Unteralarm). Ein tieferer Fix (Hysterese / Entsperr-Endpoint) ist eine offene
+        Architektenentscheidung.
+        """
+        # 0.0 ist nur ein Dummy: _flatline_temp_min/max sind ausschliesslich gueltig, wenn
+        # _flatline_window_start gesetzt ist. Beide Konsumenten (_flatline_span_including,
+        # _update_flatline_window) guarden auf window_start is None und lesen die 0.0 nie.
+        self._flatline_window_start = None
+        self._flatline_temp_min = 0.0
+        self._flatline_temp_max = 0.0
+
+    def _flatline_span_including(self, reading: Reading) -> float:
+        """Spannweite (max-min) der Oberflaechentemperatur ueber das laufende Fenster INKL. des
+        aktuellen Readings. 0.0, wenn (noch) kein Fenster offen ist (-> check_flatline plausibel).
+        """
+        if self._flatline_window_start is None:
+            return 0.0
+        temp = reading.surface_temp_c
+        return max(self._flatline_temp_max, temp) - min(self._flatline_temp_min, temp)
+
+    def _update_flatline_window(self, reading: Reading) -> None:
+        """Aktualisiert das Konstanz-Fenster nach einem gespeicherten Reading.
+
+        Bleibt die Spannweite (max-min) inkl. des neuen Readings <= flatline_epsilon_c, waechst
+        das Fenster (gleicher Startzeitpunkt) -> der Abstand zum Fensterbeginn waechst, bis
+        flatline_timeout_min erreicht ist und check_flatline anschlaegt. Verlaesst die Temperatur
+        das Band (Spannweite > epsilon = reale Bewegung), beginnt das Fenster neu (DTB-20).
+        """
+        temp = reading.surface_temp_c
+        if self._flatline_window_start is None:
+            self._flatline_window_start = reading.measured_at
+            self._flatline_temp_min = temp
+            self._flatline_temp_max = temp
+            return
+        new_min = min(self._flatline_temp_min, temp)
+        new_max = max(self._flatline_temp_max, temp)
+        if new_max - new_min > self.data_quality_thresholds.flatline_epsilon_c:
+            # Temperatur hat das Band verlassen -> reale Bewegung -> Fenster neu starten.
+            self._flatline_window_start = reading.measured_at
+            self._flatline_temp_min = temp
+            self._flatline_temp_max = temp
+        else:
+            self._flatline_temp_min = new_min
+            self._flatline_temp_max = new_max
+
+    def _load_baseline(self, sensor_id: str) -> Reading | None:
+        """Laedt das letzte persistierte Reading als Sprung-Baseline (Neustart-Robustheit, PR#138).
+
+        Wird nur aufgerufen, wenn die In-Memory-Referenz leer ist (frischer Prozess). Best-effort:
+        Bei einem DB-Lesefehler None zurueckgeben (Cold-Start-Fallback) statt ein gueltiges
+        Reading zu verwerfen — der fehlende Sprung-Vergleich fuer EINEN Zyklus ist fail-safe
+        unkritisch (die uebrigen Eingangspruefungen aus _build_reading greifen weiterhin).
+        """
+        try:
+            previous = self.repository.get_latest(sensor_id, limit=1)
+        except RepositoryError as exc:
+            logger.warning("Sprung-Baseline aus DB nicht lesbar, Cold-Start-Fallback: %s", exc)
+            return None
+        return previous[0] if previous else None
 
     def _is_g1_healthy(self) -> bool:
         """Ruft GET /health ab; gibt True bei 200 OK, sonst False."""
@@ -321,9 +508,18 @@ def _as_string(value: object, field: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{field} muss ein String sein, erhalten: {type(value)}")
     stripped = value.strip()
+    # Eingebettete unsichere Zeichen entfernen (Control/Format/Zeilentrenner/Space-Separatoren,
+    # siehe _UNSAFE_STRING_CATEGORIES): ein manipuliertes G1-Feld wie "anr-rwy-01\n[AUDIT] ..."
+    # mit U+202E (RTL-Override, optische Umkehr) oder mit eingebettetem Leerzeichen
+    # ("anr rwy 01" -> Schluessel-Drift) koennte sonst eine gefaelschte/irrefuehrende Log-/
+    # Audit-Zeile oder einen falschen DB-/Dictionary-Schluessel erzeugen (DTB-20 Review).
+    # Aeusserer Whitespace ist oben bereits entfernt; dieser Filter trifft nur noch
+    # eingebettete Zeichen.
+    stripped = "".join(
+        ch for ch in stripped if unicodedata.category(ch) not in _UNSAFE_STRING_CATEGORIES
+    )
     if not stripped:
         raise ValueError(f"{field} darf nicht leer sein")
-    # Whitespace am Rand verhindert spaetere sensor_id-Lookups (z. B. in DB).
     return stripped
 
 

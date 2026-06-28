@@ -13,6 +13,7 @@ import json
 from abc import ABC, abstractmethod
 
 import pymysql
+from pymysql.cursors import Cursor
 
 from src.model.schemas import AuditLogEntry
 from src.storage.database import (
@@ -25,10 +26,55 @@ from src.storage.repository import RepositoryError
 
 # Spaltenreihenfolge des INSERT -- entspricht migrations/schema.sql (audit_log).
 # id ist AUTO_INCREMENT und wird NICHT gesetzt; ts..detail werden parametrisiert.
+# Kanonische Form: andere Schreibpfade (z. B. threshold_set_repository, das den
+# Audit-Eintrag in DERSELBEN Transaktion schreibt) gehen ueber _write_entry, statt
+# dieses SQL zu duplizieren -- so bleibt eine Schemaaenderung an audit_log an EINER Stelle.
 _INSERT_SQL = (
     "INSERT INTO audit_log (ts, event_type, entity_type, entity_id, actor, detail) "
     "VALUES (%s, %s, %s, %s, %s, %s)"
 )
+
+
+def _serialize_detail(detail: object | None) -> str | None:
+    """Serialisiert das JSON-`detail`-Feld fail-safe (NF-01).
+
+    Nicht-serialisierbare Werte (z. B. datetime, set) werden zu einem RepositoryError,
+    damit der Audit-Schreibpfad nicht mit einem rohen TypeError crasht; der Aufrufer
+    kann fail-safe reagieren. `None` bleibt `None` (kein String "null").
+    """
+    if detail is None:
+        return None
+    try:
+        return json.dumps(detail)
+    except TypeError as exc:
+        raise RepositoryError(f"Audit-Detail ist nicht JSON-serialisierbar: {exc}") from exc
+
+
+def write_audit_entry(cursor: Cursor, entry: AuditLogEntry) -> int | None:
+    """Schreibt EINEN Audit-Eintrag ueber den uebergebenen Cursor; gibt die vergebene
+    AUTO_INCREMENT-ID zurueck (oder None, falls keine vergeben wurde).
+
+    Bewusst eine **Modul-Funktion** (kein Klassen-/`self`-Bezug): andere Schreibpfade im
+    storage-Paket -- z. B. threshold_set_repository, das den Audit-Eintrag in DERSELBEN
+    Transaktion wie den Schwellensatz schreibt (NF-09-Atomaritaet) -- importieren genau
+    diese Funktion, OHNE an die konkrete Repository-Klasse zu koppeln. Cursor-basiert,
+    damit der Aufrufer Transaktion + Commit in einer Hand behaelt. Die kanonische
+    INSERT-Form (_INSERT_SQL) lebt nur hier -- keine Duplikat-SQL in anderen Modulen.
+    JSON-`detail` wird ueber _serialize_detail fail-safe serialisiert (nicht-serialisierbar
+    -> RepositoryError, bevor das execute laeuft).
+    """
+    cursor.execute(
+        _INSERT_SQL,
+        (
+            entry.ts,
+            entry.event_type.value,
+            entry.entity_type,
+            entry.entity_id,
+            entry.actor,
+            _serialize_detail(entry.detail),
+        ),
+    )
+    return cursor.lastrowid
 
 
 class AuditRepository(ABC):
@@ -93,29 +139,9 @@ class MySqlAuditRepository(AuditRepository):
         self._config = config
 
     def append(self, entry: AuditLogEntry) -> int:
-        # JSON-Feld als String serialisieren (MySQL-Spalte detail ist JSON).
-        # Nicht-serialisierbare Werte (z. B. datetime, set) werden abgefangen,
-        # damit der Audit-Pfad nicht crasht (NF-01 fail-safe).
-        if entry.detail is None:
-            detail_json = None
-        else:
-            try:
-                detail_json = json.dumps(entry.detail)
-            except TypeError as exc:
-                raise RepositoryError(f"Audit-Detail ist nicht JSON-serialisierbar: {exc}") from exc
-        params = (
-            entry.ts,
-            entry.event_type.value,
-            entry.entity_type,
-            entry.entity_id,
-            entry.actor,
-            detail_json,
-        )
         try:
             with transaction(self._config) as conn, conn.cursor() as cursor:
-                cursor.execute(_INSERT_SQL, params)
-                # AUTO_INCREMENT-ID des gerade eingefuegten Eintrags.
-                row_id = cursor.lastrowid
+                row_id = write_audit_entry(cursor, entry)
         except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
             # Verbindungs-, Config- UND Query-Fehler (z. B. CHECK-Constraint-Verletzung
             # bei ungueltigem event_type, Broken-Pipe mitten in der Query) auf die

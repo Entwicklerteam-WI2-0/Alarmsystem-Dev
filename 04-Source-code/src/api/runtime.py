@@ -22,7 +22,12 @@ if TYPE_CHECKING:
     from src.assessment import AssessmentService
     from src.config.loader import Thresholds
     from src.ingest.poller import Poller
-    from src.storage import AssessmentRepository, AuditRepository, Repository
+    from src.storage import (
+        AssessmentRepository,
+        AuditRepository,
+        Repository,
+        ThresholdSetRepository,
+    )
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,9 @@ class Runtime:
     reading_repo: Repository
     assessment_repo: AssessmentRepository
     audit_repo: AuditRepository
+    # Versionierte Schwellensaetze (DTB-63): get_latest beim Start (Reload-Quelle),
+    # append im Auth-geschuetzten POST /v1/thresholds (threshold_set INSERT + Audit).
+    threshold_set_repo: ThresholdSetRepository
     poller: Poller
     service: AssessmentService
     alarm_generator: AlarmGenerator
