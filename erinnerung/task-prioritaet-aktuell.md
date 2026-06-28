@@ -45,6 +45,28 @@ DTB-41/49 nachgewiesen. Damit ist die in diesem Dokument als Top-Priorität mark
 
 ---
 
+## ✅ Status-Update 2026-06-28 (DTB-34 `GET /v1/readings` — Architekt)
+
+**DTB-34 (Strang B, B3) umgesetzt + intern review-freigegeben** (lokal, noch UNGEPUSHT):
+- **Repository:** neue Methode `get_readings(sensor_id?, start?, end?, limit, order)` auf dem `Repository`-ABC
+  + InMemory + PyMySQL (`ReadingRepository`); geteilter Validator `_validate_readings_query` (Whitelist `order`,
+  `limit>0`, tz-aware Grenzen). SQL injection-sicher (parametrisierte Werte, gewhitelistete ORDER-Richtung,
+  code-literale Spalten) — von 3 Reviewern unabhängig bestätigt.
+- **Endpoint:** `GET /v1/readings` in `src/api/v1.py` gegen die **eingefrorene `openapi.yaml`** gebaut
+  (`from`/`to`/`sensor_id`/`limit`[1..1000]/`order`[asc,desc]). Contract-konform: 400/503 als
+  `Error {code, message}` (nie FastAPIs `{detail}`), `Cache-Control: no-store`. RB-01 rein lesend, NF-01 nicht
+  berührt (Historie, kein Ampelpfad). `bad_request()`-Helper in `responses.py` ergänzt; additives `503` in der
+  `openapi.yaml` für `/v1/readings` (T1, nachjustierbar).
+- **Qualität:** TDD (RED→GREEN); volle Suite **669 grün / 27 skip**, ruff check+format clean, `api/v1.py`+
+  `responses.py` **100 %** Cov, `openapi.yaml` valide. **Review-Loop:** 3 Subagenten (python/fastapi/security,
+  kein CRITICAL/HIGH) + Overseer `uni-review-orchestrator` → **FREIGABEREIF**.
+- **Offen (Lucas):** Branch-Hygiene (Änderung liegt aktuell mit der `feat/db-finalisierung-real-mariadb`-Arbeit
+  im Working Tree — vor PR ggf. auf eigenen `feat/dtb-34-*`-Branch trennen) → PR/Merge → DTB-34 Jira auf „Wird
+  überprüft"/„Erledigt". **Follow-up (kein DTB-34-Scope):** seam-weiter `RequestValidationError`-Handler, damit
+  FastAPIs Default-422 `{detail}` bei Typ-Fehl-Input (`limit=abc`) ebenfalls als `Error {code,message}` kommt.
+
+---
+
 ## Abhängigkeits-Übersicht (auf einen Blick)
 
 ```
@@ -120,7 +142,7 @@ A3/A4/A5 sind nach A2 untereinander parallel.
 |---|---|---|---|---|---|
 | B1 | ⏳ | **DTB-33** | 30-min-Trendprognose **Producer** (FA-06) — Konsumentenseite in `core.py` ist fertig · *umgesetzt, **PR #110 offen** (Review/Merge)* | Leon H | **FA-06 = Pflicht für M3**, nicht „nice to have" |
 | B2 | ◻️ | **DTB-13** ✅ + **DTB-20** | `check_plausibility` (Flatline/Sprung) in den Ingest-Pfad **einbinden** (existiert, nie aufgerufen) · *DTB-13 erledigt; DTB-20-Wiring „In Arbeit"* | Andi / Leon H | klein, hoher Effekt (Defekt-Erkennung aktiv) |
-| B3 | ◻️ | **DTB-34** | `GET /v1/readings` Historie (T1) | Petzold | niedrigere Dringlichkeit |
+| B3 | ⏳ | **DTB-34** | `GET /v1/readings` Historie (T1) — **umgesetzt + Overseer-FREIGABEREIF** (s. Status-Update 28.06.); PR/Merge offen | Lucas (impl.) | war „niedrigere Dringlichkeit" |
 | B4 | ◻️ | *(F24)* | Geoposition in Config | offen | klein, niedrig |
 
 B1/B2 können sofort nach DTB-64 starten; B3/B4 sind nachrangig.

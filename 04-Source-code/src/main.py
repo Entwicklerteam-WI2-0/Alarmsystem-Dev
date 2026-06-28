@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -341,6 +342,37 @@ async def _runtime_not_ready_handler(_request: Request, exc: RuntimeNotReadyErro
     """Fehlt der Runtime-Graph, contract-konform als 503 melden (nie rohes 500/{detail})."""
     logger.error("Runtime nicht verfuegbar: %s", exc)
     return service_unavailable("G2 momentan nicht lieferfaehig.")
+
+
+@app.exception_handler(RequestValidationError)
+async def _request_validation_error_handler(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """FastAPI-Validierungsfehler contract-konform abbilden.
+
+    Query-/Pfad-/Header-Fehler sind Request-Fehler -> 400 `Error {code, message}`.
+    Body-Schema-Fehler (POST/PUT/PATCH) bleiben 422, weil der Contract `422` explizit
+    fuer Body-Validierung reserviert (API_FROZEN_v1.md §2D).
+    """
+    errors = exc.errors()
+    has_body_error = any(err.get("loc", [None])[0] == "body" for err in errors)
+    message = "; ".join(
+        f"{' -> '.join(str(loc) for loc in err['loc'])}: {err['msg']}" for err in errors
+    )
+    # Error.message ist auf max_length=512 begrenzt (schemas.py). Bei mehreren/langen
+    # Validierungsfehlern wuerde Error(...) sonst SELBST eine ValidationError werfen und
+    # so einen unkontrollierten Folge-500 IM Handler ausloesen (vgl. Kommentar v1.py).
+    # Defensiv kappen -> der Handler liefert immer ein gueltiges Error{code, message}.
+    message = message[:512]
+    if has_body_error:
+        return JSONResponse(
+            status_code=422,
+            content=Error(code="VALIDATION_ERROR", message=message).model_dump(),
+        )
+    return JSONResponse(
+        status_code=400,
+        content=Error(code="BAD_REQUEST", message=message).model_dump(),
+    )
 
 
 @app.get(

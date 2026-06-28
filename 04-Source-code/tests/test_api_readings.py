@@ -5,17 +5,20 @@ unterstuetzt Pagination (limit/offset) und Sortierung, validiert Query-Parameter
 bleibt bei Persistenzfehlern/Nicht-Verfuegbarkeit fail-safe (503 im Contract-Format).
 """
 
+import asyncio
+import json
 from collections.abc import Generator
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
+from fastapi.exceptions import RequestValidationError
 from fastapi.testclient import TestClient
 
 from src.api.exceptions import RuntimeNotReadyError
 from src.api.responses import NO_STORE_HEADERS
 from src.api.runtime import get_runtime
-from src.main import app
+from src.main import _request_validation_error_handler, app
 from src.model.enums import SensorStatus, Source
 from src.model.schemas import Reading, ReadingResponse
 from src.storage.repository import InMemoryReadingRepository, RepositoryError
@@ -48,8 +51,8 @@ def _make_reading(sensor_id: str, measured_at: datetime, surface_temp_c: float =
 
 
 def _assert_no_store_header(resp: object) -> None:
-    key, value = next(iter(NO_STORE_HEADERS.items()))
-    assert resp.headers[key.lower()] == value
+    for key, value in NO_STORE_HEADERS.items():
+        assert resp.headers[key.lower()] == value
 
 
 def test_get_readings_returns_history_with_default_sensor(
@@ -289,3 +292,80 @@ def test_get_readings_response_matches_reading_response_schema(
     assert parsed.id is not None
     assert parsed.sensor_id == "anr-rwy-01"
     assert parsed.surface_temp_c == pytest.approx(1.0)
+
+
+def test_get_readings_invalid_order_returns_400_contract(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    """Ungueltiger `order`-Wert muss 400 im Contract-Format liefern, nicht 422/detail."""
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings", params={"order": "invalid"})
+
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["code"] == "BAD_REQUEST"
+    assert "detail" not in body
+
+
+def test_get_readings_empty_result_returns_200_empty_list(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings")
+
+    assert resp.status_code == 200
+    assert resp.json() == []
+    _assert_no_store_header(resp)
+
+
+def test_get_readings_offset_beyond_total_returns_empty_list(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    reading_repo.save(_make_reading("anr-rwy-01", datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC), 1.0))
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings", params={"offset": 10})
+
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_get_readings_limit_at_max_returns_200(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    for minute in range(5):
+        reading_repo.save(
+            _make_reading(
+                "anr-rwy-01",
+                datetime(2026, 6, 23, 10, minute, 0, tzinfo=UTC),
+                float(minute),
+            )
+        )
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings", params={"limit": 1000})
+
+    assert resp.status_code == 200
+    assert len(resp.json()) == 5
+
+
+def test_request_validation_handler_caps_message_to_512_no_500() -> None:
+    """Viele/lange Validierungsfehler duerfen Error.message (max_length 512) nicht sprengen.
+
+    Regression (HIGH, DTB-34-Review): ungekappt wuerde Error(...) eine ValidationError
+    IM Exception-Handler werfen -> unkontrollierter Folge-500. Der Handler muss stattdessen
+    immer ein gueltiges Error{code, message} mit Status 400 liefern.
+    """
+    errors = [
+        {"loc": ("query", f"param_{i}"), "msg": "x" * 100, "type": "value_error"} for i in range(10)
+    ]
+    exc = RequestValidationError(errors)
+
+    response = asyncio.run(_request_validation_error_handler(None, exc))
+    body = json.loads(response.body)
+
+    assert response.status_code == 400
+    assert body["code"] == "BAD_REQUEST"
+    assert len(body["message"]) <= 512

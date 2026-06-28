@@ -63,9 +63,11 @@ from pathlib import Path
 # (Bewertungskaskade + Prognose). Ein globaler Scan würde Status-Codes, Pagination
 # und Indizes als Fehlalarm treffen.
 # WICHTIG (kein CI erzwingt das): Wer Schwellen-Vergleiche in ein NEUES Modul legt
-# (z. B. src/ingest), MUSS dieses Verzeichnis hier ergänzen — sonst rutschen die
+# (z. B. src/api), MUSS dieses Verzeichnis hier ergänzen — sonst rutschen die
 # Schwellen ungeprüft durch. Erweiterung ist eine bewusste Entscheidung (DTB-22-Scope).
-SCAN_DIRS: tuple[str, ...] = ("src/assessment", "src/forecast")
+# src/ingest aufgenommen (DTB-20): der Poller vergleicht Datenqualitäts-Schwellen
+# (flatline_*, max_temp_jump_*, stale_timeout_s) -> muessen ebenfalls aus config/ kommen.
+SCAN_DIRS: tuple[str, ...] = ("src/assessment", "src/forecast", "src/ingest")
 
 # Default-Ziele relativ zum Skript auflösen (cwd-unabhängig). So läuft der Guard ohne
 # Pfad-Argumente aus jedem Verzeichnis korrekt — SCAN_DIRS ist damit die EINZIGE Quelle
