@@ -50,6 +50,7 @@ Referenzen: NF-01, RB-01, E-34, E-36, E-40, DTB-13, DTB-43, DTB-49, DTB-64.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
 
@@ -454,15 +455,14 @@ def test_schicht4_db_ausfall_liefert_503(runtime: Runtime, broken_repo: str) -> 
     broken_reading_repo = (
         _ReadingRepoDBFehler() if broken_repo == "reading_repo" else runtime.reading_repo
     )
-    broken_runtime = Runtime(
-        thresholds=runtime.thresholds,
+    # dataclasses.replace kopiert ALLE Felder des echten Runtime und ueberschreibt nur die
+    # zwei gebrochenen Repos. Bewusst KEIN vollstaendiges Runtime(...) nachbauen: das wuerde
+    # bei jedem neuen Runtime-Pflichtfeld (z. B. threshold_set_repo/alarm_repo) brechen,
+    # obwohl der Test damit nichts zu tun hat (robust gegen DI-Graph-Erweiterungen).
+    broken_runtime = replace(
+        runtime,
         reading_repo=broken_reading_repo,
         assessment_repo=broken_assessment_repo,
-        audit_repo=runtime.audit_repo,
-        poller=runtime.poller,
-        service=runtime.service,
-        alarm_generator=runtime.alarm_generator,
-        alarm_broadcaster=runtime.alarm_broadcaster,
     )
     app.dependency_overrides[get_runtime] = lambda: broken_runtime
 
