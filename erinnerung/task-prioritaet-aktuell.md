@@ -160,3 +160,13 @@ gegen echte MariaDB 11.4.7; 785 Tests grün (siehe Journal/Save-Session 28.06.).
 - **DTB-46** — Unit-Tests Bewertung ≥ 80 % Coverage (assessment ~100 %, erfüllt)
 
 *Quelle: Jira-Board (Projekt DTB) reconciled gegen `origin/main` am 2026-06-28; 10 gemergte Tickets auf „Erledigt" gesetzt.*
+
+---
+
+## ✏️ Korrektur/Update (28.06., nach DTB-37/65-Klärung) — architekt
+
+- **DTB-37 (RH/Druck): ERLEDIGT** — `humidity_pct` + `pressure_hpa` sind im `Reading`-Model + Poller, persistiert + im Assessment. War oben fälschlich „Borderline". → Jira „Erledigt".
+- **DTB-65 (threshold_set_id / NF-05): umgesetzt → PR #148** — Service stempelt jetzt den aktiven `threshold_set` auf **jedes** Assessment (Gutfall + Fail-safe), `None` bei JSON-Seed. (war „offen")
+- **DTB-67 — wartet auf G3 (Nick):** der Code füllt `driving_factor`/`explanation` auf `unknown` bereits („stale"); die **Abstimmung**, ob das so passt, geht nur mit G3 → morgen vor Ort. **Heute nicht lösbar.**
+- **DTB-69 — BLOCKIERT durch G1 (Nils):** braucht die finale DS18B20-Auflösung (Bit-Tiefe + echte Zappelbreite); aktueller `flatline_epsilon_c=0.15` ist ein dokumentierter Schätzwert. **Heute nicht lösbar.**
+- **DTB-36 — menschliche M3-Doku:** Gruppen-Entscheidungslogbuch konsolidieren (Abgabe-Deliverable), kein Backend-Code.
