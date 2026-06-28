@@ -1,6 +1,6 @@
 # API Contract — FROZEN v1 (DTB-35 / P1.4)
 
-> **Status:** ✅ **EINGEFROREN (v1.0)** — beide Nähte beidseitig bestätigt (`seam-sync-confirmed`, DTB-26);
+> **Status:** ✅ **EINGEFROREN (v1.0)** — beide Nähte beidseitig bestätigt (`team-sync-confirmed`, DTB-26);
 > `openapi.yaml` (DTB-19) liegt vor und ist gegen diese Datei geprüft. Wire-Form (Pfade/Felder/Typen) ist ab
 > hier **stabil**; grundlegende Änderungen laufen über `/v2/`, nie über ein Brechen von `/v1/`.
 > **Version:** v1.0 · **Eingefroren am:** 2026-06-24 · **Stand:** 2026-06-24 · **Owner:** Lucas Vöhringer (Systemarchitekt, G2)
@@ -75,6 +75,17 @@ G2 ist hier **Client**. G1 stellt bereit, G2 pollt.
 ### Weitere Endpoints (reserviert, T1/T2)
 `GET /v1/readings` (Historie). Verbindliche Form folgt mit `openapi.yaml` (DTB-19).
 
+### Post-Freeze-Erweiterungen (nach v1.0-Freeze ergänzt — `openapi.yaml` maßgeblich)
+> **Nicht Teil des 2026-06-24-Freeze.** Additive G2→G3-Erweiterungen, die den eingefrorenen
+> Wire-Kern (oben) nicht ändern. Maßgeblich ist `docs/api/v1/openapi.yaml`.
+
+- **`GET /v1/thresholds`** (DTB-62, NF-05): rein lesende Ausgabe der aktiven Vereisungs-Schwellen
+  für das G3-Schwellenwert-Menü (RB-01-neutral, kein Aktor).
+  - **DTB-33 (FA-06)** erweitert den `prognose`-Block **additiv** um `trend_window_min`, `horizon_min`,
+    `min_points`, `max_readings_limit` (E-41). `t_s_grenz_c`/`trend_window_min`/`horizon_min` =
+    G3-Kalibrierwerte; `min_points`/`max_readings_limit` = **interne** Tuning-/DB-Last-Knöpfe
+    (kein Kalibrierwert fürs G3-Menü). Non-breaking — G3 ignoriert unbekannte Felder.
+
 ## 4. Messintervall + Stale (NF-02, final)
 
 - **Poll-Intervall:** 30 s. **Stale-Timeout:** 120 s (`measured_at` älter → `risk_level=unknown`, nie GRÜN).
@@ -96,13 +107,13 @@ G2 ist hier **Client**. G1 stellt bereit, G2 pollt.
 
 - [x] Contract-Summary dokumentiert (diese Datei): G1 `GET /current`, `GET /v1/assessment/current`, Intervall, Versionierung
 - [x] `docs/api/v1/openapi.yaml` vorhanden (**DTB-19**, Luca Ganter) — valide OpenAPI 3.0.3, gegen diese Datei geprüft (kein Drift)
-- [x] Schriftliche Bestätigung G1-Lead + G3-Lead (`seam-sync-confirmed`, **DTB-26**) — siehe Bestätigungs-Block unten
+- [x] Schriftliche Bestätigung G1-Lead + G3-Lead (`team-sync-confirmed`, **DTB-26**) — siehe Bestätigungs-Block unten
 - [ ] Git-Tag **`api-v1.0`** + „P1.4"-Commit auf `main` — **letzter mechanischer Schritt, ausstehend (Freigabe Lucas)**
 - [x] Vertrag an G1/G3 versandt (`Anfrage-G1`/`Anfrage-G3`) — Sign-off beidseitig erhalten (2026-06-23)
 
 ---
 
-## Bestätigungen (`seam-sync-confirmed`) — beidseitig eingefroren
+## Bestätigungen (`team-sync-confirmed`) — beidseitig eingefroren
 
 Beide Nähte sind von der jeweiligen Gegenseite bestätigt. Die Einträge wurden **im Namen der bestätigenden
 Leads durch den Systemarchitekten erfasst** (G1/G3 haben zugesagt); die ursprünglichen Sign-off-Vermerke
@@ -116,7 +127,7 @@ stehen in `02-Arbeitsdokumente/Anfrage-G1.md` / `Anfrage-G3.md` (Sign-off-Datum 
 Eingetragen/dokumentiert durch: **L. Vöhringer** (Systemarchitekt G2), 2026-06-24.
 
 > **Nachvollziehbarkeit:** Für einen harten Audit-Trail kann die jeweilige Original-Bestätigung
-> (Antwort-Mail bzw. GitHub-Issue mit Label `seam-sync-confirmed`) nachgereicht und hier verlinkt werden.
+> (Antwort-Mail bzw. GitHub-Issue mit Label `team-sync-confirmed`) nachgereicht und hier verlinkt werden.
 > G3-Lead: **Nick**; G1-Lead: **Nils** (eingetragen 2026-06-25).
 
 **Damit gilt der G1↔G2↔G3-Contract als beidseitig eingefroren (P1.4).** Entblockt: DTB-19, DTB-28, DTB-38.

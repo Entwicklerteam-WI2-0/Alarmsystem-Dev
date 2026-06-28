@@ -18,6 +18,7 @@ from src.model.schemas import Alarm
 from src.storage.alarm_repository import MySqlAlarmRepository
 from src.storage.database import DatabaseConfig
 from src.storage.repository import RepositoryError
+from tests._sql_splitter import split_sql_statements
 
 _UTC_NOW = datetime(2026, 6, 26, 12, 0, 0, tzinfo=UTC)
 
@@ -78,13 +79,10 @@ def database(db_available: bool) -> str:
     conn = pymysql.connect(**_conn_params(database=name, autocommit=False))
     try:
         with conn.cursor() as cursor:
-            # Einfaches Splitten an ';' genuegt fuer das aktuelle schema.sql: reine
-            # CREATE-TABLE-DDL, KEINE Trigger/Stored Procedures mit ';' im Body (Append-only
-            # laeuft per GRANT, nicht per Trigger, NF-09). Kaeme solche DDL hinzu, braeuchte
-            # es hier einen echten Statement-Splitter.
-            for statement in ddl.split(";"):
-                if statement.strip():
-                    cursor.execute(statement)
+            # Statement-Splitter beruecksichtigt String-Literale/Kommentare, da schema.sql
+            # Praeparde-Statements fuer MySQL-kompatible bedingte Migrationen enthaelt.
+            for statement in split_sql_statements(ddl):
+                cursor.execute(statement)
         conn.commit()
     finally:
         conn.close()

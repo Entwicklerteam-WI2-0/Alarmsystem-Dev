@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS assessment (
   dew_point_c      DOUBLE       NULL,
   delta_t          DOUBLE       NULL,
   humidity_pct     DOUBLE       NULL,
+  forecast_surface_temp_c DOUBLE NULL,                 -- DTB-33/FA-06: 30-min-Prognose-T_s (Nachvollziehbarkeit FA-05)
   PRIMARY KEY (id),
   KEY idx_assessment_ts (ts),
   CONSTRAINT chk_assessment_risk CHECK (risk_level IN ('green','yellow','orange','red','unknown')),
@@ -96,6 +97,60 @@ CREATE TABLE IF NOT EXISTS audit_log (
 -- CREATE TABLE IF NOT EXISTS ueberspringt bereits existierende Tabellen; daher wird der
 -- alte Index idx_audit_ts hier explizit entfernt und der Composite-Index idx_audit_ts_event
 -- (ts, event_type) angelegt, falls noch nicht vorhanden.
-ALTER TABLE audit_log
-  DROP INDEX IF EXISTS idx_audit_ts,
-  ADD INDEX IF NOT EXISTS idx_audit_ts_event (ts, event_type);
+-- MySQL-kompatibel: statt DROP/ADD INDEX IF EXISTS (MariaDB-Erweiterungen) pruefen wir
+-- ueber INFORMATION_SCHEMA.STATISTICS und fuehren ALTER TABLE nur aus, wenn noetig.
+-- Das funktioniert sowohl auf MariaDB (Projekt-Default, E-29) als auch auf MySQL 5.7/8.0.
+SELECT COUNT(*) INTO @idx_audit_ts_exists
+FROM INFORMATION_SCHEMA.STATISTICS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'audit_log'
+  AND INDEX_NAME = 'idx_audit_ts';
+
+SET @drop_idx_audit_ts_sql = IF(
+    @idx_audit_ts_exists > 0,
+    'ALTER TABLE audit_log DROP INDEX idx_audit_ts',
+    'SELECT 1'
+);
+
+PREPARE drop_idx_audit_ts_stmt FROM @drop_idx_audit_ts_sql;
+EXECUTE drop_idx_audit_ts_stmt;
+DEALLOCATE PREPARE drop_idx_audit_ts_stmt;
+
+SELECT COUNT(*) INTO @idx_audit_ts_event_exists
+FROM INFORMATION_SCHEMA.STATISTICS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'audit_log'
+  AND INDEX_NAME = 'idx_audit_ts_event';
+
+SET @add_idx_audit_ts_event_sql = IF(
+    @idx_audit_ts_event_exists = 0,
+    'ALTER TABLE audit_log ADD INDEX idx_audit_ts_event (ts, event_type)',
+    'SELECT 1'
+);
+
+PREPARE add_idx_audit_ts_event_stmt FROM @add_idx_audit_ts_event_sql;
+EXECUTE add_idx_audit_ts_event_stmt;
+DEALLOCATE PREPARE add_idx_audit_ts_event_stmt;
+
+-- Idempotente Spalten-Migration fuer bestehende assessment-Tabellen (DTB-33/FA-06).
+-- CREATE TABLE IF NOT EXISTS oben legt die Spalte nur bei Neuinstallation an; fuer bereits
+-- existierende DBs wird forecast_surface_temp_c hier nachgezogen, sonst schlaegt der INSERT
+-- von MySqlAssessmentRepository mit "Unknown column" fehl (-> RepositoryError, NF-01).
+-- MySQL-kompatibel: statt ADD COLUMN IF NOT EXISTS (MariaDB-Erweiterung) pruefen wir
+-- ueber INFORMATION_SCHEMA.COLUMNS und fuehren ALTER TABLE nur aus, wenn die Spalte fehlt.
+-- Das funktioniert sowohl auf MariaDB (Projekt-Default, E-29) als auch auf MySQL 5.7/8.0.
+SELECT COUNT(*) INTO @forecast_surface_temp_col_exists
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'assessment'
+  AND COLUMN_NAME = 'forecast_surface_temp_c';
+
+SET @add_forecast_surface_temp_col_sql = IF(
+    @forecast_surface_temp_col_exists = 0,
+    'ALTER TABLE assessment ADD COLUMN forecast_surface_temp_c DOUBLE NULL',
+    'SELECT 1'
+);
+
+PREPARE add_forecast_surface_temp_col_stmt FROM @add_forecast_surface_temp_col_sql;
+EXECUTE add_forecast_surface_temp_col_stmt;
+DEALLOCATE PREPARE add_forecast_surface_temp_col_stmt;

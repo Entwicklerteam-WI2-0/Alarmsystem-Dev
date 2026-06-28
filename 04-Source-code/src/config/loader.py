@@ -11,7 +11,7 @@ import json
 import math
 from dataclasses import dataclass, fields
 from pathlib import Path
-from typing import Any
+from typing import Any, get_type_hints
 
 # config/thresholds.json liegt zwei Ebenen über src/config/loader.py
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "thresholds.json"
@@ -31,6 +31,12 @@ _MAX_ZEIT_S = 86_400.0
 # Generös bemessen, fängt Tippfehler ab (NF-05-Geist); der reale G1-Wert liegt weit darunter.
 _MAX_UNDERSHOOT_C = 10.0
 
+# Plausibler Bereich für eine Oberflächentemperatur-Schwelle (°C). Generös bemessen
+# (NF-05: finale Werte von G1), fängt aber grobe Fehlkonfigurationen ab, die die Prognose-
+# Vorwarnung still abschalten würden (FA-06).
+_MIN_PLAUSIBLE_SURFACE_TEMP_C = -50.0
+_MAX_PLAUSIBLE_SURFACE_TEMP_C = 50.0
+
 
 @dataclass(frozen=True)
 class VereisungsSchwellen:
@@ -43,6 +49,11 @@ class VereisungsSchwellen:
 @dataclass(frozen=True)
 class PrognoseSchwellen:
     t_s_grenz_c: float
+    # DTB-33 (FA-06): Parameter der 30-min-Trendextrapolation (NF-05, parametrierbar).
+    trend_window_min: float  # Laenge des Trendfensters in Minuten
+    horizon_min: float  # Prognosehorizont in Minuten (FA-06: 30)
+    min_points: int  # Mindestanzahl Stuetzstellen fuer eine Regression (>= 2)
+    max_readings_limit: int  # Obergrenze fuer gelesene Historien-Readings (DB-Last)
 
 
 @dataclass(frozen=True)
@@ -203,6 +214,15 @@ class Thresholds:
                 f"({self.hysterese.max_continuity_gap_s!r}) < datenqualitaet.stale_timeout_s "
                 f"({self.datenqualitaet.stale_timeout_s!r}) -> Stale-Phase bricht Alarm-Kontinuität"
             )
+        # Cross-Section (FA-06/NF-01): die Prognose-Vorwarnung feuert bei forecast <= t_s_grenz_c.
+        # Liegt die Schwelle UNTER dem Gefrierpunkt, warnt die 30-min-Prognose erst, wenn die
+        # Oberfläche ohnehin schon gefriert -> die Vorwarnung wäre still neutralisiert.
+        if self.prognose.t_s_grenz_c < self.vereisung.t_s_gefrierpunkt_c:
+            raise ConfigError(
+                "Config-Inkonsistenz: prognose.t_s_grenz_c "
+                f"({self.prognose.t_s_grenz_c!r}) < vereisung.t_s_gefrierpunkt_c "
+                f"({self.vereisung.t_s_gefrierpunkt_c!r}) -> 30-min-Vorwarnung still abgeschaltet"
+            )
 
 
 # Pflicht-Abschnitte der Config und ihr jeweiliger Zieltyp.
@@ -265,11 +285,24 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict[str, Any]) -> T:
     if unerwartet:
         raise ConfigError(f"Abschnitt '{name}': unbekannte Schlüssel {sorted(unerwartet)}")
     werte = {feld: daten[feld] for feld in erwartet}
+    # Aufgelöste Typ-Hinweise (keine Strings) fuer robusten Ganzzahl-Check.
+    # Bei `from __future__ import annotations` liefert f.type nur einen String;
+    # get_type_hints() wertet Annotationen aus und gibt echte Typ-Objekte zurueck.
+    # Ein Feld vom Typ `int | None` ist dann NICHT mehr `is int` (L-1).
+    feld_typen = get_type_hints(cls)
     for feld, wert in werte.items():
         # bool ist in Python ein int-Subtyp, soll aber keine gültige Schwelle sein.
         if isinstance(wert, bool) or not isinstance(wert, (int, float)):
             raise ConfigError(
                 f"Abschnitt '{name}', Schlüssel '{feld}': Schwellenwert muss eine Zahl sein, "
+                f"ist aber {type(wert).__name__} ({wert!r})"
+            )
+        # Ganzzahl-Felder (z. B. prognose.min_points): ein JSON-Float wie 3.0 ist eine
+        # Fehlkonfiguration -> direkt hier ablehnen (einstufiges Typ-Gate), statt erst im
+        # Sektions-Validator aufzufangen (DTB-33 Review LOW).
+        if feld_typen[feld] is int and not isinstance(wert, int):
+            raise ConfigError(
+                f"Abschnitt '{name}', Schlüssel '{feld}': Ganzzahl erwartet, "
                 f"ist aber {type(wert).__name__} ({wert!r})"
             )
         # NaN/inf unterlaufen jeden Vergleich (NaN < x ist immer False -> fail-open in der
@@ -287,8 +320,61 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict[str, Any]) -> T:
         _validate_datenqualitaet(obj)
     elif cls is PlausibilitaetSchwellen:
         _validate_plausibilitaet(obj)
+    elif cls is PrognoseSchwellen:
+        _validate_prognose(obj)
 
     return obj
+
+
+def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
+    """Prueft die Trendparameter (DTB-33): Fenster/Horizont positiv, min_points >= 2.
+
+    Unplausible Werte wuerden die 30-min-Vorwarnung praktisch abschalten (NF-01):
+    ein nicht-positives Fenster/Horizont oder weniger als zwei Stuetzstellen
+    machen eine lineare Regression unmoeglich -> laut scheitern statt still leer.
+    Die Vorwarn-Schwelle t_s_grenz_c muss zudem in einem physikalisch plausiblen
+    Oberflaechentemp-Bereich liegen, sonst feuert die Prognose nie (FA-06).
+    """
+    if not _MIN_PLAUSIBLE_SURFACE_TEMP_C <= schwellen.t_s_grenz_c <= _MAX_PLAUSIBLE_SURFACE_TEMP_C:
+        raise ConfigError(
+            f"prognose.t_s_grenz_c muss zwischen {_MIN_PLAUSIBLE_SURFACE_TEMP_C} und "
+            f"{_MAX_PLAUSIBLE_SURFACE_TEMP_C} °C liegen, ist aber {schwellen.t_s_grenz_c!r}"
+        )
+    _require_positive(schwellen.trend_window_min, "prognose.trend_window_min", upper=1_440)
+    _require_positive(schwellen.horizon_min, "prognose.horizon_min", upper=1_440)
+    # Cross-Field (NF-01): der Horizont darf nicht weiter reichen als das Datenfenster,
+    # aus dem die Regression gespeist wird. horizon_min > trend_window_min extrapoliert die
+    # T_s-Gerade um ein Vielfaches ueber den beobachteten Zeitraum hinaus (z. B. 60-min-Horizont
+    # aus 10-min-Daten) -> statistisch unbelastbar. Laut scheitern statt still eine fragwuerdige
+    # Vorwarnung liefern (der isfinite-Schutz am Ausgang bleibt, aber die Konfig ist falsch).
+    if schwellen.horizon_min > schwellen.trend_window_min:
+        raise ConfigError(
+            "prognose.horizon_min darf nicht groesser als prognose.trend_window_min sein "
+            f"({schwellen.horizon_min!r} > {schwellen.trend_window_min!r})"
+        )
+    # Ganzzahl- und Bereichspruefung fuer min_points/max_readings_limit.
+    # isinstance(int) ist bereits in _baue_sektion erledigt (L-3); hier bleiben nur
+    # die sektionsspezifischen semantischen Grenzen.
+    if schwellen.min_points < 2:
+        raise ConfigError(
+            "prognose.min_points muss mindestens 2 sein (Regression braucht 2 Punkte)"
+        )
+    if schwellen.min_points > 100:
+        raise ConfigError(
+            "prognose.min_points darf nicht groesser als 100 sein "
+            "(sonst wird die Prognose praktisch abgeschaltet, NF-01)"
+        )
+    # max_readings_limit begrenzt die DB-Last bei get_since; sie muss ausreichend gross
+    # sein, um min_points Stuetzstellen zu liefern, sonst wird die Prognose still abgeschaltet.
+    if schwellen.max_readings_limit < schwellen.min_points:
+        raise ConfigError(
+            "prognose.max_readings_limit muss mindestens so gross wie min_points sein"
+        )
+    if schwellen.max_readings_limit > 10_000:
+        raise ConfigError(
+            "prognose.max_readings_limit darf nicht groesser als 10000 sein "
+            "(DB-Lastbegrenzung, NF-01)"
+        )
 
 
 def _validate_datenqualitaet(schwellen: DatenqualitaetSchwellen) -> None:

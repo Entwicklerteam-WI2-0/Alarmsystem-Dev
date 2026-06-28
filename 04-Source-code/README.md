@@ -7,6 +7,7 @@ Backend-Repo der Gruppe 2 (FastAPI · MySQL/MariaDB · rohes PyMySQL, kein ORM).
 - `src/ingest/` — Poller gegen G1 (`GET /current`, `GET /health`), Eingangsvalidierung
 - `src/model/` — Pydantic-Schemas + Enums (6 Entitäten: reading/assessment/alarm/acknowledgement/threshold_set/audit_log); DB-DDL in `migrations/schema.sql`
 - `src/assessment/` — Vereisungslogik (4-Stufen) — Kernmodul, hohe Testabdeckung
+- `src/alarm/` — Alarm-Generierung (Severity aus RiskLevel, Hysterese/Entprellung); Persistenz in `storage/`
 - `src/storage/` — DB-Zugriff (Repository-Pattern, rohes PyMySQL → MySQL/MariaDB; kein ORM, E-35)
 - `src/api/` — Serving-Endpoints für G3
 - `src/config/` — Schwellen/Parameter (parametrierbar)
@@ -31,12 +32,19 @@ Kein Migrationsframework. Das Schema wird direkt eingespielt; `schema.sql` ist i
 *geänderter* Tabellenstruktur migriert `IF NOT EXISTS` **nicht** (Drift) → Strukturänderung = manuell
 DROP/ALTER.
 
+**DB-Kompatibilität:** `schema.sql` läuft auf **MariaDB** (Projekt-Default, E-29) **und MySQL 5.7/8.0**.
+`CREATE TABLE IF NOT EXISTS` ist beidem gemein. Für bedingte `ALTER TABLE`-Migrationen (z. B. nachträglich
+hinzugefügte Spalten/Indizes) wird statt der MariaDB-spezifischen Syntax `ADD/DROP ... IF [NOT] EXISTS`
+über `INFORMATION_SCHEMA` geprüft und nur bei Bedarf `ALTER TABLE` via `PREPARE`/`EXECUTE` ausgeführt.
+Das vermeidet Syntaxfehler auf älteren MySQL-Versionen (< 8.0.21), die Flughafen-Betriebsumgebungen noch
+verwenden können.
+
 **Zwei Rollen** (nicht verwechseln): den **Admin-User `root`** (`DB_ROOT_PASSWORD`) zum Einspielen von
-DDL + Rechten; den **App-User `alarm`** (`DB_USER`) nutzt nur die App. Voraussetzung: laufende MariaDB,
-App-User existiert (DB-Init), Zugangsdaten in `.env` (s. `.env.example`), nie committen.
+DDL + Rechten; den **App-User `alarm`** (`DB_USER`) nutzt nur die App. Voraussetzung: laufende MariaDB
+oder MySQL, App-User existiert (DB-Init), Zugangsdaten in `.env` (s. `.env.example`), nie committen.
 
 > Pi via SSH-Tunnel: zuerst `ssh -L 3306:localhost:3306 <pi>` öffnen, dann gegen `127.0.0.1` einspielen.
-> `docker-compose.yml` ist **abgewählt** (E-35: native MariaDB, kein Docker) und wird entfernt — **nicht**
+> `docker-compose.yml` ist **abgewählt** (E-35: native MariaDB, kein Docker) und **bereits entfernt** — **nicht**
 > `docker compose up` als Setup-Pfad nutzen.
 
 Einspielen **als `root`**, Reihenfolge `schema.sql` → `grants.sql` (cwd = `04-Source-code`):
@@ -87,8 +95,9 @@ Einspielen **als `root`**, Reihenfolge `schema.sql` → `grants.sql` (cwd = `04-
     pytest                 # alle Tests
     pytest --cov=src       # mit Coverage (Ziel: Bewertungslogik >= 80 %)
 
-## Health-Check (G2)
-`GET /v1/health` -> `{"status": "ok"}` (P0.3)
+## Endpoints (G2, Stand 27.06.)
+- `GET /v1/health` -> `{"status": "ok"}` (P0.3).
+- `GET /v1/assessment/current` -> `AssessmentCurrent` (DTB-43). Fail-safe NF-01: Stale/Fault -> 200 `risk_level=unknown` (nie GRÜN); keine Bewertung/DB-Ausfall -> 503 `Error {code, message}`.
 
 ## Datenfluss
 `G1 (Sensorik)` ──poll `GET /current`──▶ `Ingest/Validierung` ──▶ DB `reading` ──▶ `Bewertung` (4-Stufen)
@@ -113,7 +122,7 @@ GET /current → {
 GET /health → 200 (ok) / 503 (fault)
 ```
 
-`measured_at` und `/health` sind nicht verhandelbar; Feldnamen/Einheiten sonst Seam-Sync.
+`measured_at` und `/health` sind nicht verhandelbar; Feldnamen/Einheiten sonst Team-Sync.
 
 ## Schnittstelle G2 → G3 (Serving, ausgehend)
 

@@ -7,6 +7,7 @@
 > **FEUCHTE-FIX (E-33):** „Feuchte vorhanden" := `ΔT (T_s − T_d) ≤ 1,0 °C` — an die **Oberfläche** gebunden. Der frühere Luft-RH-Trigger (`RH ≥ 90 %`) ist **komplett entfernt**, weil Luftfeuchte nichts über die Oberfläche aussagt (Vorfall 1: 92 % Luftfeuchte bei trockener Oberfläche → ΔT > 1,0 → **GELB**, nicht ORANGE). `RH` (= **Luftfeuchte**) fließt nur **indirekt** über den Taupunkt `T_d` (Magnus) in `ΔT` ein; `humidity_pct` im G1-`GET /current`-Snapshot ist Luftfeuchte und reiner T_d-Input — **kein** separater Oberflächenfeuchte-Wert nötig.
 > **DUMMY-SCHWELLEN:** Alle Schwellenwerte bleiben Platzhalter bis G1 liefert — ausnahmslos über `config/` parametrierbar, NIE hardcoden.
 > **Owner = Empfehlung** (skill-bewusst), kein harter Assignee. Tasks gehören in den Backlog; Owner-Hinweis je Task unten.
+> **⚠️ STACK-KORREKTUR (nach 2026-06-22 · E-29/E-31/E-35):** Dieses Dokument ist ein Snapshot vom 22.06. Der ursprüngliche T0-Stack **SQLite + HTTP-POST** ist **überholt**. Verbindlich: **DB = MySQL/MariaDB** (GL-Vorgabe E-29) über **rohes PyMySQL** + handgeschriebenes `schema.sql` (kein ORM/Alembic, native, kein Docker — E-35); **Ingest = Pull-Poller** gegen G1 `GET /current` (E-31), kein `POST /readings`. SQLite-Nennungen unten sind als **MySQL/MariaDB** zu lesen; rein historische Audit-Begründungen (E-08-Snapshot) bleiben als Zeitdokument stehen.
 
 ---
 
@@ -14,7 +15,7 @@
 
 **GO mit Anpassungen. Der Plan ist strukturell solide und deckt die Anforderungen weitgehend ab. Die Architektur (Contract-First, Vertical Slice, Config-Parametrierung, Fail-safe als benannte Tests) ist korrekt. Die kritischen Anpassungen sind nicht inhaltlicher, sondern sequenzierungs- und ressourcentechnischer Natur: P0 muss heute (2026-06-21) abgeschlossen werden, P6.1 (FA-06 Prognose) muss von Kann zu Soll hochgestuft und mit einem einfachen Lineare-Regression-Ansatz als eigene M3-Task eingeplant werden, und der 40%-Individualanteil muss sofort mit Personenzuweisung versehen werden.**
 
-**Abdeckung:** WEITGEHEND ABGEDECKT, aber drei strukturelle Luecken. Alle FA/NF/RB aus Usecase-quick.md sind einem Task zugeordnet — mit diesen Ausnahmen: (1) FA-06 (30-min-Prognose mit >=30 min Vorlaufzeit) ist MUSS-Anforderung laut Usecase-quick.md §3.1, aber als P6.1 ausschliesslich unter T3/Stretch/Kann eingeplant. Das erzeugt eine harte Luecke zum Pruefungs-Minimum. (2) NF-02 (Datenaktualitaet/Latenz, Zielwert TBD) hat keinen expliziten Task, der den Zielwert festlegt und im Entscheidungslogbuch dokumentiert — nur ein offener Punkt in openDecisions. (3) FA-13 (Geoposition je Wetterstation, Kann-Anforderung) hat keinen Task, der die Klaerung im Seam-Sync formalisiert und das Ergebnis ins Datenmodell uebernimmt. Alle Pflicht-Deliverables laut Pruefungsleistung Anforderungen.txt (Woche 2: Datenmodell, API-Dokumentation, Vereisungslogik) sind ueber P1+P2+E-07 abgedeckt. Der 40%-Individualanteil (Entscheidungslogbuch, je Person) ist als P5.4 geplant, aber nicht verteilt — kein Task weist den 11 Einzelpersonen ihre Reflexion zu.
+**Abdeckung:** WEITGEHEND ABGEDECKT, aber drei strukturelle Luecken. Alle FA/NF/RB aus Usecase-quick.md sind einem Task zugeordnet — mit diesen Ausnahmen: (1) FA-06 (30-min-Prognose mit >=30 min Vorlaufzeit) ist MUSS-Anforderung laut Usecase-quick.md §3.1, aber als P6.1 ausschliesslich unter T3/Stretch/Kann eingeplant. Das erzeugt eine harte Luecke zum Pruefungs-Minimum. (2) NF-02 (Datenaktualitaet/Latenz, Zielwert TBD) hat keinen expliziten Task, der den Zielwert festlegt und im Entscheidungslogbuch dokumentiert — nur ein offener Punkt in openDecisions. (3) FA-13 (Geoposition je Wetterstation, Kann-Anforderung) hat keinen Task, der die Klaerung im Team-Sync formalisiert und das Ergebnis ins Datenmodell uebernimmt. Alle Pflicht-Deliverables laut Pruefungsleistung Anforderungen.txt (Woche 2: Datenmodell, API-Dokumentation, Vereisungslogik) sind ueber P1+P2+E-07 abgedeckt. Der 40%-Individualanteil (Entscheidungslogbuch, je Person) ist als P5.4 geplant, aber nicht verteilt — kein Task weist den 11 Einzelpersonen ihre Reflexion zu.
 
 **Machbarkeit:** M2 KRITISCH GEFAEHRDET, M3 machbar mit Abstrichen. Zentrale Befunde: (1) Null Produktionscode vorhanden (04-Source-code/source/test-suite/dfghjk.txt als einziger Inhalt). Scaffolding (P0.2+P0.3) haette M1-Ende (2026-06-19) erledigt sein muessen — ist es nicht. Das kostet heute Montag einen vollen Tag bevor P1 beginnen kann. (2) Lucas als einziger echter Backend-Dev auf P0+P1.1+P1.2+P1.4+P2.4+P5.1+P5.2: sieben kritische Pfad-Tasks, bei realistisch 30 Produktiv-Stunden/Woche. Das ist physikalisch nicht vollstaendig in 5 Tagen moeglich. Petzold kann P1.2 und P2.2 uebernehmen, aber P2.4 (Bewertungsmodul, Groesse L) ist nicht delegierbar. (3) P2.4 (Groesse L, ~40-60h) soll bis Freitag 2026-06-26 fertig + getestet (>=80% Coverage) sein — das setzt voraus, dass Lucas ab Mittwoch 08:00 ausschliesslich an P2.4 arbeitet, was nur moeglich ist wenn P1 bis Dienstag Abend vollstaendig abgeschlossen ist. (4) P3 (T1 Kernfunktion) als M2-Ziel bei gleichzeitigem P2: realistisch NUR wenn Petzold P3.1/3.2/3.3 vollautomatisch uebernimmt, waehrend Lucas P2.4 macht. (5) teamstruktur-final.md nennt 'Arash, Luca' als Backend-Developer — aber im Plan werden Hartling und Ganter als Anfaenger behandelt, was nicht konsistent ist. Die tatsaechliche Verfuegbarkeit von Arash/Sarkhab fuer Bewertungslogik ist unklar. (6) P6.1 (Prognose, FA-06=MUSS) als T3/Stretch ist fachlich riskant — ohne Prognose fehlt ein dokumentiertes MUSS-Feature im Prototyp fuer M3.
 
@@ -32,7 +33,7 @@
 ### Abdeckungslücken / Nachzuziehen
 - FA-06 (30-min-Prognose) ist MUSS-Anforderung laut Usecase-quick.md §3.1 und Pruefungsleistung Anforderungen.txt (Deliverable 'Vereisungslogik' Woche 2 schliesst Vorwarnlogik ein), ist aber als P6.1 ausschliesslich unter T3/Stretch/Kann geplant. Ohne Prognose fehlt ein MUSS-Feature im M3-Prototyp.
 - NF-02 (Datenaktualitaet/Latenz: Messintervall + max. Latenz) hat keinen Task, der den Zielwert verbindlich festlegt und im Entscheidungslogbuch dokumentiert. Aktuell nur als offener Punkt ohne Owner und Deadline.
-- FA-13 (Geoposition je Wetterstation) hat keinen Task, der die Entscheidung aus dem Seam-Sync (ortsfestes Stationsdatum vs. pro Reading) formalisiert und das Ergebnis im Datenmodell verankert.
+- FA-13 (Geoposition je Wetterstation) hat keinen Task, der die Entscheidung aus dem Team-Sync (ortsfestes Stationsdatum vs. pro Reading) formalisiert und das Ergebnis im Datenmodell verankert.
 - 40%-Individualleistung (Pruefungsleistung Anforderungen.txt): P5.4 plant Entscheidungslogbuch als Gruppenaufgabe, aber die individuelle Reflexion (4-6 Seiten je Person, 11 Personen) hat keinen einzigen Task mit Personenzuweisung und Deadline. Ohne explizite Zuweisung pro Person drohen individuelle Notenabzuege.
 - Systemkontext-Dokument (Deliverable Woche 1 laut Pruefungsleistung Anforderungen.txt): Existiert nicht explizit im Repo — Backend-Konzept.md §1 ist Kandidat, aber kein Task verifiziert oder erstellt das formale Systemkontextdiagramm.
 - Deployment-/Betriebsmodell AE-01 (Lokal vs. Cloud) ist als offene Entscheidung gelistet, aber kein Task erzwingt eine verbindliche Entscheidung vor M2. Ohne Entscheidung fehlt eine Betriebsanleitung fuer die Live-Demo.
@@ -42,11 +43,11 @@
 
 ## 2. Überblick
 
-Alarmsystem Vereisungserkennung — Backend Gruppe 2 (G2). Prototyp zur Erfassung und Bewertung von Vereisungsbedingungen auf der Startbahn des Flughafens ANR (3-wöchiges Projekt). Stack T0 (Python + FastAPI + SQLite) ist faktisch gewählt; die G1→G2-Naht ist **Pull** (G2 = HTTP-Client/Poller gegen G1s `GET /current`, vgl. E-31). Kritischer Pfad: API/Datenmodell-Naht P1 (bis Woche 2, Di fällig) + Bewertungsmodul P2.4 (3-Faktor: T_s + ΔT + RH) mit beiden Vorfall-Testfällen + Fail-safe. Meilenstein M2 (Ende Woche 2, ca. 2026-06-26) ist risikoreich: kein Produktionscode vorhanden, Lucas als Single-Point-of-Failure auf kritischem Pfad.
+Alarmsystem Vereisungserkennung — Backend Gruppe 2 (G2). Prototyp zur Erfassung und Bewertung von Vereisungsbedingungen auf der Startbahn des Flughafens ANR (3-wöchiges Projekt). Stack T0 (Python + FastAPI + **MySQL/MariaDB**, rohes PyMySQL — E-29/E-35) ist gewählt; die G1→G2-Naht ist **Pull** (G2 = HTTP-Client/Poller gegen G1s `GET /current`, vgl. E-31). Kritischer Pfad: API/Datenmodell-Naht P1 (bis Woche 2, Di fällig) + Bewertungsmodul P2.4 (3-Faktor: T_s + ΔT + RH) mit beiden Vorfall-Testfällen + Fail-safe. Meilenstein M2 (Ende Woche 2, ca. 2026-06-26) ist risikoreich: kein Produktionscode vorhanden, Lucas als Single-Point-of-Failure auf kritischem Pfad.
 
-**Kritischer Pfad:** P0.2–P0.3 (Scaffolding, Mo Woche 2) → P1.1–P1.4 (Contract, Mo/Di Woche 2) → Seam-Sync (Di 08:00) → P2.1–P2.6 (Vertical Slice, Mi–Fr Woche 2) → M2 Deadline (Fr 17:00 2026-06-26). Kein Überschreitung, alle PRs gemergt auf main bis Do 17:00 damit Fr für Abgabe-Freeze Zeit bleibt. Reservezeit: <12h für Rollback/Hotfixes. P3 Spillover zu Woche 3 akzeptiert. **Engpässe:** Lucas (P0+P1+P2.4+P5.1/5.2), Test-Team (P2.6+P3.6+P3.7+P5.3), DB-Engineers (P2.2+P3.1/3.2). **Mitigation:** Pair-Programming Mo/Di, Parallelisierung kleiner Tasks, TDD-Ansatz (Testfälle vor Code).
+**Kritischer Pfad:** P0.2–P0.3 (Scaffolding, Mo Woche 2) → P1.1–P1.4 (Contract, Mo/Di Woche 2) → Team-Sync (Di 08:00) → P2.1–P2.6 (Vertical Slice, Mi–Fr Woche 2) → M2 Deadline (Fr 17:00 2026-06-26). Kein Überschreitung, alle PRs gemergt auf main bis Do 17:00 damit Fr für Abgabe-Freeze Zeit bleibt. Reservezeit: <12h für Rollback/Hotfixes. P3 Spillover zu Woche 3 akzeptiert. **Engpässe:** Lucas (P0+P1+P2.4+P5.1/5.2), Test-Team (P2.6+P3.6+P3.7+P5.3), DB-Engineers (P2.2+P3.1/3.2). **Mitigation:** Pair-Programming Mo/Di, Parallelisierung kleiner Tasks, TDD-Ansatz (Testfälle vor Code).
 
-**Sequencing:** **Kritischer Pfad (sequenziell):** P0 (Scaffolding, 1–2 Tage) → P1 (Contract, Mo/Di Woche 2, 2–3 Tage) → P2 (Vertical Slice, Mi–Fr Woche 2, 3–4 Tage) ⇒ M2-Deadline (2026-06-26). **Parallel nach P1.4 (Contract eingefror):** P3 (T1 Kernfunktion, Mi Woche 2 – Mi Woche 3, mit Spillover), P4 (T2 Ops, Di Woche 3 – Do Woche 3), P5 (Integration/Demo/Doku, Do–Fr Woche 3), P6 (T3 Stretch, nur wenn Zeit). **Täglich Standup erforderlich:** Kritischer Pfad-Status (Traffic-Light), Blocker früh eskalieren. **Weekly Seam-Sync mit G1+G3:** Mo oder Di je Woche, schriftlich dokumentieren. **Entscheidungslogbuch laufend:** nicht erst Woche 3. Jedes Teamitglied ≥1 Entscheidung (40% Individualleistung).
+**Sequencing:** **Kritischer Pfad (sequenziell):** P0 (Scaffolding, 1–2 Tage) → P1 (Contract, Mo/Di Woche 2, 2–3 Tage) → P2 (Vertical Slice, Mi–Fr Woche 2, 3–4 Tage) ⇒ M2-Deadline (2026-06-26). **Parallel nach P1.4 (Contract eingefror):** P3 (T1 Kernfunktion, Mi Woche 2 – Mi Woche 3, mit Spillover), P4 (T2 Ops, Di Woche 3 – Do Woche 3), P5 (Integration/Demo/Doku, Do–Fr Woche 3), P6 (T3 Stretch, nur wenn Zeit). **Täglich Standup erforderlich:** Kritischer Pfad-Status (Traffic-Light), Blocker früh eskalieren. **Weekly Team-Sync mit G1+G3:** Mo oder Di je Woche, schriftlich dokumentieren. **Entscheidungslogbuch laufend:** nicht erst Woche 3. Jedes Teamitglied ≥1 Entscheidung (40% Individualleistung).
 
 ---
 
@@ -60,18 +61,18 @@ Repo-Struktur, Stack-Entscheidung, lauffähiges Grundgerüst (GET /health), Bran
 **Exit-Kriterien:**
 - src/, tests/, config/ Ordnerstruktur angelegt und gepusht
 - GET /health Endpoint startet mit HTTP 200
-- Stack-Entscheidung (Python+FastAPI+SQLite) im Entscheidungslogbuch begründet
+- Stack-Entscheidung (Python+FastAPI+MySQL/MariaDB, rohes PyMySQL — E-29/E-35) im Entscheidungslogbuch begründet
 - Branch/PR-Konventionen + DoD in README.md dokumentiert
 
 ### P1 — Contract: API + Datenmodell (KRITISCH)  ·  M2
 **Zeitfenster:** Woche 2, Montag/Dienstag (2026-06-22 bis ca. 2026-06-24, laut Zeitplan 'API Spec final' Di)
 
-Einfrieren der Naht zwischen G2/G1 und G2/G3. Formale API-Spezifikation v1, Datenmodell-Schema, Seam-Sync mit G1 (Ingest-Payload) und G3 (GET-Formate). Alles blockiert, bis P1.4 final ist.
+Einfrieren der Naht zwischen G2/G1 und G2/G3. Formale API-Spezifikation v1, Datenmodell-Schema, Team-Sync mit G1 (Ingest-Payload) und G3 (GET-Formate). Alles blockiert, bis P1.4 final ist.
 
 **Exit-Kriterien:**
 - Datenmodell-Schema (6 Entitäten: reading, assessment, alarm, acknowledgement, threshold_set, audit_log) dokumentiert + reviewed
 - OpenAPI 3.0 Spezifikation (YAML/JSON) mit ≥15 Endpoints/Operationen vorhanden
-- Seam-Sync mit G1 + G3 durchgeführt, beide Gruppen schriftlich bestätigt
+- Team-Sync mit G1 + G3 durchgeführt, beide Gruppen schriftlich bestätigt
 - Contract v1 getaggt und an alle Gruppen kommuniziert, PR gemergt
 
 ### P2 — T0 Vertical Slice (Ingest→Bewertung→API)  ·  M2
@@ -159,13 +160,13 @@ E2E-Integration mit G1 (echte/sim Daten) + G3 (Frontend konsumiert API), Testpro
 | R1: Lucas-Bottleneck auf kritischem Pfad (P1 + P2.4) | Critical | Pair-Programming Lucas + Petzold für P1.1/P1.2 (Mo/Di Woche 2). Hartling/Ganter on separate abgegrenzten Tasks (P3.4, P3.5). Backup: Johannes Petzold kennt API-Design, kann P1.2 übernehmen falls Lucas ausfällt. |
 | R2: Kein Produktionscode vorhanden (src/, tests/ leer) | Critical | P0.2 + P0.3 SOFORT (Mo 08:00 Woche 2). Scaffolding ist 3–4h Arbeit, muss VOR P1/P2 done sein. Nicht blockieren lassen. |
 | R3: G1-Finalwerte ausstehend (~2 Tage), Schwellen sind DUMMIES | High | Alle Schwellen parametrierbar halten (config/thresholds.json, NICHT hardcoden). Sobald G1-Werte kommen: config aktualisieren, Tests rerun (kein Code-Change nötig). Grep-Hook gegen Hardcodes setzen. |
-| R4: P1 (Contract) nicht bis Di Woche 2 eingefroren → G1/G3 blockiert | Critical | Lucas/Petzold Pair-Programmierung Mo/Di. Seam-Sync Di 08:00 durchführen. OpenAPI-Export bis Di 17:00. |
+| R4: P1 (Contract) nicht bis Di Woche 2 eingefroren → G1/G3 blockiert | Critical | Lucas/Petzold Pair-Programmierung Mo/Di. Team-Sync Di 08:00 durchführen. OpenAPI-Export bis Di 17:00. |
 | R5: Zeitbombe M2 (Deadline Ende Woche 2, nur 5 Tage) | Critical | Realistisches Spillover: P3 (T1) wird teilweise zu M3 (Woche 3). Fokus: P0–P2.6 MUSS bis Do Woche 2 done sein, P3.1–P3.7 dann teils parallel teils Woche 3. Kanban-Board (Jira) mit täglichem Standup + Velocity-Tracking. |
-| R6: Seam-Sync nicht durchgeführt → API-Payload-Variationen offen | High | Termin verbindlich Mo 10:00 oder Di 08:00 Woche 2 blockieren. Protokoll schriftlich (E-Mail, Issue mit Label 'seam-sync-confirmed'). |
+| R6: Team-Sync nicht durchgeführt → API-Payload-Variationen offen | High | Termin verbindlich Mo 10:00 oder Di 08:00 Woche 2 blockieren. Protokoll schriftlich (E-Mail, Issue mit Label 'team-sync-confirmed'). |
 | R7: Fail-safe NF-01 wird vergessen oder nicht testbar implementiert | High | P3.7 ist explizite Testfälle-Task (5 Szenarien). DoD: alle 5 Tests grün. Code-Review-Gate: 'Keine GRÜN bei Ausfall'. |
 | R8: Bewertungsmodul P2.4 (Größe L, kritischer Pfad) läuft über | High | Zeitschätzung ~40–60h bei Lucas allein. Mit Petzold-Support (Code-Review, Config-Setup) reduzierbar auf ~30h. Mo/Di P0+P1 parallelisieren, Mi–Fr P2.4 intensive Focus. Backup-Plan: Simple Version Mi–Do, Refinement Fr/Woche 3. |
 | R9: RB-01 wird durch Versehen in Code-Review übersehen | Medium | Pre-Commit-Hook + GitHub-Action Lint vor Merge (suche nach 'unlock|freigabe|sperr|execute'). P4.5 als explizite Review-Task. Entscheidungslog E-15: RB-01 Enforcement dokumentiert. |
-| R10: API-Versioning + Breaking-Changes unklar → Integrations-Chaos | Medium | P1.2: Versionierungsstrategie (z.B. /v1/ in URL). P1.3: Seam-Sync klären, wie neue GET-Parameter eingeführt werden (z.B. /v1/assessment/current?version=2). Dokumentation in CHANGELOG.md. |
+| R10: API-Versioning + Breaking-Changes unklar → Integrations-Chaos | Medium | P1.2: Versionierungsstrategie (z.B. /v1/ in URL). P1.3: Team-Sync klären, wie neue GET-Parameter eingeführt werden (z.B. /v1/assessment/current?version=2). Dokumentation in CHANGELOG.md. |
 
 ---
 
@@ -173,7 +174,7 @@ E2E-Integration mit G1 (echte/sim Daten) + G3 (Frontend konsumiert API), Testpro
 
 - AE-01: Lokal vs. Cloud Betriebsmodell — IT bevorzugt lokal (kein Cloud-Overhead), sieht aber Cloud-Wartungsvorteile. Entscheidung bis M2 treffen + ins Entscheidungslogbuch dokumentieren.
 - AE-02: Fernzugriff (Umfang, Sicherheit) — Fernzugriff als 'wäre praktisch' erwähnt (Wunsch/Kann, kein Muss). Umfang offen. T3-Feature. Abh. von AE-01.
-- NF-02-Zielwert: Datenaktualität/Latenz (Messintervall + max. Latenz) nicht definiert. Muss vor M2 Pipeline-Bau festgelegt werden. Seam-Sync P1.3 klären.
+- NF-02-Zielwert: Datenaktualität/Latenz (Messintervall + max. Latenz) nicht definiert. Muss vor M2 Pipeline-Bau festgelegt werden. Team-Sync P1.3 klären.
 - NF-04-Zielwert: Sensorgenauigkeit, FP/FN-Rate Zielwerte (FP<1%, FN=0%) sind Designziele, keine harten Metriken. Validierung gegen Referenzmessung offen.
 - NF-10-Budget: Kein konkreter Budgetrahmen definiert. WX-500 ~4.800 EUR/St., ggf. 10 Stationen. Budget-Entscheidung ausstehend.
 - FA-05-Präzisierung: 'Vereisung erkennen' noch nicht präzisiert. Akzeptanzkriterium: Bewertungslogik zeigt auslösende Messgröße + Schwellwert deutlich (driving_factor + explanation).
@@ -187,19 +188,19 @@ E2E-Integration mit G1 (echte/sim Daten) + G3 (Frontend konsumiert API), Testpro
 _CRITICAL MISALIGNMENT: G2 hat dokumentierte Architektur + klare Anforderungen, aber ZERO Code (src/tests leer). Die API/Datenmodell-Naht ist nicht eingefroren; P1 ist verbindlich bis Ende Woche 2 (Montag/Dienstag), aber noch nicht begonnen. Der assessment/-Kern ist die Höhe des Risikos: beide Vorfälle müssen als benannte grüne Testfälle fungieren, aber die schwellenwert-ZAHLEN sind DUMMIES (G1-Finalwerte ausstehend ~2 Tage). Betriebsmodell (AE-01/AE-02) unbegründet offen. Die Architektur ist strukturell tragfähig; die kritischen Lücken sind Timing + Contract-Freeze + Testfälle-Reifheit, nicht inhaltliche Widersprüche._
 
 - **[CRITICAL] API/Datenmodell-Naht P1 nicht eingefroren, fällig SOFORT (Mo/Di Woche 2)** _(betrifft: G1 (Ingest-Payload unklar), G3 (GET-Formate unklar), paralleles Arbeiten blockiert)_
-  - → Lucas + Johannes müssen Mo/Di die gesamte P1 (P1.1–P1.4) abschließen, bevor ein einziger Zeile Code-PR für P2 anfange. Seam-Sync mit G1+G3 muss bis Di 17:00 Uhr stattgefunden haben. Fallback: formale OpenAPI-Spezifikation schreiben und die 6 kritischen Felder (reading-Ingest + assessment-Response) in .md + Schema als JSON-Beispiel dokumentieren.
+  - → Lucas + Johannes müssen Mo/Di die gesamte P1 (P1.1–P1.4) abschließen, bevor ein einziger Zeile Code-PR für P2 anfange. Team-Sync mit G1+G3 muss bis Di 17:00 Uhr stattgefunden haben. Fallback: formale OpenAPI-Spezifikation schreiben und die 6 kritischen Felder (reading-Ingest + assessment-Response) in .md + Schema als JSON-Beispiel dokumentieren.
 - **[CRITICAL] Null Produktionscode vorhanden: src/ + tests/ komplett leer** _(betrifft: P2 kann nicht parallel zu P1 laufen (Blockedependency), kritischer Pfad wird sequenzialisiert statt parallelisiert)_
   - → P0 sofort (heute/Mo) abschließen: 2-3 Stunden für Ordnerstruktur src/ingest/.../tests/ + pyproject.toml + /health-Endpoint. Dann P1 parallel zu P2 über gemeinsame .gitignore + feature-branches.gitignore. Ohne P0-heute können P2.1–P2.6 nicht beginnen.
 - **[CRITICAL] Datennaht G1↔G2 unspezifisch: G1s `GET /current`-Snapshot-Shape nicht final** _(betrifft: G2 weiß nicht exakt, welche Felder G1 im Snapshot liefert; G2 kann keine robuste Validierung schreiben; G3 weiß nicht, welche Felder in GET /assessment/current zu erwarten sind)_
-  - → P1.1–P1.2 als blockedPRIORITY: formale API-Spec (OpenAPI 3.1 JSON oder minimal Markdown + JSON-Schema) mit: (1) **Konsum von G1s `GET /current`** — EIN Snapshot aller aktuellen Messwerte + gemeinsamer `measured_at` (UTC/ISO-8601): erwartete Felder (sensor_id, measured_at, surface_temp_c, air_temp_c, humidity_pct, pressure_hpa, status); plus `GET /health` als Erreichbarkeits-Check. Feldnamen final im Seam-Sync (G1 = Server, definiert den Shape). (2) GET /assessment/current: Response {ts, risk_level, driving_factor, explanation, reading_id, threshold_set_id}. (3) Fehlerbehandlung + Status-Codes (inkl. Poller-Timeout/503 von G1). (4) Versioning-Strategie (z.B. /v1/).
+  - → P1.1–P1.2 als blockedPRIORITY: formale API-Spec (OpenAPI 3.1 JSON oder minimal Markdown + JSON-Schema) mit: (1) **Konsum von G1s `GET /current`** — EIN Snapshot aller aktuellen Messwerte + gemeinsamer `measured_at` (UTC/ISO-8601): erwartete Felder (sensor_id, measured_at, surface_temp_c, air_temp_c, humidity_pct, pressure_hpa, status); plus `GET /health` als Erreichbarkeits-Check. Feldnamen final im Team-Sync (G1 = Server, definiert den Shape). (2) GET /assessment/current: Response {ts, risk_level, driving_factor, explanation, reading_id, threshold_set_id}. (3) Fehlerbehandlung + Status-Codes (inkl. Poller-Timeout/503 von G1). (4) Versioning-Strategie (z.B. /v1/).
 - **[CRITICAL] Bewertungsmodul P2.4 ist größte einzelne Risikoaufgabe; beide Vorfälle als benannte Testfälle still offen** _(betrifft: DoD für P2.4 kann nicht erfüllt werden ohne echte Schwellenwerte; Testschreiben läuft gegen Dummy-Werte; Risiko: am Freitag (M2) Test bestanden, am Montag mit realen Werten fehlgeschlagen)_
   - → Parallel zu P1: (1) Beide Vorfälle als parametrisierte pytest-Testfälle schreiben, mit Dummy-Schwellenwerten ausfüllen (z.B. über Config-Fixture). (2) assessment() als reine Funktion (ggf. mit Mock-Config) implementieren. (3) sobald G1-Finalwerte eintreffen: Config aktualisieren + Tests rerun (kein Code-Change nötig dank Parametrierbarkeit). Fail-safe-Test (Stale → GELB) ebenfalls schreiben, auch ohne finale Schwellen. Ziel: >=80% Coverage bis M2, beide VF-Tests grün.
 - **[HIGH] Betriebsmodell AE-01/AE-02 unbegründet offen, impactet NF-03/NF-07/K9** _(betrifft: Architektur-Entscheidung müsste vor M2 dokumentiert sein, um Betriebsbetrieb-szenarios (Docker, systemd, Netzwerk-Config) zu validieren)_
   - → E-28 ins Entscheidungslog: 'Lokal mit Raspberry-Pi als T0 (preiswert, Demo-gültig, Single-PoF akzeptiert); Cloud (AWS/Azure) als T2-Erweiterung später'. Begründung: (1) 3-Woche Projekt, (2) kein Operations-Team, (3) lokale Wartung einfacher für Demo. Notieren: bei Produktivübergang müsste Hochverfügbarkeit (AE-01 Cloud) entschieden werden. NF-07-Stub (Auth-Placeholder) reicht für M2.
 - **[HIGH] G1-Schwellenwert-Finalwerte ausstehend (~2 Tage); Config-Parametrierbarkeit noch nicht implementiert** _(betrifft: Testmethodologie (Test gegen Config-Fixture vs. Hard-coded Schwellen), M2-DoD-Akzeptanz (echte vs. Dummy-Schwellen), Vertraubarkeit der Bewertungslogik)_
   - → SOFORT: (1) config/thresholds.example.json mit Dummy-Werten anlegen (aus Schwellenwerte.md §2). (2) src/config/__init__.py mit Config-Loader schreiben (YAML/JSON-Read, Fallback auf Defaults). (3) P2.4 assessment() erhält config als Argument oder liest aus sys-Config (DI-Pattern). (4) P2.6 Unit-Tests verwenden pytest.mark.parametrize über Config-Varianten (z.B. '@pytest.fixture(params=[config_dummy, config_conservative])'). Sobald G1-Werte eintreffen: config/thresholds.json aktualisieren, Tests rerun, kein Code-Änderung nötig. P4.3 (Laufzeit-UI) kann danach gebaut werden.
-- **[HIGH] Seam-Sync mit G1+G3 nicht stattgefunden (1×/Woche laut Team-Organisation, aber noch nicht durchgeführt)** _(betrifft: Kommunikations-Fehler zwischen G1/G2/G3 in der kritischsten Phase (Contract-Lock-in Woche 2))_
-  - → Lucas/Johannes müssen heute (Mo) oder spätestens Di 09:00 den Seam-Sync durchführen (virtuelles Treffen oder schriftliche Bestätigung je Gruppe). Agenda: (1) G1s `GET /current`-Snapshot-Felder + Formate (welche Messwerte, gemeinsamer `measured_at` in UTC, `status`-Encoding) + `GET /health`-Vertrag (200=ok/503=fault) + G2-Poll-Intervall (≤ 60 s) abstimmen. (2) GET /assessment/current Response. (3) FA-13 Geoposition: wie und wo. Schriftliche Bestätigung per E-Mail an Architekten + GitHub-Issue labeln 'seam-sync-confirmed' oder ähnlich. Ohne Mo/Di-Bestätigung: P1.4 (Freeze) nicht möglich → M2 blockiert.
+- **[HIGH] Team-Sync mit G1+G3 nicht stattgefunden (1×/Woche laut Team-Organisation, aber noch nicht durchgeführt)** _(betrifft: Kommunikations-Fehler zwischen G1/G2/G3 in der kritischsten Phase (Contract-Lock-in Woche 2))_
+  - → Lucas/Johannes müssen heute (Mo) oder spätestens Di 09:00 den Team-Sync durchführen (virtuelles Treffen oder schriftliche Bestätigung je Gruppe). Agenda: (1) G1s `GET /current`-Snapshot-Felder + Formate (welche Messwerte, gemeinsamer `measured_at` in UTC, `status`-Encoding) + `GET /health`-Vertrag (200=ok/503=fault) + G2-Poll-Intervall (≤ 60 s) abstimmen. (2) GET /assessment/current Response. (3) FA-13 Geoposition: wie und wo. Schriftliche Bestätigung per E-Mail an Architekten + GitHub-Issue labeln 'team-sync-confirmed' oder ähnlich. Ohne Mo/Di-Bestätigung: P1.4 (Freeze) nicht möglich → M2 blockiert.
 - **[HIGH] OpenAPI-Spezifikation als verbindliches Deliverable D-08 noch nicht erstellt** _(betrifft: Interop-Testing zwischen G1/G2/G3 fehlt visuelle Schnittstellen-Dokumentation, Demo-API-Docs)_
   - → P1.2 wird zum schreiben einer OpenAPI 3.1 JSON-Datei erweitert (z.B. src/openapi.json oder docs/api-v1.json). Minimales Gerüst: (1) info{title, version}, (2) paths (G2-Serving): /health, /assessment/current (GET), /alarms (GET, T1), /readings (GET-Historie, T1) — die G1-Naht selbst ist KEIN G2-Endpoint mehr, sondern der dokumentierte Konsum von G1s `GET /current` + `GET /health` durch den Poller. (3) components.schemas: Reading, Assessment, Alarm, Error. Mit FastAPI + Pydantic: `from fastapi.openapi.utils import get_openapi` in main.py, dann in P2.1 auto-generiert. Oder Redoc/SwaggerUI per `app.openapi_schema = get_openapi(...)` + `@app.get('/openapi.json')`. Bis M2 muss docs/ einen Link zu live-API enthalten (z.B. Swagger UI unter /docs).
 - **[HIGH] Audit-Log-Schema unspezifisch; append-only Implementierung + Feld-Liste fehlend** _(betrifft: Logging-Konsistenz, Compliance-Nachweise, forensische Analyse von Zwischenfällen)_
@@ -223,7 +224,7 @@ _KRITISCHER STAND — M2-Deadline (Ende Woche 2, ca. 2026-06-26) in 5 Tagen mit 
   - → Nach Scaffolding: P1.1–P1.4 (Contract einfrieren) Montag/Dienstag parallel abschließen — dies ist kritischer Pfad für G1 und G3.
 - **[CRITICAL] G1-Finalwerte (Schwellenwerte) noch ausstehend — Dummy-Werte in Schwellenwerte.md** _(betrifft: P2.4 (Bewertungsmodul mit 2 Vorfall-Testfällen): Tests MÜSSEN gegen Config-Parameterwerte, nicht gegen Hardcode, geschrieben werden. P4.3 (Schwellen-Config-Endpoint) wird zur MUSS-Task, nicht Soll.)_
   - → Risk Mitigation: Dummy-Werte aus Schwellenwerte.md §2 in config/ als Startwerte + Unit-Tests gegen diese Config schreiben (nicht gegen absolute Werte). So können G1-Finalwerte später per Config-Update ohne Code-Änderung eingesetzt werden.
-- **[CRITICAL] API/Datenmodell-Naht P1 blockiert BEIDE Gruppe 1 und 3 — noch nicht eingefroriert** _(betrifft: G1 kann nicht gegen finales API-Format entwickeln; G3 kann nicht gegen finales Datenformat UI planen. Ohne P1.3-Seam-Sync (G1 + G3 bestätigen Contract) kann P1.4 nicht umgesetzt werden. P2 und alle nachfolgenden Backend-Tasks brauchen finales Datenmodell aus P1.1.)_
+- **[CRITICAL] API/Datenmodell-Naht P1 blockiert BEIDE Gruppe 1 und 3 — noch nicht eingefroriert** _(betrifft: G1 kann nicht gegen finales API-Format entwickeln; G3 kann nicht gegen finales Datenformat UI planen. Ohne P1.3-Team-Sync (G1 + G3 bestätigen Contract) kann P1.4 nicht umgesetzt werden. P2 und alle nachfolgenden Backend-Tasks brauchen finales Datenmodell aus P1.1.)_
   - → Formale Lieferdatei: OpenAPI 3.0 YAML/JSON im Repo unter docs/api/v1/openapi.yaml (oder .json). Dies ist Teil der DEL-08 Abnahmekriterium (Prüfungsleistung).
 - **[CRITICAL] RB-01 (kein Aktor) architektonisch definiert, aber noch nicht code-reviewed** _(betrifft: Sicherheits-Compliance: Wenn ein Entwickler versehentlich einen Endpoint wie POST /runway/lock oder DELETE /restrictions schreibt, ist RB-01 verletzt. Enforcement-Hook (RB-01-Guard) ist geplant (erinnerung/stand.md), aber noch nicht aktiv. Bis dahin: manuelles Review im PR.)_
   - → Dokumentation in README.md: Listing der erlaubten G2-Endpoints (GET /assessment/current, GET /health, GET /alarms, POST /alarms/{id}/ack, GET /readings?from&to) mit Begründung, dass KEIN POST/DELETE für Runway/Sperrung existiert. Die G1-Daten kommen per Poller (G2 = Client gegen G1s `GET /current`), nicht über einen G2-eigenen Ingest-Endpoint. Dies ist auch Teil der DEL-08 API-Dokumentation.
@@ -237,8 +238,8 @@ _KRITISCHER STAND — M2-Deadline (Ende Woche 2, ca. 2026-06-26) in 5 Tagen mit 
   - → Kanban-Board (Jira) muss diese Parallelisierung abbilden mit expliziten Story-Dependencies und Swim-Lanes.
 - **[HIGH] API/Datenmodell-Naht: Formale OpenAPI-Spez noch nicht erstellt** _(betrifft: DEL-08 (API-Dokumentation, fällig Ende Woche 2) ist eine Pflicht-Abgabe der Prüfungsleistung. Ohne formale Spezifikation können G1 und G3 nicht wirklich dagegen entwickeln. Auto-Codegen (OpenAPI-Generator) für Clients nicht möglich.)_
   - → Tool-Empfehlung: FastAPI auto-generiert OpenAPI aus Pydantic-Schemas (uvicorn --reload erzeugt docs unter /docs und /redoc). Aber EXPLIZIT ins Repo als statische Datei exportieren: `python -m fastapi openapi generate app.py > docs/api/v1/openapi.yaml`.
-- **[HIGH] Seam-Sync mit G1 und G3 noch nicht terminiert — aber T0 des Projekts** _(betrifft: P5.1 (E2E-Integration mit G1) und P5.2 (E2E-Integration mit G3) sind abhängig von Seam-Sync. Wenn Payload-Format erst in Woche 2 geklärt wird, bleibt wenig Zeit für Fehlersuche.)_
-  - → Dokumentieren in P1.3-Task oder neuem Dokument 02-Arbeitsdokumente/Seam-Sync-G1-G2-G3.md.
+- **[HIGH] Team-Sync mit G1 und G3 noch nicht terminiert — aber T0 des Projekts** _(betrifft: P5.1 (E2E-Integration mit G1) und P5.2 (E2E-Integration mit G3) sind abhängig von Team-Sync. Wenn Payload-Format erst in Woche 2 geklärt wird, bleibt wenig Zeit für Fehlersuche.)_
+  - → Dokumentieren in P1.3-Task oder neuem Dokument 02-Arbeitsdokumente/Team-Sync-G1-G2-G3.md.
 - **[MEDIUM] DoD für M2 nicht explizit zum Taskzustand gesynced — potenzielle Verwirrung bei Definition of Done** _(betrifft: M2-Abschluss-Bewertung: Ohne explizite DoD-Prüfung pro Task können 'fertige' Tasks trotzdem als incomplete gelten.)_
   - → Vor M2-Ablauf (2026-06-26): Explizite DoD-Checkliste für Jira-Tasks erstellen (oder in PR-Template). Beispiel:
 - [ ] Code reviewed und gemerged auf main
@@ -247,7 +248,7 @@ _KRITISCHER STAND — M2-Deadline (Ende Woche 2, ca. 2026-06-26) in 5 Tagen mit 
 - [ ] Entscheidung (falls getroffen) im Entscheidungslogbuch notiert
 Dies muss im PR-Template in .github/pull_request_template.md stehen.
 - **[MEDIUM] Schwellenwerte.md §3 Sensor-Kalibriervorgaben: G1-Verantwortung, aber Backend muss diese kennen** _(betrifft: P2.4 Bewertungsmodul: wenn Schwellwerte auf ±0,3 °C ausgelegt sind, aber echte Sensoren ±0,5 °C geben, können beide Vorfälle falsch klassifiziert werden.)_
-  - → Abhängigkeit hinzufügen: P2.4 blockiert durch P1.3 Seam-Sync (G1-Genauigkeits-Bestätigung).
+  - → Abhängigkeit hinzufügen: P2.4 blockiert durch P1.3 Team-Sync (G1-Genauigkeits-Bestätigung).
 - **[MEDIUM] Entscheidungslogbuch: 40% Individualleistung wird nicht von KI dokumentiert, aber noch nicht geplant** _(betrifft: Jeder Studierende (11 Leute in G2) muss eine Entscheidung selbst dokumentieren und reflektieren. Falls dies nicht passiert, verliert die gesamte Gruppe bis zu 40% der Gesamtnote.)_
   - → Fälligkeitstermin: 2026-07-03 (Ende Woche 3). Dies wird NICHT von KI geschrieben — jeder Mensch schreibt seine eigene Reflexion. KI darf nur als Schreib-Assistent fungieren (z.B. Draft-Struktur bereitstellen), aber der Text und die Reflexion müssen vom Menschen kommen.
 - **[MEDIUM] Audit-Log-Entitaet: Schema noch nicht spezifiziert** _(betrifft: P2.2 (Persistenz) + P4.2 (Audit-Log Implementierung): Entwickler wissen nicht, wie audit_log Schema aussehen soll. Risiko: mehrere Implementierungen, Inkompatibilität.)_
@@ -266,14 +267,14 @@ Dies muss im PR-Template in .github/pull_request_template.md stehen.
 _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische Pfad P1 (API/Datenmodell-Naht) MUSS sofort Montag/Dienstag abgeschlossen werden (Deadline Di Ende dieser Woche ~26.06). Lucas V. als einziger echter Backend-Dev sitzt gleichzeitig auf CTO/PM/Architekt-Rollen. P2.4 (Bewertungsmodul, Größe L, ~40-60h Schätzung) liegt kritisch auf ihm. Kein Produktionscode (src/tests/ nicht vorhanden) — Scaffolding blockiert alles und kostet 1-2 Tage. Drei parallele Engpässe: (1) API-Naht einfrieren + parallele Entwicklung ermöglichen, (2) Bewertungsmodul testen mit beiden Vorfällen + Fail-safe, (3) Ressourcen-Engpass bei Lucas. G1-Finalwerte nicht Blocker (parametrierbar bleiben), aber Drift-Risiko._
 
 - **[CRITICAL] P1 (Contract-first API/Datenmodell) liegt allein bei Lucas — 4 Tage bis Deadline** _(betrifft: P2 (Vertical Slice), P3 (T1), G1-Datenformat, G3-Frontend-Integration)_
-  - → SOFORT: Mo 09:00 — Lucas + Petzold (Pair) skizzieren Datenmodell in 2h (6 Entities, JSON-Schema; `reading` ohne `precip_type`, `ts` = G1s `measured_at`). Mo 14:00 — Lucas schreibt API-Spezifikation formal (OpenAPI 3.0 YAML, <3h). Di 08:00 — Telekonferenz Seam-Sync mit G1 + G3 (1h, Lucas moderiert): G1s `GET /current`-Snapshot-Shape + `GET /health` abstimmen. Di 17:00 — P1.4 Tag + Push. NICHT warten auf G1-Finalwerte (können später als Config-Werte kommen). ENTSCHEIDUNG JETZT: Poll-Intervall (≤ 60 s) + welche Felder G1 im `GET /current`-Snapshot garantiert liefert (Niederschlag ist gestrichen, E-32).
+  - → SOFORT: Mo 09:00 — Lucas + Petzold (Pair) skizzieren Datenmodell in 2h (6 Entities, JSON-Schema; `reading` ohne `precip_type`, `ts` = G1s `measured_at`). Mo 14:00 — Lucas schreibt API-Spezifikation formal (OpenAPI 3.0 YAML, <3h). Di 08:00 — Telekonferenz Team-Sync mit G1 + G3 (1h, Lucas moderiert): G1s `GET /current`-Snapshot-Shape + `GET /health` abstimmen. Di 17:00 — P1.4 Tag + Push. NICHT warten auf G1-Finalwerte (können später als Config-Werte kommen). ENTSCHEIDUNG JETZT: Poll-Intervall (≤ 60 s) + welche Felder G1 im `GET /current`-Snapshot garantiert liefert (Niederschlag ist gestrichen, E-32).
 - **[CRITICAL] Kein Produktionscode vorhanden — Scaffolding (src/, tests/, config/) blockiert M2** _(betrifft: P0, P2, P3 — alle anderen Tasks sind von Ordnerstruktur abhängig)_
   - → Mo 08:00 — START: Lucas legt SOFORT die Ordnerstruktur an (15 min mit Bash). Pair mit Petzold, um pyproject.toml + FastAPI-Main aufzusetzen (45 min, einfach). Mo 09:30 — GET /health läuft, main branch wird via PR gemergt. Ab Mo 10:00 können alle anderen auf Feature-Branches gegen diese Struktur arbeiten. NICHT blockieren lassen — Scaffolding vor P1 oder parallel, nicht nach.
 - **[CRITICAL] P2.4 (Bewertungsmodul, Größe L) — Lucas als einziger Owner bei kritischem Datenmangelrisiko** _(betrifft: M2 Deliverables (DEL-09), Alarmierungslogik, Live-Demo-Credibility)_
   - → PRIORISIERUNG: (1) Mo 10:00 (nach Scaffolding): Lucas + Petzold schreiben die reine Funktion der Bewertungslogik als isolierbares Modul assessment/core.py (Funktion evaluate_ice_risk(T_s, T_d, RH) -> str; 3-Faktor, kein Niederschlag-Argument). Startzeit: Mo 10:00, Ziel: Di 12:00 (Grundversion, ~6h Pair). (2) Alle Schwellen aus config/thresholds.json LADEN, nicht hardcoden. (3) Mi 08:00: Unit-Tests schreiben + beide Vorfälle als Testfälle. (4) Mi 17:00: Code-Review mit Arezo + Amelie (Test-Team). FEHLER VERMEIDEN: wenn T_s = -2.1 bei trockener Oberfläche (ΔT > 1,0 °C, auch bei 92 % Luftfeuchte), MUSS result=yellow sein (nicht orange) — Luft-RH triggert keine Feuchte mehr (E-33). Wenn T_s ≤ 0 und ΔT ≤ 0, MUSS result=rot sein. Testfälle sind nicht optional.
 - **[CRITICAL] Lucas-Bottleneck: CTO/PM/Systemarchitekt + einziger echter Backend-Dev in einer Person** _(betrifft: Alle kritischen Pfad-Tasks, Risiko für Ausfallkatastrophe bei Lucas' Krankheit/Überlastung)_
   - → RESSOURCEN-UMLENKUNG: (1) Petzold übernimmt P2.2 (Repository-Pattern, DB-Schema) + P3.1/P3.2 (Stale/Defekt-Erkennung) — das sind Backend-intensive aber von Bewertungslogik unabhängig. (2) Hartling + Ganter: NICHT auf kritischem Pfad. Ihnen geben: P3.4 (GET /alarms einfacher Endpoint, 2h), P3.5 (restliche Messgrößen, 3h), P4.4 (Historie-Endpoint, 2h). (3) Lucas fokussiert: SOFORT P0.2 (Scaffolding, 3h), dann P1.1–P1.4 (15h Mo/Di), dann P2.4 (40h Mi/Do/Fr und übers Wochenende). (4) TEST-TEAM (Arezo, Amelie): nicht idle rumstehen — sie schreiben Testfälle parallel zu Implementierung (P2.6, P3.6, P3.7 können concurrent laufen sobald Code da ist).
-- **[HIGH] Seam-Sync mit G1 + G3 nicht durchgeführt — API-Payload-Variationen sind offen** _(betrifft: P1.3, P2.1 (Ingest), P2.5 (GET /assessment), P5.1 (G1-Integration), P5.2 (G3-Integration))_
+- **[HIGH] Team-Sync mit G1 + G3 nicht durchgeführt — API-Payload-Variationen sind offen** _(betrifft: P1.3, P2.1 (Ingest), P2.5 (GET /assessment), P5.1 (G1-Integration), P5.2 (G3-Integration))_
   - → Di 08:00–09:00 Konferenz mit allen 3 Gruppen: Lucas (G2), G1-Lead, G3-Lead (30 min pro Seite). Agenda: (1) G1s `GET /current`-Snapshot finalisieren (garantierte Felder, gemeinsamer `measured_at` in UTC, `status`-Encoding, Constraints) + `GET /health`-Vertrag. (2) GET /assessment/current Antwort-Format (welche Felder müssen dabei sein?). (3) G2-Poll-Intervall (≤ 60 s) + Stale-Timeout absprechen. (4) Commitment: G1 sagt 'unser `GET /current` ist ab X stabil', G3 sagt 'wir konsumieren Y bis Montag Woche 3'. ENTSCHEIDUNG-PROTOKOLL ins Entscheidungslogbuch.
 - **[HIGH] G1-Finalwerte (~2 Tage ausstehend) — Parametrierbarkeit ist Bedingung, nicht Lösung** _(betrifft: P2.4 (Bewertungslogik), P4.3 (Config-Endpoint T2), Live-Demo-Zuverlässigkeit)_
   - → (1) JETZT Architektur-Design: Config-Layer muss zuerst kommen. Schwellenwerte.md definiert: welche 15–20 Parameter sind konfigurierbar (T_s_gruen_min, delta_T_feucht [ΔT-Oberflächenfeuchte-Schwelle ≤ 1,0 °C; kein Luft-RH-Parameter mehr, E-33], stale_timeout_s, etc.). (2) Implementierung: assessment/core.py NUR reine Funktion mit Parametern. Alle Schwelle-Laden-Logik in config/loader.py. (3) Fallback: config/thresholds.json hat hardcodierte Dummies. (4) STRENGE Regel: jede Schwelle muss als Konstante oder ENV-Var referenzierbar sein, NICHT als Literal. Code-Review-Gate: Search for '> 1.0' oder '0.0 °C' Strings wird REJECTED.
@@ -288,7 +289,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **[MEDIUM] Datenmodell-Audit-Log-Schema nicht spezifiziert — NF-09-Anforderung unterspecced** _(betrifft: P2.2 (Persistenz), P4.2 (Audit-Trail Implementation), Testprotokoll-Design)_
   - → Mo 13:00: Lucas + DB-Engineers (Andreas, Leon) in 30 min Pair schreiben das audit_log-Schema: id(pk), event_type(enum: reading_ingested|assessment_generated|alarm_raised|alarm_acknowledged), event_payload(json), actor(string), ts(datetime), version(int). Beispiel-Instanzen schreiben. Schema-Dokument in Backend-Konzept §4 ergänzen. Das gibt P2.2 klare Vorgaben.
 - **[MEDIUM] API-Versioning + Breaking-Change-Kommunikation nicht dokumentiert — riskant für G3** _(betrifft: P1.4 (Contract finalisieren), P5.2 (G3-Integration), Wartbarkeit)_
-  - → Di 09:00 (bei Seam-Sync): Lucas + G3-Lead einigen sich: (1) URL-basierte Versionierung (/v1/, /v2/) oder Header-basierte (Accept: application/vnd.anr-api.v1+json)? Empfehlung: URL (/v1/) is einfacher für Prototyp. (2) Breaking-Change-Regel: neue GET-Parameter müssen mit ?version=2 queryable sein, alte bleiben supported. (3) Deprecation-Window (z.B. 1 Woche in Woche 3). (4) Dokumentation: CHANGELOG.md im Repo, enthält alle API-Versionen.
+  - → Di 09:00 (bei Team-Sync): Lucas + G3-Lead einigen sich: (1) URL-basierte Versionierung (/v1/, /v2/) oder Header-basierte (Accept: application/vnd.anr-api.v1+json)? Empfehlung: URL (/v1/) is einfacher für Prototyp. (2) Breaking-Change-Regel: neue GET-Parameter müssen mit ?version=2 queryable sein, alte bleiben supported. (3) Deprecation-Window (z.B. 1 Woche in Woche 3). (4) Dokumentation: CHANGELOG.md im Repo, enthält alle API-Versionen.
 - **[MEDIUM] Prognose-Modul (forecast/, T3) nicht spezifiziert — aber als Stretch im Zeitplan** _(betrifft: Code-Struktur, T3-Stretch-Arbeit (Woche 3))_
   - → Do Woche 1 (noch diese Woche, Mo 17:00): Lucas + Petzold skizzieren forecast/-Modul-API (1h): Input=Zeitreihe der letzten 30min von T_s/T_d/p, Output=trend_prediction(T_s_in_30min). Nicht implementieren, nur Schnittstelle. Kommentar in src/forecast/__init__.py. Das verhindert, dass Bewertungslogik (assessment/) später Prognose-Code inline hat.
 - **[MEDIUM] Fail-safe-Test (P3.7) ist abhängig von Stale/Defekt-Erkennung (P3.1/P3.2), aber nicht explizit sequenziert** _(betrifft: P3.1/P3.2/P3.7 Sequenzierung, Test-Team-Auslastung)_
@@ -296,7 +297,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **[LOW] Systemkontext-Dokument (DEL-03) explizit nicht im Repo gefunden — möglicherweise Lücke für M1-Abgabe** _(betrifft: M1-Abgabe-Vollständigkeit, Bewertungs-Checklisten)_
   - → Mo 12:00: Lucas + PM prüfen Abgabeverzeichnis 03-abgaben/ und Studierenden-Handreichung.txt: Was ist Systemkontext genau? Ist Backend-Konzept.md §1 ausreichend? Falls nein: kurze Diagra-mme (C4-Model, Context-Diagram) in 1h neu schreiben. Sollte keine M1-Überraschung sein.
 - **[LOW] erinnerung/stand.md ist 4 Tage alt (2026-06-17) — liest sich wie Montag-Morgen-Notiz aus Vorwoche** _(betrifft: Projektgedächtnis, Onboarding neuer Personen)_
-  - → Mo 17:00 (End-of-Day): Lucas + PM aktualisieren erinnerung/stand.md: Woran wir diese Woche arbeiten (P0.2, P0.3, P1.1–P1.4). Offene Punkte (Seam-Sync Di, G1-Werte ausstehend). Blockers (Lucas-Ressourcen). Fälligkeiten (API Spec final Fr). Commit ins Repo. Wird beim nächsten /start gelesen.
+  - → Mo 17:00 (End-of-Day): Lucas + PM aktualisieren erinnerung/stand.md: Woran wir diese Woche arbeiten (P0.2, P0.3, P1.1–P1.4). Offene Punkte (Team-Sync Di, G1-Werte ausstehend). Blockers (Lucas-Ressourcen). Fälligkeiten (API Spec final Fr). Commit ins Repo. Wird beim nächsten /start gelesen.
 
 ---
 
@@ -330,7 +331,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Task · Highest · S
 - **Owner (Empfehlung):** Lucas Voehringer (Systemarchitekt)
 - **Anforderungen:** NF-05, NF-10
-- **Beschreibung:** Begründe Wahl Python+FastAPI+SQLite vs. Alternativen (Flask, Node, MQTT). Dokumentation ins Entscheidungslogbuch (E-08).
+- **Beschreibung:** Begründe Wahl Python+FastAPI+MySQL/MariaDB (rohes PyMySQL, E-29/E-35) vs. Alternativen (Flask, Node, MQTT). Dokumentation ins Entscheidungslogbuch (E-08).
 - **DoD:**
   - Wahl im Entscheidungslogbuch E-08 mit Begründung (Deployment-Einfachheit, Team-Kompetenz, Skalierbarkeit)
   - Commit mit 'E-08: Stack final' Nachricht
@@ -367,7 +368,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 
 ### E-02 API/Datenmodell-Naht (Contract-First)  ·  M2
 
-**Ziel:** Formale API-Spezifikation v1, Datenmodell-Schema, Seam-Sync mit G1+G3, Contract einfrieren bis Di Woche 2.
+**Ziel:** Formale API-Spezifikation v1, Datenmodell-Schema, Team-Sync mit G1+G3, Contract einfrieren bis Di Woche 2.
 
 **Anforderungen:** FA-09, FA-01, FA-03
 
@@ -395,7 +396,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
   - G1-Naht dokumentiert: erwartetes `GET /current`-Snapshot-Schema + `GET /health` (Client-Sicht), gegen das der Poller validiert
   - Fehlerbehandlung (400 BadRequest, 503 ServiceUnavailable bei Stale/G1-Ausfall) dokumentiert
 
-#### P1.3: Seam-Sync mit G1+G3 durchführen
+#### P1.3: Team-Sync mit G1+G3 durchführen
 - **Typ / Prio / Schätzung:** Story · Highest · M
 - **Owner (Empfehlung):** Lucas Voehringer (G2 Moderator)
 - **Abhängig von:** P1.2
@@ -403,7 +404,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **DoD:**
   - Termin mit G1+G3 durchgeführt (Konferenz oder async schriftlich)
   - Geklärt: G1s `GET /current`-Snapshot-Felder/Typen + `measured_at` + `GET /health`, GET-Response Format, G2-Poll-Intervall
-  - G1 + G3 unterschreiben Bestätigung per E-Mail oder GitHub-Issue mit Label 'seam-sync-confirmed'
+  - G1 + G3 unterschreiben Bestätigung per E-Mail oder GitHub-Issue mit Label 'team-sync-confirmed'
   - Entscheidungslog-Eintrag: AE-03 'API-Versioning Strategie' + Final-Zielwerte für NF-02 (Messintervall)
 
 #### P1.4: Contract v1 einfrieren + kommunizieren
@@ -442,10 +443,10 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Story · High · M
 - **Owner (Empfehlung):** Andreas Moritz oder Leon Hartling (DB-Engineers)
 - **Abhängig von:** P1.1
-- **Beschreibung:** Implementiere Repository-Pattern für readings: Klasse ReadingRepository mit Methoden save(reading), get_latest(sensor_id), get_since(sensor_id, from_ts). SQLite-Tabelle 'readings' mit Index auf sensor_id + ts. Transaktionen + Error-Handling.
+- **Beschreibung:** Implementiere Repository-Pattern für readings: Klasse ReadingRepository mit Methoden save(reading), get_latest(sensor_id), get_since(sensor_id, from_ts). MySQL/MariaDB-Tabelle 'reading' mit Index auf sensor_id + ts. Transaktionen + Error-Handling.
 - **DoD:**
   - src/storage/repository.py mit ReadingRepository klasse
-  - SQLite-Schema (CREATE TABLE readings ...) in src/storage/schema.sql
+  - DDL (CREATE TABLE reading ...) in `migrations/schema.sql` (handgeschrieben, kein Alembic — E-35)
   - Unit-Tests für Repository (save, get_latest, get_since)
   - Integration mit src/api/main.py via Dependency Injection
 
@@ -722,7 +723,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Beschreibung:** Schreibe Reflexion über Backend-Arbeitsmethodik (Wasserfall für G2) im Vergleich zu G3 (Scrum). Was hat gut geklappt, was nicht? Wie würde man es wiederholen? Learnings für zukünftige Projekte.
 - **DoD:**
   - docs/REFLEXION.md mit ≥3 Seiten
-  - Abschnitte: Wasserfall-Phasen (P0–P6), Seam-Sync-Erfahrungen, Entscheidungslogbuch-Nutzen, Fehler/Learnings
+  - Abschnitte: Wasserfall-Phasen (P0–P6), Team-Sync-Erfahrungen, Entscheidungslogbuch-Nutzen, Fehler/Learnings
   - Vergleich zu Scrum-Ansatz (Beobachtungen von G3)
   - Fazit + Empfehlungen
 
@@ -776,7 +777,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Task · High · S
 - **Owner (Empfehlung):** Mohammadi oder Berger (Test-Setup)
 - **Abhängig von:** P0.2
-- **Beschreibung:** Erstelle pytest.ini oder pyproject.toml [tool.pytest]: testpaths=tests, addopts=--cov=src, markers=integration. Schreibe conftest.py mit Fixtures: config_fixture (Dummy-Schwellen), db_fixture (In-Memory SQLite), reading_factory (Test-Daten).
+- **Beschreibung:** Erstelle pytest.ini oder pyproject.toml [tool.pytest]: testpaths=tests, addopts=--cov=src, markers=integration. Schreibe conftest.py mit Fixtures: config_fixture (Dummy-Schwellen), db_fixture (In-Memory-Fake-Repository, DB-frei), reading_factory (Test-Daten).
 - **DoD:**
   - pyproject.toml [tool.pytest] oder pytest.ini vorhanden
   - conftest.py mit ≥3 Fixtures (config, db, reading_factory)
@@ -798,7 +799,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 
 #### P0.6: pytest-Setup + .github/workflows/test.yml (CI-Gate)  ·  [E-08-TestCI]  ·  M2 (heute 2026-06-21, Blocker fuer alle weiteren PRs)
 - **Owner (Empfehlung):** Petzold (15-30 Min Aufwand, eigenstaendig moeglich)
-- **Beschreibung:** Erstelle pyproject.toml mit [tool.pytest.ini_options] (testpaths=['tests'], addopts='--cov=src'). Erstelle tests/conftest.py mit Fixtures: config_fixture (laedt Dummy-Config), db_fixture (In-Memory-SQLite). Erstelle .github/workflows/test.yml: auf push/PR -> pytest --cov=src --cov-fail-under=80. Branch-Schutzregel empfehlen (test.yml muss gruen sein vor Merge auf main). Ohne diesen Task laufen alle Tests nur manuell.
+- **Beschreibung:** Erstelle pyproject.toml mit [tool.pytest.ini_options] (testpaths=['tests'], addopts='--cov=src'). Erstelle tests/conftest.py mit Fixtures: config_fixture (laedt Dummy-Config), db_fixture (In-Memory-Fake-Repository, DB-frei). Erstelle .github/workflows/test.yml: auf push/PR -> pytest --cov=src --cov-fail-under=80. Branch-Schutzregel empfehlen (test.yml muss gruen sein vor Merge auf main). Ohne diesen Task laufen alle Tests nur manuell.
 - **DoD:**
   - pyproject.toml oder pytest.ini mit testpaths=tests vorhanden
   - tests/conftest.py mit mindestens 2 Fixtures (config_fixture, db_fixture)
@@ -817,14 +818,14 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
   - GET /assessment/current Antwort um Feld 'forecast_risk' und 'forecast_horizon_min' erweitern
   - Coverage src/forecast/ >= 80%
 
-#### AE-01/NF-02: Betriebsmodell und Latenz-Zielwert festlegen (Entscheidungslog E-29 + E-30)  ·  [E-02-Contract]  ·  M2 (bis Di 2026-06-24, Teil von P1.3 Seam-Sync)
+#### AE-01/NF-02: Betriebsmodell und Latenz-Zielwert festlegen (Entscheidungslog E-29 + E-30)  ·  [E-02-Contract]  ·  M2 (bis Di 2026-06-24, Teil von P1.3 Team-Sync)
 - **Owner (Empfehlung):** Lucas Voehringer (Architekt, DRI Entscheidungslogbuch)
-- **Beschreibung:** Trifft zwei offene Entscheidungen: (1) AE-01: Lokal (Raspberry Pi) als T0-Betriebsmodell bestaetigen oder verwerfen. Begruendung ins Entscheidungslogbuch (E-29). (2) NF-02: Messintervall (Ziel: <=60s, laut Schwellenwerte.md §3) und max. Latenz Sensor->Anzeige (Ziel: <5s) als verbindliche Zielwerte festlegen. Diese Zielwerte beeinflussen Stale-Timeout-Config (180s = 3x60s), Testprotokoll-Kriterien und Demo-Setup. Seam-Sync P1.3 klaert NF-02 mit G1.
+- **Beschreibung:** Trifft zwei offene Entscheidungen: (1) AE-01: Lokal (Raspberry Pi) als T0-Betriebsmodell bestaetigen oder verwerfen. Begruendung ins Entscheidungslogbuch (E-29). (2) NF-02: Messintervall (Ziel: <=60s, laut Schwellenwerte.md §3) und max. Latenz Sensor->Anzeige (Ziel: <5s) als verbindliche Zielwerte festlegen. Diese Zielwerte beeinflussen Stale-Timeout-Config (180s = 3x60s), Testprotokoll-Kriterien und Demo-Setup. Team-Sync P1.3 klaert NF-02 mit G1.
 - **DoD:**
   - Entscheidungslog E-29: AE-01 mit Begruendung abgeschlossen (Lokal/Pi oder Cloud + Warum)
   - Entscheidungslog E-30: NF-02 Zielwert (Messintervall=60s, Latenz<5s) dokumentiert
   - config/thresholds.json: stale_timeout_s=180 als abgeleiteter Wert aus NF-02 kommentiert
-  - Seam-Sync-Protokoll bestaetigt NF-02-Zielwert mit G1
+  - Team-Sync-Protokoll bestaetigt NF-02-Zielwert mit G1
 
 #### Individual-Reflexionen: Entscheidungs-Owner-Zuweisung (40% Pruefungsleistung)  ·  [E-06-Integration]  ·  M3 (Zuweisung JETZT, Abgabe Ende Woche 3)
 - **Owner (Empfehlung):** Lucas Voehringer (PM-Rolle, koordiniert mit Teilprojektleitung)

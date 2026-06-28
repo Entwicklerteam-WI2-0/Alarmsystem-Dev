@@ -1,12 +1,12 @@
-# Seam-Sync G3 — Abstimmungsfragen zur API-Naht (v1)
+# Team-Sync G3 — Abstimmungsfragen zur API-Naht (v1)
 
-**Kontext:** DTB-19 (OpenAPI-Spec v1) → DTB-26 (Seam-Sync mit G1+G3)
+**Kontext:** DTB-19 (OpenAPI-Spec v1) → DTB-26 (Team-Sync mit G1+G3)
 **Autor:** Luca Ganter (G2, Backend) · **Stand:** 2026-06-23
 **Zweck:** Bevor wir den API-Vertrag (G2 → G3) einfrieren, klären wir mit G3 die offenen
 Punkte. Grundlage: DTB-19-Beschreibung + Klarstellungen von Lucas Vöhringer (Architekt).
 
 > **DoD-Hinweis (DTB-26):** Wir brauchen am Ende eine **schriftliche Bestätigung** von G3
-> (E-Mail oder GitHub-Issue mit Label `seam-sync-confirmed`).
+> (E-Mail oder GitHub-Issue mit Label `team-sync-confirmed`).
 
 ---
 
@@ -58,7 +58,7 @@ Wenn ihr mir zu 1–4 kurz antwortet, kann ich den Vertrag finalisieren. Danke! 
 - **Punkt 3 (RB-01) ist der kritischste** — G3 muss das **schriftlich bestätigen**
   (DoD DTB-26).
 - Antworten zu **1–4** fließen direkt in den OpenAPI-Entwurf (DTB-19) ein; offene Stellen
-  markieren wir dort als `TBD Seam-Sync DTB-26`.
+  markieren wir dort als `TBD Team-Sync DTB-26`.
 - **Nicht in dieser Nachricht** (betrifft G1 + Architekt, separat klären):
   Messintervall + Stale-Timeout (NF-02) und Geoposition (FA-13).
 

@@ -64,7 +64,7 @@
 ## 4. Cadence & Kommunikation
 
 - **Standup** 2–3×/Woche (10 Min oder async): Was lief, was blockt, was als Nächstes.
-- **Seam-Sync** 1×/Woche mit G1/G3 (Architekten-Runde) — Schema/Schnittstelle abgleichen.
+- **Team-Sync** 1×/Woche mit G1/G3 (Architekten-Runde) — Schema/Schnittstelle abgleichen.
 - **Ein** fester Kommunikationskanal; **jede Entscheidung sofort** ins Entscheidungslogbuch
   (Verantwortung Dokumentation) — Bewertungskriterium „Nachvollziehbarkeit".
 
