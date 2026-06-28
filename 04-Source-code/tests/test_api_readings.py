@@ -5,6 +5,7 @@ unterstuetzt Pagination (limit/offset) und Sortierung, validiert Query-Parameter
 bleibt bei Persistenzfehlern/Nicht-Verfuegbarkeit fail-safe (503 im Contract-Format).
 """
 
+from collections.abc import Generator
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -23,7 +24,7 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def _clear_overrides() -> None:
+def _clear_overrides() -> Generator[None, None, None]:
     yield
     app.dependency_overrides.clear()
 
@@ -177,14 +178,33 @@ def test_get_readings_naive_timestamp_returns_400(
     assert "detail" not in body
 
 
+def test_get_readings_non_utc_timestamp_returns_400(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    # Zeitzonenbewusst, aber NICHT UTC ('+05:30'): PyMySQL serialisiert die Wall-Clock
+    # und ignoriert den Offset -> auf DB-Ebene falsches Zeitfenster (DTB-34 Review MEDIUM).
+    # Muss daher 400 sein, nicht 200-mit-falschen-Daten.
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings", params={"from": "2026-06-23T10:00:00+05:30"})
+
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["code"] == "BAD_REQUEST"
+    assert "from" in body["message"]
+    assert "detail" not in body
+
+
 def test_get_readings_unexpected_mapping_error_returns_503(
     reading_repo: InMemoryReadingRepository,
 ) -> None:
-    # MEDIUM-Review-Finding DTB-34: Schluege das Domain->Wire-Mapping unerwartet fehl
-    # (Pydantic ValidationError erbt NICHT von ValueError), darf KEIN roher 500 mit
-    # {detail: ...} austreten — der Endpoint faengt es fail-safe als 503 im Contract-
-    # Format ab. Ein Stub liefert ein Objekt, dessen model_dump() das ReadingResponse-
-    # Schema verletzt (leeres dict -> Pflichtfelder fehlen -> ValidationError).
+    # MEDIUM-Review-Finding DTB-34: Schluege das Domain->Wire-Mapping unerwartet fehl,
+    # darf KEIN roher 500 mit {detail: ...} austreten — der Endpoint faengt es fail-safe
+    # als 503 im Contract-Format ab. In Pydantic v2 IST ValidationError eine Subklasse
+    # von ValueError -> deshalb steht `except ValidationError` im Endpoint VOR
+    # `except ValueError`, damit dieser serverseitige Drift als 503 (nicht als 400) endet.
+    # Ein Stub liefert ein Objekt, dessen model_dump() das ReadingResponse-Schema
+    # verletzt (leeres dict -> Pflichtfelder fehlen -> ValidationError).
     def _drifted_repo(*args: object, **kwargs: object) -> list[object]:
         return [SimpleNamespace(model_dump=lambda: {})]
 

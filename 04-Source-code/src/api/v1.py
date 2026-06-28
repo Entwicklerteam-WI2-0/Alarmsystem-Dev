@@ -128,7 +128,7 @@ def read_readings(
         Literal["asc", "desc"],
         Query(description="Sortierung nach measured_at."),
     ] = "desc",
-) -> list[ReadingResponse]:
+) -> list[ReadingResponse] | JSONResponse:
     """Liefert die Messwert-Historie fuer G3 (DTB-34, FA-03).
 
     Rein lesend (RB-01-neutral). Zeitstempel muessen zeitzonenbewusst sein;
@@ -161,13 +161,19 @@ def read_readings(
         logger.exception("Domain->Wire-Mapping der Readings-Historie fehlgeschlagen (Drift?).")
         return service_unavailable("G2 momentan nicht lieferfaehig.")
     except ValueError as exc:
-        # Ungueltige Parameter (from nach to, naive Zeitstempel) -> 400.
-        return JSONResponse(  # type: ignore[return-value]
+        # Ungueltige Parameter (from nach to, naive/Non-UTC Zeitstempel) -> 400.
+        # Debug-Log fuer die Diagnose wiederkehrender Client-400 (z. B. G3 sendet
+        # naive/Non-UTC-Zeitstempel) — die Ursache steht sonst nirgends serverseitig.
+        logger.debug("readings: ungueltige Query-Parameter: %s", exc)
+        return JSONResponse(
             status_code=400,
             content=Error(code="BAD_REQUEST", message=str(exc)).model_dump(),
         )
-    except RepositoryError:
-        # DB-Ausfall -> 503 (Fail-safe, NF-01-Geist).
+    except RepositoryError as exc:
+        # DB-Ausfall -> 503 (Fail-safe, NF-01-Geist). Die gewrappte Ursache am
+        # API-Rand loggen (analog assessment/current), sonst bleibt ein DB-Ausfall
+        # auf diesem Endpoint ohne API-seitige Spur.
+        logger.error("readings: Persistenz nicht verfuegbar: %s", exc)
         return service_unavailable("G2 momentan nicht lieferfaehig.")
     except Exception:  # noqa: BLE001 - letzter Fail-safe: JEDER Fehlerpfad liefert
         # `Error {code, message}` (Contract), nie ein roher 500 mit {detail: ...}.

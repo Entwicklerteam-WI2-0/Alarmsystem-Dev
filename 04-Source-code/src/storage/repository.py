@@ -8,7 +8,7 @@ parametrisierten Queries (Injection-Schutz).
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 import pymysql
@@ -50,6 +50,15 @@ def _validate_get_between_args(
         raise ValueError("'from' muss zeitzonenbewusst sein (UTC)")
     if to_dt is not None and to_dt.tzinfo is None:
         raise ValueError("'to' muss zeitzonenbewusst sein (UTC)")
+    # Nur naiv abzulehnen reicht NICHT: PyMySQL serialisiert eine zeitzonenbewusste
+    # datetime ueber ihre WALL-CLOCK-Felder und ignoriert den Offset (escape_datetime),
+    # waehrend die InMemory-Variante korrekt ueber UTC vergleicht. Ein Client mit z. B.
+    # '+05:30' liefe damit auf DB-Ebene auf das falsche Zeitfenster (stille Falschdaten,
+    # DTB-34 Review MEDIUM). Darum: zeitzonenbewusst UND Offset == +00:00 erzwingen.
+    if from_dt is not None and from_dt.utcoffset() != timedelta(0):
+        raise ValueError("'from' muss in UTC sein (Offset +00:00)")
+    if to_dt is not None and to_dt.utcoffset() != timedelta(0):
+        raise ValueError("'to' muss in UTC sein (Offset +00:00)")
     if from_dt is not None and to_dt is not None and from_dt > to_dt:
         raise ValueError("'from' darf nicht nach 'to' liegen")
     if limit <= 0:
