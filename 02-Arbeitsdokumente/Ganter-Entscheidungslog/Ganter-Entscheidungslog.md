@@ -1,8 +1,36 @@
 # Persönliches Entscheidungslog — Luca Ganter (G2)
 
-> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-27 · **Zeitraum:** 2026-06-23 bis 2026-06-27
+> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-28 · **Zeitraum:** 2026-06-23 bis 2026-06-28
 > **Autor:** Luca Ganter · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
+
+---
+
+## Projektkontext (für die Einordnung)
+
+**Projekt:** Prototyp zur **Erfassung und Bewertung von Vereisungsbedingungen** am (fiktiven)
+Regionalflughafen ANR. Das System ist eine reine **Entscheidungsunterstützung**: Aus Sensordaten leitet
+es eine **4-stufige Risiko-Ampel** (grün / gelb / orange / rot) ab, erzeugt Alarme und stellt alles über
+eine API bereit. Das Gesamtsystem ist auf mehrere Gruppen verteilt; ich arbeite im **Backend-Team (G2)**.
+
+**Was G2 (mein Bereich) baut:** Daten-Ingest von der Sensorik, Validierung veralteter/defekter Werte,
+Persistenz, die **Vereisungs-Bewertungslogik**, Alarm-Generierung, 30-min-Prognose und die API.
+**Nicht** G2: die Sensor-Hardware (Gruppe **G1**) und das Frontend / die Visualisierung (Gruppe **G3**).
+Die früh eingefrorene Schnittstelle (API + Datenmodell) zwischen den Gruppen ist die zentrale „Naht", auf
+die sich viele Einträge beziehen.
+
+**Kürzel, die in den Einträgen vorkommen:**
+- **DTB-xx** — Aufgaben-Tickets im Projekt-Board (Jira).
+- **FA-xx** — funktionale Anforderungen · **NF-xx** — nicht-funktionale Anforderungen (z. B. **NF-01** =
+  Fail-safe: bei veralteten/defekten Daten oder Ausfall nie GRÜN ausgeben).
+- **RB-xx** — harte Randbedingungen (z. B. **RB-01** = keine automatische Bahn-Freigabe/-Sperre; das System
+  ist nur Entscheidungsunterstützung, kein Aktor — der Mensch entscheidet).
+- **K-x** — bewusste Zielkonflikte (z. B. **K1** = Fehlalarm vs. nicht erkannte Vereisung).
+- **P-x.x** — Phasen im Projekt-Zeitplan.
+
+Jeder Eintrag unten nennt zu Beginn seine **Task + Anforderungs-ID(s)**, damit die jeweilige Entscheidung
+im Projektkontext nachvollziehbar ist (Maßstab: lieber zehn Fehlalarme als ein vereistes Flugzeug — die
+Sicherheit hat in allen Entscheidungen Vorrang).
 
 ---
 
@@ -283,3 +311,92 @@
   vs. mains Single-Point). Dieser Log-Eintrag dokumentierte meine Variante + Begründung als Diskussionsgrundlage.
   **Update:** Im Journal-Eintrag [23:10] hat der Architekt (Lucas) das **Fenster-/Spannweiten-Design**
   bestätigt; die Implementierung wurde in **PR #124** gemerggt. Die Koordination ist damit aufgelöst.
+
+## 2026-06-28 — Test-Infra fürs Team: Scope bewusst klein, vorhandenen G1-Sim wiederverwenden
+- **Kontext/Task:** Lucas' Auftrag, „alles für live-nahe + simulierte E2E-Tests" einzurichten, damit das Team
+  ab dem 29.06. lokal testen kann (DB, Features, Funktion). Bezug: DTB-17/23 (G1/G3-Integration, M3), G1-Sim
+  (PR #144), NF-01. Im Raum standen vier mögliche Artefakte: G1-Simulator, Szenario-/Dummy-Daten,
+  Live-Test-Runbook, DB-Seed-Skript.
+- **Entscheidung:** Den **Scope bewusst auf den Kern** beschränkt (Runbook + Live-Test gegen den Sim) und das
+  **DB-Seed-Skript zurückgestellt**. Den von Lucas parallel gebauten **G1-Sim (PR #144) reviewen + nutzen**
+  statt einen eigenen zu schreiben. MariaDB lokal als **portables ZIP** (nativ, kein Docker) gemäß E-35.
+- **Begründung:** Sobald der Sim läuft und der Scheduler pollt, **füllt das Backend die DB von selbst** —
+  ein separates Seed-Skript wäre größtenteils redundant. Ich wollte mich nicht auf vier halbfertige
+  Artefakte verzetteln, sondern wenige Dinge sauber liefern (KISS/YAGNI). Den vorhandenen Sim
+  wiederzuverwenden vermeidet Doppelarbeit und das Risiko zweier konkurrierender Sim-Versionen; er bedient
+  bereits den eingefrorenen G1-Contract. Reviewen statt blind übernehmen, weil das ganze Team sich darauf
+  verlässt.
+- **Alternativen:**
+  - **Alle vier Artefakte sofort bauen** — verworfen: Redundanz (Seed) und Review-Aufwand für geringen
+    Mehrwert; das Seed lässt sich später in 5 Minuten nachrüsten, falls beim Testen sofort Historie gebraucht wird.
+  - **Eigenen G1-Sim from scratch** — verworfen: Doppelarbeit, hätte zwei divergierende Versionen erzeugt.
+- **Ergebnis/Status:** umgesetzt. Lokale MariaDB 11.4.12 (portable) aufgesetzt, Schema + Grants eingespielt
+  (append-only NF-09 per Negativtest bewiesen). Sim aus PR #144 live gegen das Backend getestet. Live-Pfad
+  grün/orange/rot + CRITICAL-Alarm verifiziert.
+
+## 2026-06-28 — run-local.ps1: Live-Test-Defaults erzwingen statt der .env vertrauen
+- **Kontext/Task:** Helfer-Skript, das das Backend lokal für den Live-Test startet. Bezug: G1-Sim (PR #144),
+  NF-01. Die App liest ihre Konfiguration (`DB_HOST`, `G1_BASE_URL`, `G2_ENABLE_SCHEDULER`) direkt aus den
+  **Umgebungsvariablen** — es gibt **kein `load_dotenv`** im Code; die `.env` wird also nicht von der App
+  selbst gelesen. Zugleich sind die `.env.example`-Defaults auf den **Produktivbetrieb** ausgelegt
+  (`G2_ENABLE_SCHEDULER=false`, `G1_BASE_URL=…g1-sensorik.local`).
+- **Entscheidung:** Das Skript lädt die `.env` in die Umgebung und **erzwingt** danach die zwei
+  Live-Test-kritischen Werte: `G2_ENABLE_SCHEDULER=true` immer, und `G1_BASE_URL` auf den lokalen Sim
+  (`http://127.0.0.1:9101`), sobald sie leer ist oder auf den Produktiv-Host zeigt.
+- **Begründung:** Auf die `.env` ist beim Live-Test kein Verlass — der häufigste Fehler ist, `.env` aus
+  `.env.example` abzuleiten und Scheduler/G1 zu vergessen. Dann pollt das Backend nie und zeigt auf den
+  falschen Host → dauerhaftes, **stilles** 503 (kein Crash, nur ein scheinbar totes System). Mein erster,
+  „netter" Ansatz (`if (-not $env:G2_ENABLE_SCHEDULER) { … }`) hatte sogar einen echten Bug: in PowerShell
+  ist `-not "false"` gleich `$false`, weil jeder nicht-leere String wahr ist — der Guard ließ den
+  schädlichen Wert `"false"` stehen. Bei mir fiel das nie auf, weil meine eigene `.env` `=true` hatte
+  (klassisches „funktioniert auf meinem Rechner"). Für ein Skript, dessen **einziger Zweck** der lokale
+  Live-Test ist, sind „Scheduler an" und „G1 = Sim" nicht verhandelbar — also erzwinge ich sie, statt mich
+  auf korrekte `.env`-Pflege zu verlassen. Ein Helfer-Skript soll den Happy Path idiotensicher machen.
+- **Alternativen:**
+  - **Nur die `.env` spiegeln** — verworfen: hätte den `.env.example`-Fehler genau durchgereicht.
+  - **Den Guard nur reparieren** (Wert prüfen statt Existenz) — verworfen: technisch möglich, aber unnötig
+    indirekt; der Skript-Zweck ist eindeutig, also ist hartes Setzen klarer und robuster.
+  - **`load_dotenv` direkt in die App einbauen** — bewusst nicht (siehe nächster Eintrag): fremder
+    Verantwortungsbereich.
+- **Ergebnis/Status:** umgesetzt + verifiziert: Mit testweise kaputter `.env` (`Scheduler=false`, G1 produktiv)
+  erzwingt das Skript trotzdem korrekt `Scheduler=true` + Sim-URL (Health ok). Akzeptierter Trade-off: über
+  dieses Skript lässt sich das Backend nicht mit Scheduler-aus / echter G1 starten — dafür gibt es den
+  manuellen `uvicorn`-Aufruf (im Runbook). In PR #149.
+
+## 2026-06-28 — Qualitätssicherung vor Merge: santa-loop + Ausrichtung an dev-db-setup.md
+- **Kontext/Task:** Runbook (`docs/live-test-runbook.md`) + `run-local.ps1` waren fertig und liefen
+  oberflächlich (grün/rot ging durch). Vor dem Push an die Frage: direkt freigeben oder erst prüfen?
+- **Entscheidung:** Vor dem Push ein **adversariales Dual-Review (santa-loop)** ansetzen; die gefundenen
+  Befunde beheben; und das Runbook konsequent an **`dev-db-setup.md` als Source of Truth** ausrichten statt
+  meine lokalen MariaDB-Pfade zu dokumentieren.
+- **Begründung:** Das ganze Team folgt diesem Runbook **wörtlich** — ein Fehler darin kostet *jede*
+  unvertraute Person ein Vielfaches an Zeit. Ein adversariales Review deckt genau die Fehler auf, die man
+  beim eigenen Schreiben übersieht. Das hat sich bestätigt: zwei echte Blocker (der Scheduler-Guard-Bug und
+  die fehlende G1-URL-Anweisung), die ich allein nicht gesehen hätte. Mein erster Entwurf nannte zudem
+  meinen lokalen Pfad (`mariadb-portable\` + eigenes Start-Skript) — den hat kein anderes Teammitglied;
+  Doku darf nicht von der einzigen maßgeblichen Quelle wegdriften, sonst läuft jeder ins Leere, der der
+  offiziellen Anleitung folgt.
+- **Alternativen:**
+  - **Nur mein eigenes Inline-Review, dann pushen** — verworfen: der Autor sieht seine blinden Flecken nicht
+    (genau die zwei Blocker wären durchgerutscht).
+  - **Eigene Pfade im Runbook hardcoden** — verworfen: nur bei mir gültig, erzeugt Drift zur DB-Doku.
+- **Ergebnis/Status:** santa-loop gelaufen (zwei unabhängige Prüfer, übereinstimmende Befunde, kein
+  Widerspruch). Blocker behoben und verifiziert, Runbook auf `dev-db-setup.md` umgestellt. Erst danach
+  PR #149 erstellt — wartet auf Lucas' Merge.
+
+## 2026-06-28 — load_dotenv nicht eigenmächtig: App-/Naht-Entscheidung an den Architekten
+- **Kontext/Task:** Die `.env`-Stolperfalle (App liest `.env` nicht selbst) ließe sich an der Wurzel lösen,
+  indem man `load_dotenv` direkt ins Backend einbaut. Bezug: NF-07 (Config/Secrets), Naht/App-Verhalten.
+- **Entscheidung:** `load_dotenv` **nicht** selbst einbauen. Stattdessen die Stolperfalle per
+  `run-local.ps1` umgehen und die Einbau-Frage als **offenen Punkt an Lucas** (Architekt) in den PR-Body schreiben.
+- **Begründung:** Ein `load_dotenv` ändert das Verhalten der **produktiven App**, nicht nur des Test-Toolings —
+  das ist eine architektonische bzw. Naht-Entscheidung. Solche Fragen gehören dem Architekten: so entstehen
+  keine widersprüchlichen Alleingänge, und alle bleiben auf demselben Stand. In einem reinen Doku-/Tooling-PR
+  nebenbei das App-Verhalten zu ändern, wäre ein Scope-Übergriff.
+- **Alternativen:**
+  - **`load_dotenv` eigenmächtig im Backend ergänzen** — verworfen: fremder Verantwortungsbereich, ändert
+    Produktivverhalten ohne Architekten-Abstimmung.
+  - **Die Stolperfalle gar nicht adressieren** — verworfen: hätte jedes Teammitglied auflaufen lassen; der
+    `run-local.ps1`-Workaround fängt sie ab, bis die Grundsatzfrage entschieden ist.
+- **Ergebnis/Status:** umgesetzt: Workaround in `run-local.ps1`, Frage als „Hinweis an den Reviewer" im
+  PR #149-Body dokumentiert. Entscheidung über `load_dotenv` liegt bei Lucas.
