@@ -6,6 +6,34 @@
 
 ---
 
+## Projektkontext (für die Einordnung)
+
+**Projekt:** Prototyp zur **Erfassung und Bewertung von Vereisungsbedingungen** am (fiktiven)
+Regionalflughafen ANR. Das System ist eine reine **Entscheidungsunterstützung**: Aus Sensordaten leitet
+es eine **4-stufige Risiko-Ampel** (grün / gelb / orange / rot) ab, erzeugt Alarme und stellt alles über
+eine API bereit. Das Gesamtsystem ist auf mehrere Gruppen verteilt; ich arbeite im **Backend-Team (G2)**.
+
+**Was G2 (mein Bereich) baut:** Daten-Ingest von der Sensorik, Validierung veralteter/defekter Werte,
+Persistenz, die **Vereisungs-Bewertungslogik**, Alarm-Generierung, 30-min-Prognose und die API.
+**Nicht** G2: die Sensor-Hardware (Gruppe **G1**) und das Frontend / die Visualisierung (Gruppe **G3**).
+Die früh eingefrorene Schnittstelle (API + Datenmodell) zwischen den Gruppen ist die zentrale „Naht", auf
+die sich viele Einträge beziehen.
+
+**Kürzel, die in den Einträgen vorkommen:**
+- **DTB-xx** — Aufgaben-Tickets im Projekt-Board (Jira).
+- **FA-xx** — funktionale Anforderungen · **NF-xx** — nicht-funktionale Anforderungen (z. B. **NF-01** =
+  Fail-safe: bei veralteten/defekten Daten oder Ausfall nie GRÜN ausgeben).
+- **RB-xx** — harte Randbedingungen (z. B. **RB-01** = keine automatische Bahn-Freigabe/-Sperre; das System
+  ist nur Entscheidungsunterstützung, kein Aktor — der Mensch entscheidet).
+- **K-x** — bewusste Zielkonflikte (z. B. **K1** = Fehlalarm vs. nicht erkannte Vereisung).
+- **P-x.x** — Phasen im Projekt-Zeitplan.
+
+Jeder Eintrag unten nennt zu Beginn seine **Task + Anforderungs-ID(s)**, damit die jeweilige Entscheidung
+im Projektkontext nachvollziehbar ist (Maßstab: lieber zehn Fehlalarme als ein vereistes Flugzeug — die
+Sicherheit hat in allen Entscheidungen Vorrang).
+
+---
+
 ## 2026-06-23 — Konsumierten G1-Vertrag in eigene OpenAPI-Datei trennen
 - **Kontext/Task:** DTB-19 (P1.2, OpenAPI v1) · FA-09/FA-01/FA-03 · Naht G1 → G2 → G3. Die DoD verlangt,
   auch den von G2 konsumierten G1-Vertrag (`GET /current`, `GET /health`) zu dokumentieren.
