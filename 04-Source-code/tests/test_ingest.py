@@ -20,6 +20,24 @@ from src.ingest.poller import Poller
 from src.model.schemas import Reading
 from src.storage.repository import Repository, RepositoryError
 
+# Poll-Intervall der Flatline-Integrationstests (s). Die Tests pollen einen eingefrorenen
+# Sensor in 30-s-Schritten; die erwartete Zahl gespeicherter Readings vor dem Flatline-Greifen
+# leitet sich daraus + flatline_timeout_min ab (DTB-20 Review L-1: kein Magic-30 mehr).
+_POLL_INTERVAL_S = 30
+
+
+def _expected_saved_before_flatline(thresholds: DatenqualitaetSchwellen) -> int:
+    """Anzahl Readings, die vor dem Flatline-Greifen gespeichert werden, wenn ein konstanter
+    Sensor in _POLL_INTERVAL_S-Schritten gepollt wird.
+
+    check_flatline greift, sobald das Fenster >= flatline_timeout_min ist (Poll k mit
+    k * intervall >= timeout). Die Polls k=0 .. k_trigger-1 (< timeout) werden gespeichert,
+    also genau ceil(timeout / intervall) Stueck. Bei 15 min / 30 s = 30. Bricht die Assertion,
+    nennt die Fehlermeldung den abgeleiteten Erwartungswert statt eines nackten 30.
+    """
+    interval_min = _POLL_INTERVAL_S / 60.0
+    return math.ceil(thresholds.flatline_timeout_min / interval_min)
+
 
 class FakeRepository(Repository):
     """In-Memory-Stub fuer den Poller-Test; erfuellt das Repository-Interface."""
@@ -1170,11 +1188,20 @@ def test_poll_flatline_detected_over_continuous_polls(
     last: Reading | None = None
     with caplog.at_level(logging.ERROR):
         for k in range(32):  # 32 Polls * 30 s = 15.5 min
-            last = _poll_snapshot(poller, valid_snapshot, base + timedelta(seconds=30 * k), -0.4)
+            last = _poll_snapshot(
+                poller, valid_snapshot, base + timedelta(seconds=_POLL_INTERVAL_S * k), -0.4
+            )
 
     assert last is None  # der letzte Poll (>= 15 min konstant) wird als Flatline verworfen
     assert "flatline" in caplog.text.lower()
-    assert len(fake_repo.readings) == 30  # k=0..29 gespeichert; ab k=30 (>= 15 min) Flatline
+    # k=0..29 gespeichert; ab k=30 (>= 15 min) Flatline. Erwartungswert aus der Fixture
+    # abgeleitet, damit die Assertion bei geaendertem flatline_timeout_min sprechend bricht.
+    expected_saved = _expected_saved_before_flatline(poller.data_quality_thresholds)
+    assert len(fake_repo.readings) == expected_saved, (
+        f"erwartet {expected_saved} gespeicherte Readings vor Flatline "
+        f"(flatline_timeout_min={poller.data_quality_thresholds.flatline_timeout_min}, "
+        f"Poll-Intervall={_POLL_INTERVAL_S}s), erhalten {len(fake_repo.readings)}"
+    )
 
 
 def test_poll_plausible_change_is_saved(
@@ -1266,15 +1293,21 @@ def test_poll_flatline_detected_despite_lsb_dither(
     with caplog.at_level(logging.ERROR):
         for k in range(40):  # 40 Polls * 30 s = 20 min
             last = _poll_snapshot(
-                poller, valid_snapshot, base + timedelta(seconds=30 * k), temps[k % 2]
+                poller, valid_snapshot, base + timedelta(seconds=_POLL_INTERVAL_S * k), temps[k % 2]
             )
 
     assert last is None  # Dither-Sensor wird nach >= 15 min als Flatline verworfen
     assert "flatline" in caplog.text.lower()
     # Exakter Break-Even (DTB-20 Review): k=0..29 (< 15 min) gespeichert, ab k=30 (= 15 min)
-    # Flatline. Das scharfe == 30 (statt < 40) faengt einen Schwellenrueckschritt, bei dem die
-    # Erkennung erst spaeter griffe, als Regression ab.
-    assert len(fake_repo.readings) == 30
+    # Flatline. Der scharfe Vergleich (statt < 40) faengt einen Schwellenrueckschritt, bei dem
+    # die Erkennung erst spaeter griffe, als Regression ab. Erwartungswert aus der Fixture
+    # abgeleitet (DTB-20 Review L-1: kein Magic-30).
+    expected_saved = _expected_saved_before_flatline(poller.data_quality_thresholds)
+    assert len(fake_repo.readings) == expected_saved, (
+        f"erwartet {expected_saved} gespeicherte Readings vor Flatline "
+        f"(flatline_timeout_min={poller.data_quality_thresholds.flatline_timeout_min}, "
+        f"Poll-Intervall={_POLL_INTERVAL_S}s), erhalten {len(fake_repo.readings)}"
+    )
 
 
 def test_poll_recovers_after_flatline_when_temperature_moves(
@@ -1314,6 +1347,78 @@ def test_poll_baseline_after_sustained_jump_triggers_flatline(
     assert last is None
     assert "flatline" in caplog.text.lower()
     assert len(fake_repo.readings) == 1  # nur die Baseline
+
+
+def test_poll_warns_once_after_n_consecutive_flatline_rejections(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # DTB-20 Review M-1: Ein dauerhaft flatline-gesperrter Sensor erzeugt pro Poll eine ERROR-
+    # Zeile. Nach _FLATLINE_WARN_AFTER_N ununterbrochenen Verwerfungen kommt GENAU EINMAL eine
+    # WARN-Eskalation fuers Betriebs-Monitoring dazu (nicht bei jedem weiteren Poll).
+    from src.ingest.poller import _FLATLINE_WARN_AFTER_N
+
+    base = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    saved_before_flatline = _expected_saved_before_flatline(poller.data_quality_thresholds)
+    # So lange pollen, dass die Sperre greift (saved_before_flatline) und danach noch ein paar
+    # Polls UEBER die WARN-Schwelle hinaus laufen -> beweist, dass die WARN nicht erneut feuert.
+    total_polls = saved_before_flatline + _FLATLINE_WARN_AFTER_N + 2
+    with caplog.at_level(logging.WARNING):
+        for k in range(total_polls):
+            _poll_snapshot(
+                poller, valid_snapshot, base + timedelta(seconds=_POLL_INTERVAL_S * k), -0.4
+            )
+
+    warn_lines = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "flatline-gesperrt" in r.message
+    ]
+    assert len(warn_lines) == 1, f"genau eine WARN-Eskalation erwartet, erhalten {len(warn_lines)}"
+    assert valid_snapshot["sensor_id"] in warn_lines[0].getMessage()
+    assert poller._consecutive_flatline_rejections == _FLATLINE_WARN_AFTER_N + 2
+
+
+def test_poll_flatline_warn_counter_resets_on_successful_save(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # DTB-20 Review M-1: Bewegt sich die Temperatur wieder real (gespeichertes Reading), wird der
+    # Flatline-Zaehler zurueckgesetzt -> die WARN-Eskalation feuert NICHT, solange < N Sperren
+    # am Stueck auflaufen. Schuetzt vor Fehl-WARN bei einem gesunden, leicht schwankenden Sensor.
+    base = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    saved_before_flatline = _expected_saved_before_flatline(poller.data_quality_thresholds)
+    with caplog.at_level(logging.WARNING):
+        # Bis kurz nach Flatline-Beginn (ein paar Sperren < N).
+        for k in range(saved_before_flatline + 3):
+            _poll_snapshot(
+                poller, valid_snapshot, base + timedelta(seconds=_POLL_INTERVAL_S * k), -0.4
+            )
+        assert poller._consecutive_flatline_rejections == 3
+        # Reale Bewegung -> Reading gespeichert -> Zaehler zurueck auf 0.
+        moved = _poll_snapshot(
+            poller,
+            valid_snapshot,
+            base + timedelta(seconds=_POLL_INTERVAL_S * (saved_before_flatline + 3)),
+            5.0,
+        )
+
+    assert moved is not None
+    assert poller._consecutive_flatline_rejections == 0
+    assert "flatline-gesperrt" not in caplog.text
+
+
+def test_poll_sensor_id_with_embedded_space_is_sanitized(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # DTB-20 Review L-2: sensor_id hat im Schema kein Whitelist-Pattern. Ein eingebettetes
+    # Leerzeichen darf nicht als Schluessel durchrutschen -> wird (wie Control-/Format-Zeichen)
+    # entfernt, bevor das Reading entsteht.
+    snapshot = {**valid_snapshot, "sensor_id": "anr rwy 01"}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.sensor_id == "anrrwy01"
 
 
 def test_poll_flatline_cleared_by_poller_restart(

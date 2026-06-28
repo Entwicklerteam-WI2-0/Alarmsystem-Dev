@@ -36,10 +36,23 @@ REQUIRED_FIELDS = (
 
 # Unicode-Kategorien, die aus String-Feldern (z. B. sensor_id) entfernt werden, bevor sie
 # geloggt/persistiert werden: Control (Cc, inkl. \n/\r/\t, U+007F), Format (Cf, inkl. U+202E
-# RIGHT-TO-LEFT OVERRIDE und Zero-Width-Zeichen) sowie die Zeilentrenner Zl/Zp (U+2028/U+2029).
-# Verhindert Log-/Audit-Injection und optische Manipulation (DTB-20 Review). Konsistent mit
-# und etwas strenger als _sanitize_reason in failsafe.py.
-_UNSAFE_STRING_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp"})
+# RIGHT-TO-LEFT OVERRIDE und Zero-Width-Zeichen), die Zeilentrenner Zl/Zp (U+2028/U+2029)
+# sowie alle Space-Separatoren Zs (U+0020 SPACE, U+00A0 NBSP, ...). sensor_id hat im
+# Schema (src/model/schemas.py) KEIN Whitelist-Pattern; ein eingebettetes Leerzeichen
+# ("anr rwy 01") wuerde sonst durchrutschen und als DB-Primaer-/Dictionary-Schluessel zu
+# subtilen Lookup-Fehlern fuehren (DTB-20 Review L-2). Verhindert zusammen Log-/Audit-
+# Injection, optische Manipulation und Schluessel-Drift. Konsistent mit und etwas strenger
+# als _sanitize_reason in failsafe.py.
+_UNSAFE_STRING_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Zs"})
+
+# Nach so vielen UNUNTERBROCHENEN Flatline-Verwerfungen desselben Pollers wird EINMALIG eine
+# WARN-Zeile gesetzt (DTB-20 Review M-1). Zweck: ein echt eingefrorener Sensor und ein
+# gesunder Sensor bei stabiler Kaelte erzeugen beide eine Dauer-Flatline-Sperre (E-42, K1);
+# die WARN gibt dem Betriebs-Monitoring ein dediziertes Signal "dauerhaft kein Reading, aber
+# kein Stale/Timeout" zum Nachsehen. Reine Log-Kadenz, KEINE Sicherheits-/Bewertungsschwelle
+# -> bewusst Modul-Konstante (faellt nicht unter den config-Zwang NF-05, da sie kein
+# Bewertungs-/Fail-safe-Verhalten aendert). 10 Polls = 5 min bei 30-s-Polling.
+_FLATLINE_WARN_AFTER_N = 10
 
 
 def _now() -> datetime:
@@ -84,6 +97,10 @@ class Poller:
         self._flatline_window_start: datetime | None = None
         self._flatline_temp_min: float = 0.0
         self._flatline_temp_max: float = 0.0
+        # Zaehler ununterbrochener Flatline-Verwerfungen (DTB-20 Review M-1). Wird bei jedem
+        # erfolgreichen Save zurueckgesetzt; erreicht er _FLATLINE_WARN_AFTER_N, geht einmalig
+        # eine WARN-Zeile raus (Eskalations-/Monitoring-Signal, kein Verhaltenswechsel).
+        self._consecutive_flatline_rejections: int = 0
 
     def poll(self) -> Reading | None:
         """Holt Snapshot von G1, validiert ihn und speichert ein Reading.
@@ -152,20 +169,39 @@ class Poller:
         # wenn dazwischen Werte als Sprung verworfen wurden. Kehrt der Sensor nach
         # >= flatline_timeout_min auf die alte Baseline zurueck, gilt das (fail-safe
         # konservativ) als Flatline.
-        reason = check_plausibility(reading, self._last_reading, self.data_quality_thresholds)
-        if reason is None:
-            # Flatline gegen das Konstanz-FENSTER (Spannweite ueber >= flatline_timeout_min):
-            # bei dichtem Polling waechst der Abstand zum Vorgaenger nie auf das Timeout, und die
-            # Fenster-Spannweite ist gegen Rauschen robuster als der Abstand zu einem Punkt.
-            span = self._flatline_span_including(reading)
-            reason = check_flatline(
-                self._flatline_window_start,
-                reading.measured_at,
-                span,
-                self.data_quality_thresholds,
-            )
-        if reason is not None:
-            logger.error("Reading unplausibel, wird verworfen: %s", reason)
+        jump_reason = check_plausibility(reading, self._last_reading, self.data_quality_thresholds)
+        if jump_reason is not None:
+            # Sprung = reale (zu schnelle) Bewegung, das Gegenteil einer Flatline -> Zaehler
+            # zuruecksetzen, damit "ununterbrochen flat" wirklich ununterbrochen bedeutet.
+            self._consecutive_flatline_rejections = 0
+            logger.error("Reading unplausibel, wird verworfen: %s", jump_reason)
+            return None
+
+        # Flatline gegen das Konstanz-FENSTER (Spannweite ueber >= flatline_timeout_min):
+        # bei dichtem Polling waechst der Abstand zum Vorgaenger nie auf das Timeout, und die
+        # Fenster-Spannweite ist gegen Rauschen robuster als der Abstand zu einem Punkt.
+        span = self._flatline_span_including(reading)
+        flatline_reason = check_flatline(
+            self._flatline_window_start,
+            reading.measured_at,
+            span,
+            self.data_quality_thresholds,
+        )
+        if flatline_reason is not None:
+            self._consecutive_flatline_rejections += 1
+            logger.error("Reading unplausibel, wird verworfen: %s", flatline_reason)
+            # Einmalig beim Erreichen der Schwelle eskalieren (DTB-20 Review M-1): ein gesunder
+            # Sensor bei stabiler Kaelte und ein echt eingefrorener Sensor sehen hier gleich aus;
+            # die WARN markiert die Dauer-Sperre fuers Betriebs-Monitoring, ohne das fail-safe
+            # Verhalten (immer verwerfen) zu aendern.
+            if self._consecutive_flatline_rejections == _FLATLINE_WARN_AFTER_N:
+                logger.warning(
+                    "Sensor %s seit %d aufeinanderfolgenden Polls flatline-gesperrt "
+                    "(stabile Kaelte ODER eingefrorener Sensor) - Betriebspruefung empfohlen; "
+                    "Recovery via Temperaturbewegung > epsilon oder Poller-Neustart (E-42)",
+                    reading.sensor_id,
+                    self._consecutive_flatline_rejections,
+                )
             return None
 
         # 6. Reading ueber das Repository-Interface speichern.
@@ -178,6 +214,8 @@ class Poller:
         # Save erfolgreich -> Referenzen fuer den naechsten Poll aktualisieren.
         self._last_reading = reading
         self._update_flatline_window(reading)
+        # Ein gespeichertes Reading beendet jede laufende Flatline-Sperre -> Zaehler zuruecksetzen.
+        self._consecutive_flatline_rejections = 0
 
         logger.info(
             "Reading gespeichert: id=%s sensor=%s measured_at=%s",
@@ -444,11 +482,13 @@ def _as_string(value: object, field: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{field} muss ein String sein, erhalten: {type(value)}")
     stripped = value.strip()
-    # Eingebettete unsichere Zeichen entfernen (Control/Format/Zeilentrenner, siehe
-    # _UNSAFE_STRING_CATEGORIES): ein manipuliertes G1-Feld wie "anr-rwy-01\n[AUDIT] ..."
-    # oder mit U+202E (RTL-Override, optische Umkehr) koennte sonst eine gefaelschte oder
-    # irrefuehrende Log-/Audit-Zeile erzeugen (DTB-20 Review). Aeusserer Whitespace ist oben
-    # bereits entfernt; dieser Filter trifft nur noch eingebettete Zeichen.
+    # Eingebettete unsichere Zeichen entfernen (Control/Format/Zeilentrenner/Space-Separatoren,
+    # siehe _UNSAFE_STRING_CATEGORIES): ein manipuliertes G1-Feld wie "anr-rwy-01\n[AUDIT] ..."
+    # mit U+202E (RTL-Override, optische Umkehr) oder mit eingebettetem Leerzeichen
+    # ("anr rwy 01" -> Schluessel-Drift) koennte sonst eine gefaelschte/irrefuehrende Log-/
+    # Audit-Zeile oder einen falschen DB-/Dictionary-Schluessel erzeugen (DTB-20 Review).
+    # Aeusserer Whitespace ist oben bereits entfernt; dieser Filter trifft nur noch
+    # eingebettete Zeichen.
     stripped = "".join(
         ch for ch in stripped if unicodedata.category(ch) not in _UNSAFE_STRING_CATEGORIES
     )

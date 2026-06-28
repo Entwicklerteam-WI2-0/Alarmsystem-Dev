@@ -159,6 +159,12 @@ def check_flatline(
     # da die `0` den No-Hardcode-Guard (NF-05) faelschlich triggert und ein noqa-Marker
     # zugleich eine ruff-Parse-Warnung erzeugt (DTB-20 Review: dokumentierte Precondition
     # statt zweifach lint-widriger Laufzeit-Guard fuer einen unerreichbaren Fall).
+    # current_measured_at wird BEWUSST UNBEDINGT geprueft — auch wenn window_start None ist und
+    # die Funktion gleich None zurueckgibt (DTB-20 Review L-3). Ein naiver Timestamp ist immer ein
+    # Aufrufer-Bug; ihn schon beim allerersten Reading (noch kein Fenster) frueh und klar zu
+    # melden ist sicherer als ihn bis zum ersten geoeffneten Fenster stumm passieren zu lassen.
+    # Die Asymmetrie zu window_start (nur bei != None geprueft) ist inhaerent: window_start DARF
+    # legitim None sein (kein Fenster), current_measured_at nie.
     if current_measured_at.tzinfo is None:
         raise ValueError("current_measured_at muss zeitzonenbewusst sein (UTC)")
     if window_start is None:
