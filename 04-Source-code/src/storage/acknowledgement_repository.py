@@ -170,7 +170,17 @@ class MySqlAcknowledgementRepository(AcknowledgementRepository):
                 row = cursor.fetchone()
                 if row is None:
                     raise AlarmNotFoundError(f"Alarm {alarm_id} nicht gefunden")
-                state = AlarmState(row["state"])
+                try:
+                    state = AlarmState(row["state"])
+                except ValueError as exc:
+                    # Korrupter/unbekannter DB-state (manuelle Migration, Schema-Drift): das ist
+                    # ein Repository-/Persistenzfehler, kein API-Fehler. Als RepositoryError
+                    # fail-safe herunterbrechen (Endpoint -> 503 Error{code,message}, NF-01/
+                    # Contract D), statt FastAPI ein rohes 500/{detail} werfen zu lassen. Das
+                    # raise rollt die Transaktion zurueck (kein Teil-Schreiben).
+                    raise RepositoryError(
+                        f"Unbekannter Alarm-Zustand in DB: {row['state']!r}"
+                    ) from exc
                 if state is not AlarmState.ACTIVE:
                     raise AlarmNotAcknowledgeableError(alarm_id, state)
 

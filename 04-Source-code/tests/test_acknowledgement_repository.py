@@ -9,6 +9,7 @@ Die MySQL-Variante (rohes PyMySQL, EINE transaction) wird gegen eine echte Maria
 geprueft, sobald die DB-Integrationsfixtures greifen (Muster der uebrigen MySql-Repos).
 """
 
+import contextlib
 from datetime import UTC, datetime
 
 import pytest
@@ -18,7 +19,9 @@ from src.storage.acknowledgement_repository import (
     AlarmNotAcknowledgeableError,
     AlarmNotFoundError,
     InMemoryAcknowledgementRepository,
+    MySqlAcknowledgementRepository,
 )
+from src.storage.repository import RepositoryError
 
 _NOW = datetime(2026, 6, 28, 3, 0, 0, tzinfo=UTC)
 
@@ -98,3 +101,53 @@ def test_seed_dict_is_not_mutated():
 
     assert seed[1] is AlarmState.ACTIVE  # Original nicht mutiert
     assert repo.state_of(1) is AlarmState.ACKNOWLEDGED  # nur der interne Stand
+
+
+# ---------------------------------------------------------------------------
+# MySQL-Variante: korrupter DB-state (Review-Finding #132 MEDIUM)
+# ---------------------------------------------------------------------------
+
+
+class _FakeCursor:
+    """Minimaler DictCursor-Ersatz: liefert genau die geseedete Zeile aus fetchone()."""
+
+    def __init__(self, row: dict[str, object]) -> None:
+        self._row = row
+        self.lastrowid = 1
+
+    def __enter__(self) -> "_FakeCursor":
+        return self
+
+    def __exit__(self, *_exc: object) -> bool:
+        return False
+
+    def execute(self, *_args: object, **_kwargs: object) -> None:
+        pass
+
+    def fetchone(self) -> dict[str, object]:
+        return self._row
+
+
+class _FakeConn:
+    def __init__(self, row: dict[str, object]) -> None:
+        self._row = row
+
+    def cursor(self) -> _FakeCursor:
+        return _FakeCursor(self._row)
+
+
+def test_mysql_acknowledge_corrupt_db_state_raises_repository_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Steht in der alarm-Tabelle ein state ausserhalb des AlarmState-Enums (manuelle
+    # Migration/Schema-Drift), darf der Endpoint NICHT mit rohem 500/{detail} brechen: der
+    # Enum-Parse wird als RepositoryError fail-safe heruntergebrochen (-> 503 Error{code,
+    # message}, Contract D/NF-01).
+    @contextlib.contextmanager
+    def _fake_transaction(_config: object = None):
+        yield _FakeConn({"state": "voellig_kaputt"})
+
+    monkeypatch.setattr("src.storage.acknowledgement_repository.transaction", _fake_transaction)
+
+    with pytest.raises(RepositoryError):
+        MySqlAcknowledgementRepository().acknowledge(1, "tower-ops-01", None, _NOW)
