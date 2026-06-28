@@ -150,10 +150,15 @@ def _mock_g1_get(current_payload: dict) -> Mock:
 def _g1_iso(moment: datetime) -> str:
     """Formatiert einen UTC-Zeitpunkt als G1-Wire-Zeitstempel (ISO-8601, Z-Suffix).
 
-    Eine Quelle fuer das Format, das G1 in GET /current liefert (sekundengenau, UTC) —
-    statt das Strftime-Muster je Payload zu wiederholen.
+    Inklusive Millisekunden (z. B. 2026-06-28T10:01:00.123Z), wie der echte G1-Wire
+    sie vermutlich liefert. Der Poller-Parser (_parse_iso_utc -> datetime.fromisoformat,
+    ab Python 3.11) akzeptiert Sekunden- wie Millisekunden-Formate. Ein früheres
+    strftime("%Y-%m-%dT%H:%M:%SZ") haette Mikrosekunden still verworfen und eine
+    potenzielle Format-Inkompatibilitaet zum realen G1-Wire maskiert (Review-Finding
+    LOW). isoformat(timespec="milliseconds") liefert konsistent genau 3 Nachkommastellen
+    unabhaengig vom µs-Anteil von datetime.now(UTC).
     """
-    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+    return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _save_and_get_reading(
@@ -268,7 +273,7 @@ def test_schicht1_stale_assess_zeit_nie_gruen(
 # ---------------------------------------------------------------------------
 
 
-def test_schicht2_sensor_fault_nie_gruen(
+def test_schicht2_defense_in_depth_fault_nie_gruen(
     reading_repo: InMemoryReadingRepository,
     assessment_repo: InMemoryAssessmentRepository,
     assessment_service: AssessmentService,
@@ -332,6 +337,8 @@ def test_schicht2a_fault_realer_poller_pfad_liefert_none(
     now = datetime.now(UTC)
     # G1-Snapshot mit GRUEN-Werten, aber status=fault. measured_at frisch (kein Stale),
     # damit AUSSCHLIESSLICH die fault-Bedingung den Verwurf ausloest.
+    # air_temp_c/humidity_pct sind Eingabedaten (G1-Rohwerte), keine Schwellen -> NF-05
+    # (No-Hardcode-Rule fuer Schwellen) greift hier nicht.
     fault_payload = {
         "sensor_id": sensor_id,
         "measured_at": _g1_iso(now),
@@ -428,6 +435,9 @@ def test_schicht3_plausibilitaet_ausserhalb_grenzen_nie_gruen(
     max_temp = thresholds.plausibilitaet.max_temp_c
 
     # G1-Payload mit surface_temp_c klar ausserhalb der Obergrenze.
+    # air_temp_c/humidity_pct: Eingabedaten (G1-Rohwerte), keine Schwellen -> NF-05 greift
+    # hier nicht. Falls künftig Plausibilitaetsgrenzen fuer air_temp_c eingefuehrt werden,
+    # sind diese fixen Werte zu revidieren (Review-Finding LOW).
     payload: dict[str, object] = {
         "sensor_id": sensor_id,
         "measured_at": _g1_iso(now),
