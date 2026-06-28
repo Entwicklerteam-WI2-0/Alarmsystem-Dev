@@ -504,3 +504,19 @@ Plan→TDD→Impl→Quality-Gate→**Selbst-Review (Subagent)**→Fix→Push→P
   Re-Arm); (5) **Governance:** `claude-review` als Required-Check konvergiert an überdefensiven Modulen nicht
   (endlose Mikro-LOWs) → mit Lucas auf **advisory** stellen, `test` bleibt das Gate.
 —architekt/Petzold
+
+## 2026-06-28 (Nachmittag) — STOA-Real-Test bestanden + G1-Sim (PR #144) (architekt)
+**Bestandsaufnahme:** 0 offene PRs, alles auf `main` (HEAD `0518775`), 785 Tests grün. Tiefenaudit-Befund
+„Motor nicht verdrahtet" **überholt** — Backend läuft end-to-end.
+**STOA-Real-Test** (echte portable MariaDB 11.4.7 + G1-Stub + scharfer Scheduler, Least-Priv-User `alarm`):
+GRÜN/ROT-Ampel (Magnus-Taupunkt live), CRITICAL-Alarm, Ack 200 / Double-Ack 409 / State→acknowledged,
+Audit-Trail, **Fail-safe NF-01** (stale/fault/G1-down → unknown, nie GRÜN, + Recovery), SSE-Heartbeat — alles
+live bestätigt; beide dokumentierten Vorfälle grün. Logik + Persistenz + Alarmierung real bewiesen.
+**G1-Sim:** `04-Source-code/tools/g1_sim/` (steuerbar, kein Produktiv-Bezug) → **PR #144** (3 Review-Runden,
+ruff clean) — für live-nahe „Input→Ampel"-Dev-Tests gegen lokale MariaDB.
+**2 Minor-Befunde (kein Blocker):** Fault/Down-Label „stale" (Ampel korrekt); grants.sql-REVOKE-1064 auf
+MariaDB 11.4.x (`--force`).
+**Offen/Nächstes:** PR #144 mergen. **Pi-Deploy + G1/G3-Live-Integration Mo 29.06. vor Ort** (erprobter Ablauf:
+native MariaDB → schema.sql → grants.sql → env → uvicorn; nur `G1_BASE_URL`/`G2_CORS_ORIGINS`/`G2_API_KEY` +
+Scheduler scharf). Integration/Test bis Mi Nacht.
+—architekt

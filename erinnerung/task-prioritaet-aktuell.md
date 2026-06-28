@@ -113,3 +113,14 @@
 *Quelle: Reale Bestandsaufnahme vom 2026-06-27 gegen `origin/main` (HEAD `a55c075`).*
 *Worktree: `C:/Users/luceb/.worktrees/Alarmsystem-Dev-stand-docs`.*
 *Letzte Prüfung: 794 Tests grün, 94,55 % Coverage, ruff clean, 0 offene PRs.*
+
+---
+
+## 🔌 Hinweis — G1-Naht-Sim für live-nahe Tests (28.06., architekt)
+Für **„Input → Ampel"-Tests gegen die G1-Naht ohne echte Sensor-Hardware**: steuerbarer **G1-Sensor-Simulator**
+unter `04-Source-code/tools/g1_sim/` (**PR #144**). Bedient den konsumierten G1-Contract (`GET /current` + `/health`);
+Szenario per State-Datei **live umschaltbar** (grün/rot/stale/fault/down), kein Neustart. Start + Szenario-/Erwartungs-Tabelle:
+`tools/g1_sim/README.md`. Devs testen gegen `main` mit lokaler MariaDB (`04-Source-code/docs/dev-db-setup.md`)
+→ `feat/`-Branch → PR → Lucas merged.
+**Real-Test 28.06. bestätigt:** voller Pfad Poll→Bewertung→Persistenz→Serving→Alarm→Ack→**Fail-safe NF-01** läuft E2E
+gegen echte MariaDB 11.4.7; 785 Tests grün (siehe Journal/Save-Session 28.06.).
