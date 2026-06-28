@@ -1,9 +1,52 @@
 # Persönliches Entscheidungslog — Andi (G2)
-> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-25
+> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-28
 > **Autor:** Andi · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
 ---
+
+## 2026-06-28 — DTB-34: Review-Findings nachgereicht (Offset-Oberlimit, Validierung zentralisieren, Spec-Freeze)
+
+- **Kontext/Task:** Nachträgliche Review-Findings zu DTB-34 (keine CRITICAL/HIGH, ein MEDIUM, drei LOWs).
+
+- **Entscheidung:**
+  - Validierungslogik von `get_between` in `src/storage/repository.py` in die Modul-Funktion `_validate_get_between_args()` ausgelagert; sowohl `InMemoryReadingRepository` als auch `ReadingRepository` rufen sie auf (MEDIUM).
+  - Fehlermeldungen der Validierung auf API-Parameternamen `'from'`/`'to'` umgestellt (statt internen `from_dt`/`to_dt`), weil `ValueError` direkt als 400-Response an G3 weitergegeben wird (LOW).
+  - `offset` in `GET /v1/readings` API-seitig auf `0 … 100_000` begrenzt (`le=100_000` in FastAPI + `maximum: 100000` in `openapi.yaml`); verhindert extreme Pagination-Anfragen, die MySQL intern materialisieren lassen (LOW).
+  - Additive Ergänzungen in `openapi.yaml` (`offset`-Parameter, 503-Response für `/v1/readings`) dokumentiert: keine Breaking Changes, sondern Ausfüllen einer T1-Lücke im eingefrorenen Vertrag v1.0. Architekten-Review war einverstanden (LOW).
+
+- **Begründung:**
+  Die zentrale Validierungsfunktion vermeidet Copy-Paste-Drift zwischen InMemory- und PyMySQL-Implementierung. Die API-freundlichen Fehlermeldungen erhöhen die Verständlichkeit für G3-Consumer. Das `offset`-Oberlimit ist ein vorsorglicher Schutz vor DoS-artigen Anfragen bei wachsender Tabelle. Die Spec-Änderungen sind **additiv** (neue optionale Felder/Responses), kein Breaking Change — G3-Clients, die `offset` nicht senden, verhalten sich unverändert; die 503-Response dokumentiert nur bereits implementiertes Verhalten.
+
+- **Alternativen:**
+  - **Validierung im Endpoint statt Repository** — verworfen, weil das Repository-Interface unabhängig von der API genutzt wird (Tests, Poller) und dort konsistente Regeln sinnvoll sind.
+  - **Fehlermeldungen im Repository belassen (from_dt/to_dt) und im Endpoint mappen** — verworfen, weil es mehr Code ohne Mehrwert bedeutet; `get_between` wird ausschließlich vom Historien-Endpoint konsumiert.
+  - **Offset-Oberlimit auch im Repository erzwingen** — verworfen, weil es eine API-/Verbraucher-Regel ist, keine Persistenz-Regel; das Repository prüft nur `offset < 0`.
+
+- **Ergebnis/Status:** Umgesetzt auf `dtb-34`. Tests + ruff grün. PR #131 reviewbereit.
+
+## 2026-06-27 — DTB-34: Historien-Endpoint GET /v1/readings
+
+- **Kontext/Task:** DTB-34 (Historie `GET /v1/readings?from=&to=`) · FA-03 (Messwerte persistent mit Zeitstempel) · Backend-Konzept §6a/§7 · E-35 (rohes PyMySQL). Ziel: G3 kann gespeicherte Messwerte abfragen.
+
+- **Entscheidung:**
+  - Repository-Interface `Repository` um `get_between(sensor_id, from_dt, to_dt, limit, offset, order)` erweitert; Implementierung in `InMemoryReadingRepository` und `ReadingRepository` (parametrisiertes PyMySQL).
+  - Query dynamisch aus festen WHERE-Fragmenten und parametrisierten Werten gebaut (`sensor_id = %s`, optional `measured_at >= %s` / `<= %s`), Sortierung und Pagination ebenfalls parametrisiert.
+  - Separates Wire-Schema `ReadingResponse` in `src/model/schemas.py` eingeführt, um internes `Reading` (id optional) vom Contract (id required) zu trennen — analog `AssessmentCurrent`.
+  - Endpoint `GET /v1/readings` in `src/api/v1.py` implementiert; Query-Parameter: `from`/`to` (UTC, inklusiv), `sensor_id` (Default `anr-rwy-01`), `limit` (1–1000), `offset` (≥0), `order` (`asc`/`desc`).
+  - `openapi.yaml` um `offset`-Parameter erweitert; ursprüngliche T1-Spezifikation enthielt nur `limit`.
+  - Fail-safe: DB-Ausfall → 503 `Error{code,message}`; ungültige Parameter (z. B. `from` nach `to`) → 400; no-store Header auf allen Pfaden.
+
+- **Begründung:**
+  Die Aufgabenstellung forderte Pagination mit `limit/offset`. Die vorhandene `openapi.yaml`-Definition für `/v1/readings` enthielt zwar `limit`, aber kein `offset`. Da der Endpoint in `API_FROZEN_v1.md` als „reserviert, Form folgt mit openapi.yaml" gekennzeichnet und T1 noch nachjustierbar ist, habe ich `offset` ergänzt, um der DoD gerecht zu werden. Die dynamische Query vermeidet SQL-Injection (nur Werte parametrisiert, WHERE-Fragmente sind Konstanten) und nutzt den vorhandenen Index auf `measured_at`. Ein separates Wire-Schema verhindert, dass die API zukünftig interne Modelländerungen (z. B. neues Feld) automatisch an G3 weitergegeben wird, ohne dass dies am Contract geprüft wird.
+
+- **Alternativen:**
+  - **Nur `limit` wie in openapi.yaml; kein `offset`** — verworfen, weil die DoD explizit `limit/offset` nennt und `offset` für eine brauchbare Pagination nötig ist.
+  - **Internes `Reading`-Schema direkt als Response verwenden** — verworfen, weil `Reading.id` optional ist und der Contract `id` als required definiert.
+  - **Zwei statische SQL-Strings (mit/ohne Zeitfenster)** — verworfen, weil vier Kombinationen (kein/from/to/beide) unübersichtlich wären; die dynamische Variante mit festen Fragmenten bleibt sicher.
+  - **Naive Zeitstempel im Endpoint implizit als UTC interpretieren** — verworfen, weil der Contract ISO-8601/UTC verlangt; naive Zeitstempel werden an das Repository weitergegeben, das einen `ValueError` wirft → Endpoint liefert 400.
+
+- **Ergebnis/Status:** Umgesetzt auf `dtb-34`. 540 Tests grün, 30 skipped (DB-Integration), ruff sauber, Coverage 90 %. Offen: Review + Merge nach Zustimmung durch Lucas.
 
 ## 2026-06-25 — DTB-13: Stale + Plausibilität als DB-agnostisches Fail-safe
 

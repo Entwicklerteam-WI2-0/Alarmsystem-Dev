@@ -8,8 +8,8 @@ parametrisierten Queries (Injection-Schutz).
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from datetime import UTC, datetime
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
 
 import pymysql
 from pymysql.cursors import DictCursor
@@ -24,34 +24,47 @@ from src.storage.database import (
 
 logger = logging.getLogger(__name__)
 
-# Erlaubte Sortierrichtungen fuer get_readings (nach measured_at). Whitelist, weil die
-# ORDER-BY-Richtung in SQL NICHT parametrisierbar ist: nur diese festen Literale werden in
-# die Query interpoliert (Injection-Schutz), nie der rohe Eingabewert. Default desc = neueste
-# zuerst (openapi.yaml /v1/readings, DTB-34).
-_ORDER_DIRECTIONS = {"asc": "ASC", "desc": "DESC"}
 
+def _validate_get_between_args(
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    limit: int,
+    offset: int,
+) -> None:
+    """Validiert die gemeinsamen Argumente fuer Repository.get_between.
 
-def _validate_readings_query(
-    start: datetime | None, end: datetime | None, limit: int, order: str
-) -> str:
-    """Validiert die get_readings-Parameter und liefert die SQL-Sortierrichtung (Whitelist).
+    Zentralisiert, damit InMemoryReadingRepository und ReadingRepository
+    identische Regeln erzwingen (MEDIUM-Review-Finding DTB-34).
+    Fehlermeldungen nutzen die API-Parameternamen 'from'/'to', weil
+    ValueError aus dem Repository direkt an den Client weitergegeben wird.
 
-    Geteilt von In-Memory- und PyMySQL-Implementierung, damit beide exakt dieselbe
-    Eingabe-Semantik haben (DTB-34). Greift VOR jedem DB-Zugriff.
-
-    Raises:
-        ValueError: Bei ungueltigem `order`, nicht-positivem `limit` oder einer
-            zeitzonen-naiven `start`/`end`-Grenze (UTC erwartet).
+    Hinweis zur Zustaendigkeit (LOW-Review-Finding DTB-34): Auf dem API-Pfad
+    ist die FastAPI-Query-Annotation (`ge=1, le=1000` fuer limit, `ge=0` fuer
+    offset in api/v1.py) der MASSGEBLICHE Guard -> ungueltige Werte werden dort
+    bereits als 422 abgefangen, BEVOR diese Funktion laeuft. Die limit/offset-
+    Pruefungen hier sind bewusste Defense-in-Depth fuer den DIREKTEN Repo-Aufruf
+    (Tests, kuenftige Nicht-HTTP-Nutzer). Bei einer Aenderung der Grenzen ist die
+    FastAPI-Annotation zu pflegen; diese Pruefungen bleiben die untere Schranke.
     """
-    if order not in _ORDER_DIRECTIONS:
-        raise ValueError(f"order muss 'asc' oder 'desc' sein, erhalten: {order!r}")
+    if from_dt is not None and from_dt.tzinfo is None:
+        raise ValueError("'from' muss zeitzonenbewusst sein (UTC)")
+    if to_dt is not None and to_dt.tzinfo is None:
+        raise ValueError("'to' muss zeitzonenbewusst sein (UTC)")
+    # Nur naiv abzulehnen reicht NICHT: PyMySQL serialisiert eine zeitzonenbewusste
+    # datetime ueber ihre WALL-CLOCK-Felder und ignoriert den Offset (escape_datetime),
+    # waehrend die InMemory-Variante korrekt ueber UTC vergleicht. Ein Client mit z. B.
+    # '+05:30' liefe damit auf DB-Ebene auf das falsche Zeitfenster (stille Falschdaten,
+    # DTB-34 Review MEDIUM). Darum: zeitzonenbewusst UND Offset == +00:00 erzwingen.
+    if from_dt is not None and from_dt.utcoffset() != timedelta(0):
+        raise ValueError("'from' muss in UTC sein (Offset +00:00)")
+    if to_dt is not None and to_dt.utcoffset() != timedelta(0):
+        raise ValueError("'to' muss in UTC sein (Offset +00:00)")
+    if from_dt is not None and to_dt is not None and from_dt > to_dt:
+        raise ValueError("'from' darf nicht nach 'to' liegen")
     if limit <= 0:
         raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
-    if start is not None and start.tzinfo is None:
-        raise ValueError("start (from) muss zeitzonenbewusst sein (UTC)")
-    if end is not None and end.tzinfo is None:
-        raise ValueError("end (to) muss zeitzonenbewusst sein (UTC)")
-    return _ORDER_DIRECTIONS[order]
+    if offset < 0:
+        raise ValueError(f"offset darf nicht negativ sein, erhalten: {offset}")
 
 
 class RepositoryError(Exception):
@@ -128,35 +141,34 @@ class Repository(ABC):
         ...
 
     @abstractmethod
-    def get_readings(
+    def get_between(
         self,
-        *,
-        sensor_id: str | None = None,
-        start: datetime | None = None,
-        end: datetime | None = None,
+        sensor_id: str,
+        from_dt: datetime | None = None,
+        to_dt: datetime | None = None,
         limit: int = 100,
-        order: str = "desc",
+        offset: int = 0,
+        order: Literal["asc", "desc"] = "desc",
     ) -> Sequence[Reading]:
-        """Liefert die Messwert-Historie als Liste (DTB-34, FA-03 — Serving zu G3).
-
-        Optional eingrenzbar nach Sensor und Zeitfenster; sortiert nach measured_at.
-        Bei mehr Treffern als `limit` wird am AELTEREN Ende abgeschnitten (die
-        frischesten `limit` bleiben, analog get_since), unabhaengig von `order`.
+        """Liefert Readings eines Sensors in einem Zeitfenster (inklusiv, UTC).
 
         Args:
-            sensor_id: Nur Readings dieses Sensors (None = alle Sensoren).
-            start: Untere Zeitgrenze (inklusiv, UTC) auf measured_at (None = offen).
-            end: Obere Zeitgrenze (inklusiv, UTC) auf measured_at (None = offen).
-            limit: Maximale Anzahl Eintraege (> 0; Endpoint begrenzt zusaetzlich auf 1000).
-            order: Sortierung nach measured_at — "asc" oder "desc" (Default "desc").
+            sensor_id: Sensor-ID, fuer die die Readings gesucht werden.
+            from_dt: Untere Zeitschranke (inklusiv) fuer measured_at. None = unbeschraenkt.
+            to_dt: Obere Zeitschranke (inklusiv) fuer measured_at. None = unbeschraenkt.
+            limit: Maximale Anzahl zurueckzugebender Readings (Default: 100).
+            offset: Anzahl zu ueberspringender Zeilen (Default: 0).
+            order: Sortierung nach measured_at ('asc' oder 'desc', Default: 'desc').
 
         Returns:
-            Sequenz von Readings in der gewuenschten Reihenfolge. Leer, wenn keine passen.
+            Sequenz der Readings, sortiert nach `order`.
+            Leere Sequenz, wenn keine vorhanden sind.
 
         Raises:
             RepositoryError: Bei Datenbankfehlern.
-            ValueError: Bei ungueltigem `order`, nicht-positivem `limit` oder einer
-                zeitzonen-naiven Grenze (UTC erwartet).
+            ValueError: Wenn from_dt/to_dt nicht zeitzonenbewusst sind,
+                from_dt nach to_dt liegt, limit nicht positiv ist
+                oder offset negativ ist.
         """
         ...
 
@@ -201,33 +213,26 @@ class InMemoryReadingRepository(Repository):
         ordered = sorted(newest, key=lambda r: (r.measured_at, r.id or 0))
         return tuple(ordered)
 
-    def get_readings(
+    def get_between(
         self,
-        *,
-        sensor_id: str | None = None,
-        start: datetime | None = None,
-        end: datetime | None = None,
+        sensor_id: str,
+        from_dt: datetime | None = None,
+        to_dt: datetime | None = None,
         limit: int = 100,
-        order: str = "desc",
+        offset: int = 0,
+        order: Literal["asc", "desc"] = "desc",
     ) -> Sequence[Reading]:
-        # Validierung (order/limit/tz) + Sortierrichtung geteilt mit der PyMySQL-Variante
-        # -> identische Eingabe-Semantik. `direction` ("ASC"/"DESC") steuert die Endsortierung.
-        direction = _validate_readings_query(start, end, limit, order)
-        candidates = [
-            r
-            for r in self._items
-            if (sensor_id is None or r.sensor_id == sensor_id)
-            and (start is None or r.measured_at >= start)
-            and (end is None or r.measured_at <= end)
-        ]
-        # limit kappt am AELTEREN Ende: erst die FRISCHESTEN `limit` behalten (analog
-        # get_since / der inneren Subquery von ReadingRepository.get_readings), dann in der
-        # gewuenschten Richtung ausgeben.
-        newest = sorted(candidates, key=lambda r: (r.measured_at, r.id or 0), reverse=True)[:limit]
-        ordered = sorted(
-            newest, key=lambda r: (r.measured_at, r.id or 0), reverse=(direction == "DESC")
-        )
-        return tuple(ordered)
+        _validate_get_between_args(from_dt, to_dt, limit, offset)
+
+        candidates = [r for r in self._items if r.sensor_id == sensor_id]
+        if from_dt is not None:
+            candidates = [r for r in candidates if r.measured_at >= from_dt]
+        if to_dt is not None:
+            candidates = [r for r in candidates if r.measured_at <= to_dt]
+
+        reverse = order == "desc"
+        ordered = sorted(candidates, key=lambda r: (r.measured_at, r.id or 0), reverse=reverse)
+        return tuple(ordered[offset : offset + limit])
 
 
 class ReadingRepository(Repository):
@@ -284,6 +289,14 @@ class ReadingRepository(Repository):
             LIMIT %s
         ) AS recent
         ORDER BY measured_at ASC, id ASC
+    """
+
+    _SELECT_SQL = """
+        SELECT
+            id, sensor_id, measured_at, received_at,
+            surface_temp_c, air_temp_c, humidity_pct,
+            pressure_hpa, dew_point_c, source, status
+        FROM reading
     """
 
     def __init__(self, connection: pymysql.Connection | None = None) -> None:
@@ -351,60 +364,42 @@ class ReadingRepository(Repository):
             raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
         return self._execute_read(self._SINCE_SQL, (sensor_id, since, limit))
 
-    # Spaltenliste der Historie-Abfrage (= _row_to_reading-Vertrag). Eigene Konstante, damit
-    # get_readings dieselbe feste Auswahl wie _LATEST_SQL/_SINCE_SQL nutzt (kein SELECT *).
-    _READING_COLUMNS = (
-        "id, sensor_id, measured_at, received_at, "
-        "surface_temp_c, air_temp_c, humidity_pct, "
-        "pressure_hpa, dew_point_c, source, status"
-    )
-
-    def get_readings(
+    def get_between(
         self,
-        *,
-        sensor_id: str | None = None,
-        start: datetime | None = None,
-        end: datetime | None = None,
+        sensor_id: str,
+        from_dt: datetime | None = None,
+        to_dt: datetime | None = None,
         limit: int = 100,
-        order: str = "desc",
+        offset: int = 0,
+        order: Literal["asc", "desc"] = "desc",
     ) -> Sequence[Reading]:
-        """Liefert die Messwert-Historie (DTB-34). Alle WERTE sind parametrisiert.
-
-        Injection-Schutz: die optionalen Filter werden als feste `col = %s`-Fragmente
-        zusammengesetzt (Spaltennamen sind Literale im Code, nie Eingabe); die
-        ORDER-BY-Richtung kommt aus der `_validate_readings_query`-Whitelist (ASC/DESC),
-        nie aus dem rohen `order`-Wert. Nur die Werte (`sensor_id`, Grenzen, `limit`)
-        fliessen als PyMySQL-Parameter.
+        """Liefert Readings eines Sensors in einem Zeitfenster (inklusiv, UTC).
 
         Raises:
             RepositoryError: Bei Datenbankfehlern.
-            ValueError: Bei ungueltigem `order`, nicht-positivem `limit` oder naiver Grenze.
+            ValueError: Bei ungueltigen Zeitstempeln, from > to,
+                nicht-positivem limit oder negativem offset.
         """
-        direction = _validate_readings_query(start, end, limit, order)
-        conditions: list[str] = []
-        params: list[Any] = []
-        if sensor_id is not None:
-            conditions.append("sensor_id = %s")
-            params.append(sensor_id)
-        if start is not None:
+        _validate_get_between_args(from_dt, to_dt, limit, offset)
+
+        conditions = ["sensor_id = %s"]
+        params: list[Any] = [sensor_id]
+        if from_dt is not None:
             conditions.append("measured_at >= %s")
-            params.append(start)
-        if end is not None:
+            params.append(from_dt)
+        if to_dt is not None:
             conditions.append("measured_at <= %s")
-            params.append(end)
-        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        params.append(limit)
-        # Innere Subquery kappt absteigend (FRISCHESTE `limit` behalten, analog _SINCE_SQL);
-        # die aeussere Sortierung stellt die gewuenschte `order`-Richtung wieder her.
-        sql = (
-            f"SELECT * FROM ("
-            f" SELECT {self._READING_COLUMNS} FROM reading"
-            f" {where}"
-            f" ORDER BY measured_at DESC, id DESC"
-            f" LIMIT %s"
-            f" ) AS recent"
-            f" ORDER BY measured_at {direction}, id {direction}"
+            params.append(to_dt)
+
+        order_clause = (
+            "ORDER BY measured_at DESC, id DESC"
+            if order == "desc"
+            else "ORDER BY measured_at ASC, id ASC"
         )
+        # WHERE-Fragmente sind feste Strings; nur Werte kommen aus params -> parametrisiert.
+        where_clause = " AND ".join(conditions)
+        sql = f"{self._SELECT_SQL} WHERE {where_clause} {order_clause} LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
         return self._execute_read(sql, tuple(params))
 
     def _execute_read(self, sql: str, params: tuple) -> Sequence[Reading]:

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 import pytest
 
@@ -45,8 +46,16 @@ class _FakeReadingRepo(Repository):
             raise RepositoryError("boom")
         return self._readings
 
-    def get_readings(self, **_kwargs: object) -> Sequence[Reading]:
-        raise NotImplementedError  # Bridge nutzt nur get_since (DTB-34 Serving)
+    def get_between(
+        self,
+        sensor_id: str,
+        from_dt: datetime | None = None,
+        to_dt: datetime | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        order: Literal["asc", "desc"] = "desc",
+    ) -> Sequence[Reading]:
+        raise NotImplementedError
 
 
 def _reading(minutes_ago: float, surface: float) -> Reading:
