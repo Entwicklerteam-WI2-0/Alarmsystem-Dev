@@ -50,7 +50,7 @@ Referenzen: NF-01, RB-01, E-34, E-36, E-40, DTB-13, DTB-43, DTB-49, DTB-64.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
@@ -89,7 +89,7 @@ class _AssessmentRepoDBFehler(InMemoryAssessmentRepository):
     save() bleibt intakt, damit der Service unbehelligt schreibt (falls noetig).
     """
 
-    def get_latest(self) -> Assessment | None:  # type: ignore[override]
+    def get_latest(self) -> Assessment | None:
         raise RepositoryError("Test-Stub: DB ausgefallen (Schicht 4, E-40)")
 
 
@@ -97,11 +97,11 @@ class _ReadingRepoDBFehler(InMemoryReadingRepository):
     """In-Memory-Stub, dessen get_latest immer RepositoryError wirft.
 
     Gegenstueck zu _AssessmentRepoDBFehler fuer den ZWEITEN DB-Lesepfad im
-    Endpoint (reading_repo.get_latest, main.py ~Z. 420). Belegt, dass derselbe
-    except-Block auch hier fail-safe auf 503 abbildet (E-40 Schicht 4).
+    Endpoint (reading_repo.get_latest in GET /v1/assessment/current, main.py). Belegt,
+    dass derselbe except-Block auch hier fail-safe auf 503 abbildet (E-40 Schicht 4).
     """
 
-    def get_latest(self, sensor_id: str, limit: int = 1):  # type: ignore[override]
+    def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
         raise RepositoryError("Test-Stub: DB ausgefallen beim Reading-Read (Schicht 4, E-40)")
 
 
@@ -112,7 +112,7 @@ def _ok_health_response() -> Mock:
     return response
 
 
-def _fault_current_response(payload: dict) -> Mock:
+def _current_response(payload: dict) -> Mock:
     """Mock fuer eine GET /current-Antwort mit dem uebergebenen JSON-Payload (200)."""
     response = Mock()
     response.json.return_value = payload
@@ -131,7 +131,7 @@ def _mock_g1_get(current_payload: dict) -> Mock:
         if url.endswith("/health"):
             return _ok_health_response()
         if url.endswith("/current"):
-            return _fault_current_response(current_payload)
+            return _current_response(current_payload)
         raise ValueError(f"Unerwartete URL im Poller-Mock: {url}")
 
     return Mock(side_effect=side_effect)
@@ -447,7 +447,7 @@ def test_schicht4_db_ausfall_liefert_503(runtime: Runtime, broken_repo: str) -> 
     """E-40 Schicht 4: RepositoryError bei einem der DB-Reads -> HTTP 503, nie GRUEN.
 
     Beweist fuer BEIDE DB-Lesepfade im Endpoint (assessment_repo.get_latest UND
-    reading_repo.get_latest, main.py ~Z. 419-420, gemeinsamer except-Block):
+    reading_repo.get_latest in GET /v1/assessment/current, gemeinsamer except-Block):
     GET /v1/assessment/current faengt RepositoryError contract-konform ab und
     antwortet mit 503 Error{code, message} — kein 500, kein {detail}-Feld, und
     niemals risk_level=green im Body (NF-01, E-40 Schicht 4, Contract-Format D).
@@ -550,7 +550,10 @@ def test_schicht5_kaskade_fehlender_taupunkt_nie_gruen(
     )
     persisted = assessment_repo.get_latest()
     assert persisted is not None
-    assert persisted.risk_level is not RiskLevel.GREEN
+    # Persistenz-Assertion exakt wie die Rueckgabe (ORANGE), nicht nur "nicht GRUEN":
+    # faengt eine Regression, die korrekt ORANGE zurueckgibt, aber falsch persistiert
+    # (Konsistenz mit Schichten 1-4, die persistent denselben Wert wie result pruefen).
+    assert persisted.risk_level is RiskLevel.ORANGE
 
 
 # ---------------------------------------------------------------------------
