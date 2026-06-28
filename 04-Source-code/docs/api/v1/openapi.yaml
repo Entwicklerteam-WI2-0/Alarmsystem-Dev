@@ -275,6 +275,7 @@ paths:
           schema:
             type: integer
             minimum: 0
+            maximum: 100000
             default: 0
         - name: order
           in: query

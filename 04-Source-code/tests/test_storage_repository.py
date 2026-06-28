@@ -562,7 +562,7 @@ def test_get_between_isolated_per_sensor(repository: ReadingRepository) -> None:
 
 
 def test_get_between_rejects_from_after_to(repository: ReadingRepository) -> None:
-    with pytest.raises(ValueError, match="from_dt darf nicht nach to_dt liegen"):
+    with pytest.raises(ValueError, match="'from' darf nicht nach 'to' liegen"):
         repository.get_between(
             sensor_id="anr-rwy-01",
             from_dt=datetime(2026, 6, 23, 11, 0, 0, tzinfo=UTC),
@@ -587,7 +587,7 @@ def test_get_between_rejects_negative_offset(
 
 
 def test_get_between_rejects_naive_from(repository: ReadingRepository) -> None:
-    with pytest.raises(ValueError, match="from_dt muss zeitzonenbewusst sein"):
+    with pytest.raises(ValueError, match="'from' muss zeitzonenbewusst sein"):
         repository.get_between(
             sensor_id="anr-rwy-01",
             from_dt=datetime(2026, 6, 23, 10, 0, 0),
@@ -595,7 +595,7 @@ def test_get_between_rejects_naive_from(repository: ReadingRepository) -> None:
 
 
 def test_get_between_rejects_naive_to(repository: ReadingRepository) -> None:
-    with pytest.raises(ValueError, match="to_dt muss zeitzonenbewusst sein"):
+    with pytest.raises(ValueError, match="'to' muss zeitzonenbewusst sein"):
         repository.get_between(
             sensor_id="anr-rwy-01",
             to_dt=datetime(2026, 6, 23, 10, 0, 0),

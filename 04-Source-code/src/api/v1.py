@@ -116,7 +116,7 @@ def read_readings(
     ] = 100,
     offset: Annotated[
         int,
-        Query(description="Anzahl zu ueberspringender Zeilen.", ge=0),
+        Query(description="Anzahl zu ueberspringender Zeilen.", ge=0, le=100_000),
     ] = 0,
     order: Annotated[
         Literal["asc", "desc"],

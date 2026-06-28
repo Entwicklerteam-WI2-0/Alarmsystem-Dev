@@ -25,6 +25,31 @@ from src.storage.database import (
 logger = logging.getLogger(__name__)
 
 
+def _validate_get_between_args(
+    from_dt: datetime | None,
+    to_dt: datetime | None,
+    limit: int,
+    offset: int,
+) -> None:
+    """Validiert die gemeinsamen Argumente fuer Repository.get_between.
+
+    Zentralisiert, damit InMemoryReadingRepository und ReadingRepository
+    identische Regeln erzwingen (MEDIUM-Review-Finding DTB-34).
+    Fehlermeldungen nutzen die API-Parameternamen 'from'/'to', weil
+    ValueError aus dem Repository direkt an den Client weitergegeben wird.
+    """
+    if from_dt is not None and from_dt.tzinfo is None:
+        raise ValueError("'from' muss zeitzonenbewusst sein (UTC)")
+    if to_dt is not None and to_dt.tzinfo is None:
+        raise ValueError("'to' muss zeitzonenbewusst sein (UTC)")
+    if from_dt is not None and to_dt is not None and from_dt > to_dt:
+        raise ValueError("'from' darf nicht nach 'to' liegen")
+    if limit <= 0:
+        raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
+    if offset < 0:
+        raise ValueError(f"offset darf nicht negativ sein, erhalten: {offset}")
+
+
 class RepositoryError(Exception):
     """Domänen-Exception für Fehler in der Persistenzschicht.
 
@@ -180,16 +205,7 @@ class InMemoryReadingRepository(Repository):
         offset: int = 0,
         order: Literal["asc", "desc"] = "desc",
     ) -> Sequence[Reading]:
-        if from_dt is not None and from_dt.tzinfo is None:
-            raise ValueError("from_dt muss zeitzonenbewusst sein (UTC)")
-        if to_dt is not None and to_dt.tzinfo is None:
-            raise ValueError("to_dt muss zeitzonenbewusst sein (UTC)")
-        if from_dt is not None and to_dt is not None and from_dt > to_dt:
-            raise ValueError("from_dt darf nicht nach to_dt liegen")
-        if limit <= 0:
-            raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
-        if offset < 0:
-            raise ValueError(f"offset darf nicht negativ sein, erhalten: {offset}")
+        _validate_get_between_args(from_dt, to_dt, limit, offset)
 
         candidates = [r for r in self._items if r.sensor_id == sensor_id]
         if from_dt is not None:
@@ -344,19 +360,10 @@ class ReadingRepository(Repository):
 
         Raises:
             RepositoryError: Bei Datenbankfehlern.
-            ValueError: Bei ungueltigen Zeitstempeln, from_dt > to_dt,
+            ValueError: Bei ungueltigen Zeitstempeln, from > to,
                 nicht-positivem limit oder negativem offset.
         """
-        if from_dt is not None and from_dt.tzinfo is None:
-            raise ValueError("from_dt muss zeitzonenbewusst sein (UTC)")
-        if to_dt is not None and to_dt.tzinfo is None:
-            raise ValueError("to_dt muss zeitzonenbewusst sein (UTC)")
-        if from_dt is not None and to_dt is not None and from_dt > to_dt:
-            raise ValueError("from_dt darf nicht nach to_dt liegen")
-        if limit <= 0:
-            raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
-        if offset < 0:
-            raise ValueError(f"offset darf nicht negativ sein, erhalten: {offset}")
+        _validate_get_between_args(from_dt, to_dt, limit, offset)
 
         conditions = ["sensor_id = %s"]
         params: list[Any] = [sensor_id]

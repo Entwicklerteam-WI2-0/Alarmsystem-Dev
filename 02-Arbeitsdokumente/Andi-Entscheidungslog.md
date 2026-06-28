@@ -1,9 +1,29 @@
 # Persönliches Entscheidungslog — Andi (G2)
-> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-27
+> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-28
 > **Autor:** Andi · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
 ---
+
+## 2026-06-28 — DTB-34: Review-Findings nachgereicht (Offset-Oberlimit, Validierung zentralisieren, Spec-Freeze)
+
+- **Kontext/Task:** Nachträgliche Review-Findings zu DTB-34 (keine CRITICAL/HIGH, ein MEDIUM, drei LOWs).
+
+- **Entscheidung:**
+  - Validierungslogik von `get_between` in `src/storage/repository.py` in die Modul-Funktion `_validate_get_between_args()` ausgelagert; sowohl `InMemoryReadingRepository` als auch `ReadingRepository` rufen sie auf (MEDIUM).
+  - Fehlermeldungen der Validierung auf API-Parameternamen `'from'`/`'to'` umgestellt (statt internen `from_dt`/`to_dt`), weil `ValueError` direkt als 400-Response an G3 weitergegeben wird (LOW).
+  - `offset` in `GET /v1/readings` API-seitig auf `0 … 100_000` begrenzt (`le=100_000` in FastAPI + `maximum: 100000` in `openapi.yaml`); verhindert extreme Pagination-Anfragen, die MySQL intern materialisieren lassen (LOW).
+  - Additive Ergänzungen in `openapi.yaml` (`offset`-Parameter, 503-Response für `/v1/readings`) dokumentiert: keine Breaking Changes, sondern Ausfüllen einer T1-Lücke im eingefrorenen Vertrag v1.0. Architekten-Review war einverstanden (LOW).
+
+- **Begründung:**
+  Die zentrale Validierungsfunktion vermeidet Copy-Paste-Drift zwischen InMemory- und PyMySQL-Implementierung. Die API-freundlichen Fehlermeldungen erhöhen die Verständlichkeit für G3-Consumer. Das `offset`-Oberlimit ist ein vorsorglicher Schutz vor DoS-artigen Anfragen bei wachsender Tabelle. Die Spec-Änderungen sind **additiv** (neue optionale Felder/Responses), kein Breaking Change — G3-Clients, die `offset` nicht senden, verhalten sich unverändert; die 503-Response dokumentiert nur bereits implementiertes Verhalten.
+
+- **Alternativen:**
+  - **Validierung im Endpoint statt Repository** — verworfen, weil das Repository-Interface unabhängig von der API genutzt wird (Tests, Poller) und dort konsistente Regeln sinnvoll sind.
+  - **Fehlermeldungen im Repository belassen (from_dt/to_dt) und im Endpoint mappen** — verworfen, weil es mehr Code ohne Mehrwert bedeutet; `get_between` wird ausschließlich vom Historien-Endpoint konsumiert.
+  - **Offset-Oberlimit auch im Repository erzwingen** — verworfen, weil es eine API-/Verbraucher-Regel ist, keine Persistenz-Regel; das Repository prüft nur `offset < 0`.
+
+- **Ergebnis/Status:** Umgesetzt auf `dtb-34`. Tests + ruff grün. PR #131 reviewbereit.
 
 ## 2026-06-27 — DTB-34: Historien-Endpoint GET /v1/readings
 
