@@ -88,7 +88,7 @@ def database(db_available: bool) -> str:
 
     Bei Schema-Aenderungen (neue Spalten, geaenderte Enums) reicht CREATE DATABASE IF NOT
     EXISTS nicht, weil die bestehende DB ihr altes Schema behaelt. Setze
-    `DB_TEST_FORCE_RECREATE=1`, um die Test-DB vor dem Schema-Load zu droppen und neu
+    `DB_FORCE_RECREATE=1`, um die Test-DB vor dem Schema-Load zu droppen und neu
     anzulegen (DTB-21-Review MEDIUM).
     """
     if not db_available:

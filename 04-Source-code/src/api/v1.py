@@ -32,10 +32,11 @@ from src.api.runtime import Runtime, get_runtime
 from src.api.security import require_api_key
 from src.config.constants import DEFAULT_SENSOR_ID
 from src.config.loader import ConfigError, Thresholds, parse_thresholds
-from src.model.enums import AuditEventType
+from src.model.enums import AlarmState, AuditEventType
 from src.model.schemas import (
     Acknowledgement,
     AckRequest,
+    AlarmResponse,
     AuditLogEntry,
     Error,
     ReadingResponse,
@@ -286,6 +287,81 @@ def read_readings(
         return service_unavailable("G2 momentan nicht lieferfaehig.")
 
     return readings_wire
+
+
+@router.get(
+    "/alarms",
+    response_model=list[AlarmResponse],
+    summary="Zustands-Abfrage der Alarme (Resync, kein Entdeckungs-Poll)",
+    tags=["Alarms"],
+    responses={
+        400: {
+            "model": Error,
+            "description": "Ungueltiger state-Filter.",
+        },
+        503: {
+            "model": Error,
+            "description": "G2 (noch) nicht lieferfaehig (Runtime nicht bereit / DB-Ausfall).",
+        },
+    },
+)
+def list_alarms(
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+    response: Response,
+    state: Annotated[
+        AlarmState | None,
+        Query(
+            description=(
+                "Auf einen Alarm-Zustand filtern (active|acknowledged|cleared). "
+                "Ohne Angabe: alle OFFENEN Alarme (active + acknowledged). Ein "
+                "ungueltiger Wert -> 400 (globaler Request-Validation-Handler)."
+            ),
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        Query(description="Maximale Anzahl zurueckgegebener Alarme.", ge=1, le=500),
+    ] = 100,
+) -> list[AlarmResponse] | JSONResponse:
+    """Liefert Alarme als Resync-Backstop fuer G3 (DTB-31, E-37).
+
+    Zustands-Abfrage fuer Initial-Load + Resync nach SSE-Disconnect -- KEIN
+    Entdeckungs-Poll (Live-Alarme kommen ueber GET /v1/alarms/stream). Rein lesend
+    (RB-01-neutral): kein Zustandswechsel, kein Aktor.
+
+    Ohne `state`-Filter werden die OFFENEN Alarme (active + acknowledged) geliefert, damit
+    nach einem Disconnect auch bereits quittierte, aber noch nicht beendete Alarme in der
+    G3-Ansicht bleiben. Bei Persistenzfehlern wird fail-safe 503 im Contract-Format
+    `Error {code, message}` gemeldet (NF-01).
+
+    `state` ist als `AlarmState`-Enum typisiert (matcht das frozen openapi.yaml-Schema
+    `$ref AlarmState`). Ein ungueltiger Wert wird vom globalen RequestValidationError-
+    Handler contract-konform als `400 Error{code, message}` abgebildet (Query-Fehler =
+    400, Contract D) -- nicht als FastAPI-Default-422.
+    """
+    response.headers.update(NO_STORE_HEADERS)
+
+    try:
+        alarms = runtime.alarm_repo.get_alarms(state=state, limit=limit)
+        # Domain->Wire-Mapping bewusst INNERHALB des try (analog readings): ein unerwarteter
+        # Drift (z. B. id=None) propagierte sonst als roher 500 und braeche den
+        # Error{code,message}-Contract (NF-01).
+        alarms_wire = [AlarmResponse(**alarm.model_dump()) for alarm in alarms]
+    except ValidationError:
+        # Serverseitiger Mapping-/Schema-Drift -> fail-safe 503, ohne interne Details (NF-01).
+        logger.exception("Domain->Wire-Mapping der Alarme fehlgeschlagen (Drift?).")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+    except RepositoryError as exc:
+        # DB-Ausfall -> 503 (Fail-safe, NF-01). Ursache am API-Rand loggen.
+        logger.error("alarms: Persistenz nicht verfuegbar: %s", exc)
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+    except Exception:  # noqa: BLE001 - letzter Fail-safe: JEDER Fehlerpfad liefert
+        # Error{code,message} (Contract), nie ein roher 500 mit {detail}. Volle Ursache
+        # bleibt im Log (logger.exception) erhalten (NF-01).
+        logger.exception("Unerwarteter Fehler beim Lesen der Alarme.")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+
+    return alarms_wire
 
 
 # SSE-Antwortheader (DTB-61): no-store (Echtzeit-Sicherheitsnaht, kein Cache eines
