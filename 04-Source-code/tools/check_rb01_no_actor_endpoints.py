@@ -25,6 +25,9 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+# `execute` ist bewusst breit: In RB-01-Naehe darf kein API-Pfad einen automatisch
+# ausgefuehrten Bahn-/Runway-Befehl nahelegen. Legitime technische Execute-Pfade
+# gehoeren nicht in die oeffentliche G2-/v1-API.
 VERBOTENE_AKTOR_KEYWORDS: tuple[str, ...] = ("unlock", "freigabe", "sperr", "execute")
 
 FASTAPI_METHODEN: frozenset[str] = frozenset(
@@ -37,7 +40,7 @@ DEFAULT_ZIELE: tuple[Path, ...] = (
     _BASIS / "docs" / "api" / "v1" / "openapi.yaml",
 )
 
-_OPENAPI_PATH_RE = re.compile(r"^\s{2}(/[^:]*):\s*(?:#.*)?$")
+_OPENAPI_PATH_RE = re.compile(r"^\s+(/[^:]*):\s*(?:#.*)?$")
 
 
 @dataclass(frozen=True)
@@ -215,15 +218,17 @@ def pruefe_ziele(ziele: Iterable[str | Path]) -> list[Verstoss]:
 
 
 def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:
-    print("FEHLER: RB-01-Guard hat verbotene Aktor-Endpoints gefunden:\n")
+    print("FEHLER: RB-01-Guard hat verbotene Aktor-Endpoints gefunden:\n", file=sys.stderr)
     for verstoss in verstoesse:
         print(
             f"  {verstoss.datei}:{verstoss.zeile}: {verstoss.endpoint} "
-            f"({verstoss.keyword}) — {verstoss.grund}"
+            f"({verstoss.keyword}) — {verstoss.grund}",
+            file=sys.stderr,
         )
     print(
         "\nRB-01 verlangt reine Entscheidungsunterstuetzung: kein Freigabe-, "
-        "Sperr-, Unlock- oder Execute-Endpoint."
+        "Sperr-, Unlock- oder Execute-Endpoint.",
+        file=sys.stderr,
     )
 
 

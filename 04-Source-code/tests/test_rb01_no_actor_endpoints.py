@@ -3,6 +3,7 @@
 from tools.check_rb01_no_actor_endpoints import (
     finde_verstoesse_in_openapi_text,
     finde_verstoesse_in_python_text,
+    main,
 )
 
 
@@ -68,6 +69,21 @@ paths:
     assert verstoesse[0].endpoint == "/v1/runway/sperren"
 
 
+def test_openapi_path_mit_vier_spaces_wird_blockiert():
+    yaml_text = """
+paths:
+    /v1/runway/execute:
+      post:
+        summary: Verbotener Aktor
+"""
+
+    verstoesse = finde_verstoesse_in_openapi_text(yaml_text, "docs/api/v1/openapi.yaml")
+
+    assert len(verstoesse) == 1
+    assert verstoesse[0].keyword == "execute"
+    assert verstoesse[0].endpoint == "/v1/runway/execute"
+
+
 def test_openapi_erlaubte_endpoint_liste_ist_sauber():
     yaml_text = """
 paths:
@@ -97,3 +113,24 @@ paths:
 """
 
     assert finde_verstoesse_in_openapi_text(yaml_text, "docs/api/v1/openapi.yaml") == []
+
+
+def test_main_schreibt_verstoesse_auf_stderr(tmp_path, capsys):
+    openapi = tmp_path / "openapi.yaml"
+    openapi.write_text(
+        """
+paths:
+    /v1/runway/execute:
+      post:
+        summary: Verbotener Aktor
+""",
+        encoding="utf-8",
+    )
+
+    code = main([str(openapi)])
+    captured = capsys.readouterr()
+
+    assert code == 1
+    assert "FEHLER" in captured.err
+    assert "/v1/runway/execute" in captured.err
+    assert captured.out == ""
