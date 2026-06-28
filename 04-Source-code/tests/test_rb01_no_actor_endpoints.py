@@ -25,6 +25,24 @@ def route():
     assert verstoesse[0].endpoint == "/runway/unlock"
 
 
+def test_async_python_route_mit_execute_wird_blockiert():
+    code = """
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.post("/runway/execute")
+async def route():
+    return {"ok": True}
+"""
+
+    verstoesse = finde_verstoesse_in_python_text(code, "src/api/v1.py")
+
+    assert len(verstoesse) == 1
+    assert verstoesse[0].keyword == "execute"
+    assert verstoesse[0].endpoint == "/runway/execute"
+
+
 def test_python_route_docstring_mit_freigabe_ist_sauber():
     code = '''
 from fastapi import APIRouter
@@ -84,6 +102,23 @@ paths:
     assert verstoesse[0].endpoint == "/v1/runway/execute"
 
 
+def test_openapi_beschreibung_mit_execute_beispiel_ist_sauber():
+    yaml_text = """
+info:
+  title: G2 API
+  description: |
+    Verbotene Muster:
+      /v1/runway/execute:
+        wird durch RB-01 blockiert
+paths:
+  /v1/health:
+    get:
+      summary: Health
+"""
+
+    assert finde_verstoesse_in_openapi_text(yaml_text, "docs/api/v1/openapi.yaml") == []
+
+
 def test_openapi_erlaubte_endpoint_liste_ist_sauber():
     yaml_text = """
 paths:
@@ -133,4 +168,13 @@ paths:
     assert code == 1
     assert "FEHLER" in captured.err
     assert "/v1/runway/execute" in captured.err
+    assert captured.out == ""
+
+
+def test_main_fehler_wenn_ziel_nicht_existiert(tmp_path, capsys):
+    code = main([str(tmp_path / "nicht_vorhanden.yaml")])
+    captured = capsys.readouterr()
+
+    assert code == 1
+    assert "fail-closed" in captured.err
     assert captured.out == ""

@@ -10,6 +10,11 @@ Bewusst werden Kommentare, Docstrings und OpenAPI-Beschreibungen nicht durchsuch
 README/Code duerfen RB-01 erklaeren, ohne den Guard rot zu faerben. Entscheidend
 ist, dass kein Endpoint-Pfad ein Aktor-Vokabular traegt.
 
+Der OpenAPI-Scan ist absichtlich ein kleiner struktureller Textscan statt ein
+YAML-Parser: Geprueft werden nur Path-Keys innerhalb des top-level `paths:`-
+Abschnitts. Beschreibungen, Beispiele und Kommentare ausserhalb davon duerfen
+verbotene Muster als Dokumentation nennen.
+
 Aufruf aus `04-Source-code/`:
     python tools/check_rb01_no_actor_endpoints.py
 
@@ -40,6 +45,7 @@ DEFAULT_ZIELE: tuple[Path, ...] = (
     _BASIS / "docs" / "api" / "v1" / "openapi.yaml",
 )
 
+_TOP_LEVEL_KEY_RE = re.compile(r"^[A-Za-z0-9_.-]+:\s*(?:#.*)?$")
 _OPENAPI_PATH_RE = re.compile(r"^\s+(/[^:]*):\s*(?:#.*)?$")
 
 
@@ -144,7 +150,15 @@ def finde_verstoesse_in_python_text(quelltext: str, dateiname: str) -> list[Vers
 def finde_verstoesse_in_openapi_text(quelltext: str, dateiname: str) -> list[Verstoss]:
     """Findet verbotene Aktor-Keywords in OpenAPI-Path-Keys."""
     verstoesse: list[Verstoss] = []
+    in_paths = False
     for zeile, inhalt in enumerate(quelltext.splitlines(), start=1):
+        if inhalt.startswith("paths:"):
+            in_paths = True
+            continue
+        if in_paths and _TOP_LEVEL_KEY_RE.match(inhalt):
+            in_paths = False
+        if not in_paths:
+            continue
         match = _OPENAPI_PATH_RE.match(inhalt)
         if match is None:
             continue
