@@ -91,6 +91,28 @@ class Alarm(_Base):
     state: AlarmState = AlarmState.ACTIVE
 
 
+class AlarmResponse(_Base):
+    """Wire-Schema fuer GET /v1/alarms (DTB-31, Contract v1).
+
+    Spiegelt das interne Alarm-Modell, erzwingt aber eine gueltige ID (Alarme aus der DB
+    haben immer eine id). Trennung internes Modell / Aussen-Schnittstelle, analog
+    ReadingResponse/AssessmentCurrent; matcht das openapi.yaml-Schema `Alarm`
+    (required: id, assessment_id, severity, raised_at, state).
+    """
+
+    # title="Alarm" setzt das JSON-Schema-`title`-Feld auf `Alarm` (= frozen openapi.yaml),
+    # analog ReadingResponse -> "Reading". Der Component-KEY bleibt klassenabgeleitet
+    # `AlarmResponse` (FastAPI/Pydantic v2; title benennt das Schema nicht um). G3 konsumiert
+    # ohnehin die frozen openapi.yaml als SoT, nicht die Live-/openapi.json -> akzeptiert.
+    model_config = ConfigDict(extra="forbid", title="Alarm")
+
+    id: int
+    assessment_id: int
+    severity: AlarmSeverity
+    raised_at: datetime
+    state: AlarmState
+
+
 class Acknowledgement(_Base):
     """Quittierung eines Alarms durch einen Operator (append-only, NF-09)."""
 

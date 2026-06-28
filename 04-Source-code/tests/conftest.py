@@ -78,12 +78,22 @@ def poller(reading_repo: InMemoryReadingRepository, thresholds: Thresholds) -> P
 
 
 @pytest.fixture
-def alarm_generator(thresholds: Thresholds, audit_repo: InMemoryAuditRepository) -> AlarmGenerator:
-    # In-Memory-AlarmGenerator (DTB-27): Hysterese aus echter Config, In-Memory-Alarm-Repo,
+def alarm_repo() -> InMemoryAlarmRepository:
+    # Geteilte Alarm-Persistenz: eine Instanz fuer Generator (DTB-27 Schreiben) UND
+    # runtime.alarm_repo (DTB-31 Resync-Lesen) — analog build_runtime (main.py), sodass
+    # ein erzeugter Alarm spaeter ueber GET /v1/alarms sichtbar ist.
+    return InMemoryAlarmRepository()
+
+
+@pytest.fixture
+def alarm_generator(
+    thresholds: Thresholds,
+    alarm_repo: InMemoryAlarmRepository,
+    audit_repo: InMemoryAuditRepository,
+) -> AlarmGenerator:
+    # In-Memory-AlarmGenerator (DTB-27): Hysterese aus echter Config, geteiltes Alarm-Repo,
     # geteiltes audit_repo — analog build_runtime, aber ohne DB.
-    return AlarmGenerator(
-        AlarmHysterese(thresholds.hysterese), InMemoryAlarmRepository(), audit_repo
-    )
+    return AlarmGenerator(AlarmHysterese(thresholds.hysterese), alarm_repo, audit_repo)
 
 
 @pytest.fixture
@@ -98,6 +108,7 @@ def runtime(
     reading_repo: InMemoryReadingRepository,
     assessment_repo: InMemoryAssessmentRepository,
     audit_repo: InMemoryAuditRepository,
+    alarm_repo: InMemoryAlarmRepository,
     poller: Poller,
     assessment_service: AssessmentService,
     alarm_generator: AlarmGenerator,
@@ -111,6 +122,7 @@ def runtime(
         reading_repo=reading_repo,
         assessment_repo=assessment_repo,
         audit_repo=audit_repo,
+        alarm_repo=alarm_repo,
         poller=poller,
         service=assessment_service,
         alarm_generator=alarm_generator,

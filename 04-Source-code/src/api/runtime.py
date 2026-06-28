@@ -22,7 +22,12 @@ if TYPE_CHECKING:
     from src.assessment import AssessmentService
     from src.config.loader import Thresholds
     from src.ingest.poller import Poller
-    from src.storage import AssessmentRepository, AuditRepository, Repository
+    from src.storage import (
+        AlarmRepository,
+        AssessmentRepository,
+        AuditRepository,
+        Repository,
+    )
 
 
 @dataclass(frozen=True)
@@ -37,6 +42,9 @@ class Runtime:
     reading_repo: Repository
     assessment_repo: AssessmentRepository
     audit_repo: AuditRepository
+    # DTB-31: Lesepfad fuer GET /v1/alarms (Resync). Dieselbe Instanz, die der
+    # AlarmGenerator zum Schreiben nutzt -> ein Repository pro laufende Instanz.
+    alarm_repo: AlarmRepository
     poller: Poller
     service: AssessmentService
     alarm_generator: AlarmGenerator
