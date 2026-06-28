@@ -100,6 +100,10 @@ class AssessmentService:
 
         stale_timeout_s = self._thresholds.datenqualitaet.stale_timeout_s
 
+        # Hinweis: pydantic `model_copy(update=...)` validiert NICHT erneut (kein
+        # max_length-Check). Die hier gesetzten driving_factor-Werte sind ausschliesslich
+        # die DRIVING_FACTOR_*-Konstanten aus core.py und liegen garantiert <= 64 Zeichen;
+        # neue Werte muessen diese Grenze ebenfalls einhalten (sonst 500 erst beim Serven).
         if reading is None:
             # Kein Reading -> kein reading_id moeglich (Fail-safe ohne Bezug).
             assessment = build_unknown_assessment("keine aktuellen Daten", now).model_copy(

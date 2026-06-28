@@ -38,6 +38,9 @@ DRIVING_FACTOR_SURFACE_TEMP = "surface_temp"
 DRIVING_FACTOR_FORECAST = "forecast"
 DRIVING_FACTOR_STALE = "stale"
 DRIVING_FACTOR_SENSOR_FAULT = "sensor_fault"
+# Ungueltiger (NaN/inf) Mess-/Taupunktwert: assess_ice_risk liefert UNKNOWN, ohne
+# dass Stale/Fault griff -> eigener Faktor fuer Observability (NF-01-Geist, DTB-66).
+DRIVING_FACTOR_SENSOR_DATA = "sensor_data"
 
 
 def assess_ice_risk(
@@ -119,9 +122,13 @@ def derive_explanation(
     """Leitet driving_factor und explanation aus dem Bewertungsergebnis ab (DTB-66).
 
     Gibt (driving_factor, explanation) zurueck. Spiegelt die Kaskade aus
-    assess_ice_risk um das bereits bestimmte risk_level herum, ohne sie zu
-    duplizieren. UNKNOWN-Pfade werden NICHT hier behandelt (die kommen aus
-    Fail-safe-Zweigen in service.py, nicht aus der normalen Kaskade).
+    assess_ice_risk (inkl. der Forecast-Schwellenpruefung) um das bereits
+    bestimmte risk_level herum, ohne sie zu duplizieren.
+
+    UNKNOWN aus dieser Funktion deckt nur den Happy-Pfad-Fall ab, in dem
+    assess_ice_risk wegen ungueltiger (NaN/inf) Sensorwerte UNKNOWN liefert
+    -> driving_factor=sensor_data. Die Stale-/Fault-/Keine-Daten-UNKNOWN-Faelle
+    werden VOR dem Aufruf in service.py gesetzt und erreichen diese Funktion nicht.
 
     Args:
         surface_temp_c: Endliche Oberflaechentemperatur T_s.
@@ -175,18 +182,31 @@ def derive_explanation(
             # (core.py-Guard) -> hier KEINEN numerischen Wert formatieren, sonst leakt
             # "nan"/"inf" in den operatorsichtbaren Text (DTB-66 Review).
             if not math.isfinite(forecast_surface_temp_c):
-                expl = "Prognosedaten defekt, Fail-safe: GELB-Vorwarnung."
-            else:
+                return _cap_factor(DRIVING_FACTOR_FORECAST), _cap_expl(
+                    "Prognosedaten defekt, Fail-safe: GELB-Vorwarnung."
+                )
+            # Schwellenpruefung wie in assess_ice_risk spiegeln: nur wenn die Prognose
+            # tatsaechlich Gefrieren droht (forecast <= t_s_grenz_c), ist sie der
+            # treibende Faktor. Sonst kam GELB ueber den T_d-Fail-safe (dew=None) und
+            # wir fallen durch -> sonst widerspruechlicher Text "5.0 ≤ 0.0" (DTB-66 Review).
+            if forecast_surface_temp_c <= p.t_s_grenz_c:
                 expl = (
                     f"30-min-Prognose: T_s prognostiziert {forecast_surface_temp_c:.1f} °C "
                     f"≤ {p.t_s_grenz_c:.1f} °C (Vorwarnung)."
                 )
-            return _cap_factor(DRIVING_FACTOR_FORECAST), _cap_expl(expl)
+                return _cap_factor(DRIVING_FACTOR_FORECAST), _cap_expl(expl)
         # Fail-safe: T_d unbestimmbar, T_s > GELB-Auffang -> nie GRUEN.
         expl = "Taupunkt unbestimmbar, Fail-safe: keine GRÜN-Freigabe."
         return _cap_factor(DRIVING_FACTOR_DEW_POINT), _cap_expl(expl)
 
-    # GREEN oder UNKNOWN: kein driving_factor aus dieser Funktion.
+    if risk_level is RiskLevel.UNKNOWN:
+        # Happy-Pfad-UNKNOWN: assess_ice_risk hat wegen ungueltiger (NaN/inf)
+        # Sensor-/Taupunktwerte UNKNOWN geliefert. Observability statt leerer Felder.
+        return _cap_factor(DRIVING_FACTOR_SENSOR_DATA), _cap_expl(
+            "Fail-safe: Sensorwert ungültig (NaN/inf)."
+        )
+
+    # GREEN: kein driving_factor aus dieser Funktion.
     return None, None
 
 

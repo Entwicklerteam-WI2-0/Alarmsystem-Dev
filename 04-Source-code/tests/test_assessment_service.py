@@ -405,6 +405,48 @@ def test_gelb_durch_defekte_prognose_leakt_kein_nan(thresholds):
     assert "defekt" in result.explanation.lower() or "Prognosedaten" in result.explanation
 
 
+def test_gelb_warme_oberflaeche_harmlose_prognose_ist_dew_point_nicht_forecast(thresholds):
+    """GELB via T_d-Fail-safe (dew=None), Prognose UEBER Schwelle -> kein forecast-Text.
+
+    Regression DTB-66 Review HIGH: derive_explanation darf den forecast-Zweig nur
+    waehlen, wenn die Prognose tatsaechlich Gefrieren droht (<= t_s_grenz_c). Bei
+    surface=2.0, dew=None, forecast=5.0 gibt assess_ice_risk GELB ueber den
+    dew=None-Fail-safe -> driving_factor muss dew_point sein, nicht forecast, und der
+    Text darf nicht widerspruechlich "5.0 °C ≤ 0.0 °C" behaupten.
+    """
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+
+    result = service.assess_reading(
+        _reading(now, surface=2.0, dew=None), now, forecast_surface_temp_c=5.0
+    )
+
+    assert result.risk_level is RiskLevel.YELLOW
+    assert result.driving_factor == "dew_point"
+    assert result.explanation is not None
+    assert "Taupunkt" in result.explanation
+    assert "Prognose" not in result.explanation
+
+
+def test_happy_pfad_nan_surface_ist_unknown_mit_sensor_data_faktor(thresholds):
+    """NaN-Sensorwert im Happy-Pfad -> UNKNOWN mit driving_factor=sensor_data.
+
+    DTB-66 Review MEDIUM: assess_ice_risk gibt bei NaN/inf UNKNOWN; der Wire-Response
+    soll dann nicht ohne driving_factor/explanation dastehen (Observability, NF-01-Geist).
+    """
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+
+    result = service.assess_reading(_reading(now, surface=float("nan"), dew=0.0), now)
+
+    assert result.risk_level is RiskLevel.UNKNOWN
+    assert result.driving_factor == "sensor_data"
+    assert result.explanation is not None
+    assert len(result.driving_factor) <= 64
+    assert len(result.explanation) <= 512
+    assert "ungültig" in result.explanation or "NaN" in result.explanation
+
+
 def test_gruen_hat_keinen_driving_factor(thresholds):
     """GRUEN: kein Risiko, driving_factor und explanation bleiben None."""
     service = _make_service(thresholds)
