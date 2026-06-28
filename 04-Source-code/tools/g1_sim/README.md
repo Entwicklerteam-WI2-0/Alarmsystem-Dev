@@ -47,6 +47,10 @@ State-Datei (`g1_state.json`, Vorlage: `g1_state.example.json`) bearbeiten — d
 | `age_s` | int ≥ 0 | Sekunden, die `measured_at` zurückdatiert wird (Stale-Test). Negativ würde `measured_at` in die Zukunft setzen — nicht verwenden. |
 | `health_down` | bool | `true` → `/health` 503 → G2 pollt nicht → `unknown` |
 
+> Hand-Editierfehler sind tolerant: unbekannte Keys (Tippfehler), ein `status` außerhalb `ok|fault`
+> oder ein nicht-numerisches/negatives `age_s` führen **nicht** zum Crash — der Sim warnt auf `stderr`
+> und nutzt den Default. Invalides JSON → Grün-Default.
+
 Erwartete G2-Reaktion (gegen aktuelle `config/thresholds.json`):
 
 | Szenario | Beispiel-State | erwartete Ampel |

@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from datetime import UTC, datetime, timedelta
 
 import uvicorn
@@ -36,7 +37,15 @@ _DEFAULT_STATE: dict = {
     "health_down": False,
 }
 
+# Contract-Statuswerte (g1-consumed.openapi.yaml). Abweichungen werden gewarnt, nicht erzwungen.
+_VALID_STATUS = frozenset({"ok", "fault"})
+
 app = FastAPI(title="G1-Sensor-Simulator (Test)")
+
+
+def _warn(message: str) -> None:
+    """Dev-Hinweis auf stderr (kein harter Fehler) -- z. B. Tippfehler in der State-Datei."""
+    print(f"[g1_sim] WARN: {message}", file=sys.stderr)
 
 
 def _state_path() -> str:
@@ -47,14 +56,29 @@ def _state_path() -> str:
 
 
 def _load_state() -> dict:
-    """Liest die State-Datei bei jedem Request (Live-Umschaltung); sonst Gruen-Default."""
+    """Liest die State-Datei bei jedem Request (Live-Umschaltung); sonst Gruen-Default.
+
+    Robust gegen Hand-Editierfehler: invalides/fehlendes JSON -> Gruen-Default; unbekannte
+    Keys (Tippfehler wie 'health_dow') und ein status ausserhalb [ok, fault] werden auf stderr
+    gewarnt (kein harter Fehler), damit der Dev nicht im G2-Stack nach der Ursache sucht.
+    """
     try:
         with open(_state_path(), encoding="utf-8") as fh:
-            return {**_DEFAULT_STATE, **json.load(fh)}
+            raw = json.load(fh)
     except (FileNotFoundError, json.JSONDecodeError):
         # Beim Live-Editieren ist die State-Datei kurzzeitig invalides JSON -> nicht mit
         # HTTP 500 crashen, sondern auf den Gruen-Default zurueckfallen (Dev-Komfort).
         return dict(_DEFAULT_STATE)
+    if not isinstance(raw, dict):
+        _warn(f"State-JSON ist kein Objekt ({type(raw).__name__}) -> Gruen-Default")
+        return dict(_DEFAULT_STATE)
+    unknown = set(raw) - set(_DEFAULT_STATE)
+    if unknown:
+        _warn(f"unbekannte State-Keys (Tippfehler?): {sorted(unknown)}")
+    status = raw.get("status")
+    if status is not None and status not in _VALID_STATUS:
+        _warn(f"status={status!r} ausserhalb des Contracts {sorted(_VALID_STATUS)}")
+    return {**_DEFAULT_STATE, **raw}
 
 
 @app.get("/health")
@@ -67,9 +91,16 @@ def health() -> Response:
 
 @app.get("/current")
 def current() -> dict:
-    """Aktueller Snapshot. age_s > 0 datiert measured_at zurueck (Stale-Test)."""
+    """Aktueller Snapshot. age_s >= 0 datiert measured_at zurueck (Stale-Test)."""
     state = _load_state()
-    measured = datetime.now(UTC) - timedelta(seconds=float(state.get("age_s", 0)))
+    # Robust gegen Hand-Editierfehler: negatives age_s (measured_at in der Zukunft, ausserhalb
+    # Spec) auf 0 klemmen; nicht-numerisches age_s ('foo') faengt der except (sonst 500 auf /current).
+    try:
+        age_s = max(0.0, float(state.get("age_s", 0)))
+    except (TypeError, ValueError):
+        _warn(f"age_s={state.get('age_s')!r} ist keine Zahl -> 0")
+        age_s = 0.0
+    measured = datetime.now(UTC) - timedelta(seconds=age_s)
     return {
         "sensor_id": state["sensor_id"],
         "measured_at": measured.isoformat().replace("+00:00", "Z"),
