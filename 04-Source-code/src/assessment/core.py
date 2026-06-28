@@ -42,6 +42,27 @@ DRIVING_FACTOR_SENSOR_FAULT = "sensor_fault"
 # dass Stale/Fault griff -> eigener Faktor fuer Observability (NF-01-Geist, DTB-66).
 DRIVING_FACTOR_SENSOR_DATA = "sensor_data"
 
+# Fail-fast beim Import: jeder geschlossene driving_factor-Wert MUSS in den
+# Wire-Contract passen (<= 64 Zeichen, AssessmentCurrent). service.py setzt die
+# Werte via pydantic model_copy(update=...), das KEINE erneute max_length-
+# Validierung ausfuehrt -> ein zu langer Wert wuerde erst beim Wire-Serialisieren
+# als 500 auffallen. Dieser Modul-Level-Guard schlaegt stattdessen sofort beim
+# Laden des Moduls an und faengt eine versehentlich zu lange neue Konstante ab
+# (DTB-66 Review LOW).
+_DRIVING_FACTOR_VALUES = (
+    DRIVING_FACTOR_DEW_POINT,
+    DRIVING_FACTOR_SURFACE_TEMP,
+    DRIVING_FACTOR_FORECAST,
+    DRIVING_FACTOR_STALE,
+    DRIVING_FACTOR_SENSOR_FAULT,
+    DRIVING_FACTOR_SENSOR_DATA,
+)
+assert all(len(factor) <= MAX_DRIVING_FACTOR_LEN for factor in _DRIVING_FACTOR_VALUES), (
+    "DRIVING_FACTOR_*-Konstante ueberschreitet die Wire-Contract-Grenze "
+    f"(<= {MAX_DRIVING_FACTOR_LEN} Zeichen): "
+    + ", ".join(f"{f!r}={len(f)}" for f in _DRIVING_FACTOR_VALUES)
+)
+
 
 def assess_ice_risk(
     surface_temp_c: float,
@@ -170,7 +191,17 @@ def derive_explanation(
         return _cap_factor(DRIVING_FACTOR_DEW_POINT), _cap_expl(expl)
 
     if risk_level is RiskLevel.YELLOW:
-        # Kaskaden-Reihenfolge spiegeln: surface_temp vor forecast vor T_d-Fail-safe.
+        # Bewusste Abweichung von assess_ice_risk's interner Pruefreihenfolge:
+        # dort wird die defekte-Prognose-Pruefung VOR dem GELB-Auffang (T_s kalt)
+        # ausgewertet; hier spiegeln wir die Prioritaet fuer den OPERATOR um —
+        # surface_temp vor forecast vor T_d-Fail-safe. Grund: ist die Oberflaeche
+        # tatsaechlich kalt (<= t_s_gelb_auffang_c), ist das die unmittelbar
+        # entscheidungsrelevante Ist-Lage, unabhaengig davon, ob das
+        # Forecasting-Subsystem daneben kaputt ist. assess_ice_risk liefert in
+        # beiden Faellen GELB (Ergebnis korrekt); nur der angezeigte treibende
+        # Faktor wuerde im Randfall "T_s kalt UND Prognose defekt" abweichen
+        # (surface_temp statt forecast). Das ist ein bewusst gewaehlter Trade-off
+        # zugunsten der Ist-Lage (DTB-66 Review MEDIUM).
         if surface_temp_c <= v.t_s_gelb_auffang_c:
             expl = (
                 f"Grenzwertiger Bereich: Oberfläche {surface_temp_c:.1f} °C "

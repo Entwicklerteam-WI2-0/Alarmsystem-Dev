@@ -447,7 +447,25 @@ def test_happy_pfad_nan_surface_ist_unknown_mit_sensor_data_faktor(thresholds):
     assert "ungültig" in result.explanation or "NaN" in result.explanation
 
 
-def test_gruen_hat_keinen_driving_factor(thresholds):
+def test_happy_pfad_inf_surface_ist_unknown_mit_sensor_data_faktor(thresholds):
+    """inf-Sensorwert im Happy-Pfad -> UNKNOWN mit driving_factor=sensor_data.
+
+    Pendant zum NaN-Test (DTB-66 Review INFO): math.isfinite faengt ebenfalls inf
+    ab, daher liefert assess_ice_risk UNKNOWN. Dieser Test schliesst die Coverage
+    ohne Mehraufwand ab und sichert den Pfad gegen eine Veraenderung der
+    Endlichkeits-Pruefung.
+    """
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+
+    result = service.assess_reading(_reading(now, surface=float("inf"), dew=0.0), now)
+
+    assert result.risk_level is RiskLevel.UNKNOWN
+    assert result.driving_factor == "sensor_data"
+    assert result.explanation is not None
+    assert len(result.driving_factor) <= 64
+    assert len(result.explanation) <= 512
+    assert "ungültig" in result.explanation
     """GRUEN: kein Risiko, driving_factor und explanation bleiben None."""
     service = _make_service(thresholds)
     now = datetime.now(UTC)
@@ -471,6 +489,9 @@ def test_stale_reading_setzt_stale_als_driving_factor(thresholds):
     assert result.driving_factor == "stale"
     assert result.explanation is not None
     assert len(result.explanation) <= 512
+    # Inhalts-Assert: explanation nennt den Fail-safe-Grund (DTB-66 Review LOW).
+    assert "stale" in result.explanation.lower() or "veraltet" in result.explanation.lower()
+    assert "Fail-safe" in result.explanation
 
 
 def test_fault_reading_setzt_sensor_fault_als_driving_factor(thresholds):
@@ -486,6 +507,9 @@ def test_fault_reading_setzt_sensor_fault_als_driving_factor(thresholds):
     assert result.driving_factor == "sensor_fault"
     assert result.explanation is not None
     assert len(result.explanation) <= 512
+    # Inhalts-Assert: explanation nennt den Fail-safe-Grund (DTB-66 Review LOW).
+    assert "fault" in result.explanation.lower()
+    assert "Fail-safe" in result.explanation
 
 
 def test_kein_reading_setzt_stale_als_driving_factor(thresholds):
@@ -499,6 +523,9 @@ def test_kein_reading_setzt_stale_als_driving_factor(thresholds):
     assert result.driving_factor == "stale"
     assert result.explanation is not None
     assert len(result.explanation) <= 512
+    # Inhalts-Assert: explanation nennt den Fail-safe-Grund (DTB-66 Review LOW).
+    assert "keine" in result.explanation.lower() or "daten" in result.explanation.lower()
+    assert "Fail-safe" in result.explanation
 
 
 # ---------------------------------------------------------------------------
