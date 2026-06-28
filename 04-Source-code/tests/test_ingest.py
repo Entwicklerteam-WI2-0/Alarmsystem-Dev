@@ -9,6 +9,7 @@ import logging
 import math
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Literal
 from unittest.mock import Mock, patch
 
 import httpx
@@ -52,7 +53,7 @@ class FakeRepository(Repository):
         to_dt: datetime | None = None,
         limit: int = 100,
         offset: int = 0,
-        order: str = "desc",
+        order: Literal["asc", "desc"] = "desc",
     ) -> Sequence[Reading]:
         candidates = [r for r in self.readings if r.sensor_id == sensor_id]
         if from_dt is not None:
@@ -650,7 +651,7 @@ def test_poll_repository_error_is_failsafe(
             to_dt: datetime | None = None,
             limit: int = 100,
             offset: int = 0,
-            order: str = "desc",
+            order: Literal["asc", "desc"] = "desc",
         ) -> Sequence[Reading]:
             raise RepositoryError("DB nicht erreichbar")
 
@@ -703,7 +704,7 @@ def test_poll_unexpected_repository_error_is_not_swallowed(
             to_dt: datetime | None = None,
             limit: int = 100,
             offset: int = 0,
-            order: str = "desc",
+            order: Literal["asc", "desc"] = "desc",
         ) -> Sequence[Reading]:
             return ()
 

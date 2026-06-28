@@ -302,6 +302,15 @@ paths:
               example:
                 code: BAD_REQUEST
                 message: "'from' darf nicht nach 'to' liegen."
+        "503":
+          description: G2 ist (noch) nicht lieferfaehig (z. B. Runtime nicht bereit / DB-Ausfall).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: SERVICE_UNAVAILABLE
+                message: "G2 momentan nicht lieferfaehig."
 
   /v1/alarms:
     get:
