@@ -466,6 +466,9 @@ def test_happy_pfad_inf_surface_ist_unknown_mit_sensor_data_faktor(thresholds):
     assert len(result.driving_factor) <= 64
     assert len(result.explanation) <= 512
     assert "ungültig" in result.explanation
+
+
+def test_gruen_hat_keinen_driving_factor(thresholds):
     """GRUEN: kein Risiko, driving_factor und explanation bleiben None."""
     service = _make_service(thresholds)
     now = datetime.now(UTC)
