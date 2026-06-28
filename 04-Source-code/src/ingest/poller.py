@@ -85,9 +85,12 @@ class Poller:
         # Timeout fuer den HTTP-Request (Netzwerk/Sensor-Ausfall).
         self.timeout = timeout
         # Letztes erfolgreich gespeichertes (plausibles) Reading desselben Sensors —
-        # In-Memory-Referenz fuer die SPRUNG-Erkennung (DTB-20). Geht bei Prozess-Neustart
-        # bewusst verloren (ein Zyklus ohne Sprung-Vergleich ist fail-safe unkritisch);
-        # Entscheidung (a) In-Memory statt DB-Read (s. Entscheidungslog).
+        # In-Memory-Referenz fuer die SPRUNG-Erkennung (DTB-20). Im Normalbetrieb aus dem
+        # vorigen Poll. Nach einem Prozess-Neustart ist sie None und wird beim naechsten poll()
+        # EINMALIG aus der DB nachgeladen (_load_baseline, PR#138 best-of-both mit DTB-20),
+        # damit auch das erste Reading nach einem Neustart gegen den letzten persistierten Wert
+        # auf Sprung geprueft wird. Der DB-Read ist best-effort -> bei Lesefehler
+        # Cold-Start-Fallback (ein Zyklus ohne Sprung-Vergleich, fail-safe unkritisch).
         self._last_reading: Reading | None = None
         # Flatline-Fenster: Beginn (measured_at) der aktuellen Konstanz-Phase plus die ueber
         # das Fenster laufende Min/Max der Oberflaechentemperatur. Flatline prueft die
@@ -146,6 +149,14 @@ class Poller:
         # bisherigen Referenzen DESSELBEN Sensors. Unplausibel -> fail-safe verwerfen (nicht
         # speichern); die Referenzen bleiben die letzten GUTEN Werte, damit ein einzelner
         # Ausreisser sie nicht vergiftet.
+        # Neustart-Robustheit (PR#138 best-of-both): Ist die In-Memory-Referenz leer (frischer
+        # Prozess), die Sprung-Baseline EINMALIG aus der DB nachladen, statt den ersten Poll
+        # ungeprueft durchzulassen. Nur bei None -> im Normalbetrieb kein zusaetzlicher DB-Read.
+        # Das Flatline-FENSTER wird bewusst NICHT aus der DB rekonstruiert (es baut sich nach
+        # einem Neustart ueber flatline_timeout_min wieder auf; DTB-20-Restart-Verhalten bleibt).
+        if self._last_reading is None:
+            self._last_reading = self._load_baseline(reading.sensor_id)
+
         if self._last_reading is not None and self._last_reading.sensor_id != reading.sensor_id:
             # Sensorwechsel: Referenzen verwerfen statt Cross-Sensor zu vergleichen (haelt den
             # poll()-Contract 'Fehler -> None' ein; check_plausibility wuerfe sonst ValueError).
@@ -282,6 +293,21 @@ class Poller:
         else:
             self._flatline_temp_min = new_min
             self._flatline_temp_max = new_max
+
+    def _load_baseline(self, sensor_id: str) -> Reading | None:
+        """Laedt das letzte persistierte Reading als Sprung-Baseline (Neustart-Robustheit, PR#138).
+
+        Wird nur aufgerufen, wenn die In-Memory-Referenz leer ist (frischer Prozess). Best-effort:
+        Bei einem DB-Lesefehler None zurueckgeben (Cold-Start-Fallback) statt ein gueltiges
+        Reading zu verwerfen — der fehlende Sprung-Vergleich fuer EINEN Zyklus ist fail-safe
+        unkritisch (die uebrigen Eingangspruefungen aus _build_reading greifen weiterhin).
+        """
+        try:
+            previous = self.repository.get_latest(sensor_id, limit=1)
+        except RepositoryError as exc:
+            logger.warning("Sprung-Baseline aus DB nicht lesbar, Cold-Start-Fallback: %s", exc)
+            return None
+        return previous[0] if previous else None
 
     def _is_g1_healthy(self) -> bool:
         """Ruft GET /health ab; gibt True bei 200 OK, sonst False."""
