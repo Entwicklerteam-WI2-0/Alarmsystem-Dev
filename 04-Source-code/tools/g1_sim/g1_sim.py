@@ -93,8 +93,8 @@ def health() -> Response:
 def current() -> dict:
     """Aktueller Snapshot. age_s >= 0 datiert measured_at zurueck (Stale-Test)."""
     state = _load_state()
-    # Robust gegen Hand-Editierfehler: negatives age_s (measured_at in der Zukunft, ausserhalb
-    # Spec) auf 0 klemmen; nicht-numerisches age_s ('foo') faengt der except (sonst 500 auf /current).
+    # Robust gegen Hand-Editierfehler: negatives age_s (Zukunft, ausserhalb Spec) auf 0 klemmen;
+    # nicht-numerisches age_s ('foo') faengt der except ab (sonst HTTP 500 auf /current).
     try:
         age_s = max(0.0, float(state.get("age_s", 0)))
     except (TypeError, ValueError):
