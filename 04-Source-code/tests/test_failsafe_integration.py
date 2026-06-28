@@ -31,7 +31,7 @@ Mehrwert:
   - Alle sechs E-40-Schichten sind explizit benannt und maschinell geprueft.
   - Schicht 2a belegt den ECHTEN Fault-Pfad (Poller -> None), nicht nur die
     Defense-in-Depth-Linie im Service (toter Service-Zweig im aktuellen Fluss).
-  - Schicht 3 testet den Poller-Validierungspfad (_build_reading ohne HTTP-Layer).
+  - Schicht 3 testet den Poller-Validierungspfad ueber die Public-API poll() (HTTP gemockt).
     Achtung: check_plausibility (Sprung/Flatline) ist NICHT verdrahtet (toter Code)
     -> braucht bei Verdrahtung einen eigenen Test (Doc am Test).
   - Schicht 4 ist ein neuer Fall: DB-Ausfall -> 503; parametrisiert ueber BEIDE
@@ -50,6 +50,7 @@ Referenzen: NF-01, RB-01, E-34, E-36, E-40, DTB-13, DTB-43, DTB-49, DTB-64.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock, patch
@@ -193,7 +194,7 @@ def _gruen_kandidat(sensor_id: str, measured_at: datetime, thresholds: Threshold
 
 
 @pytest.fixture(autouse=True)
-def _cleanup_app_state() -> None:  # type: ignore[return]
+def _cleanup_app_state() -> Iterator[None]:
     """Setzt app.dependency_overrides und app.state nach jedem Test zurueck.
 
     Notwendig fuer die API-Tests (Schicht 4), damit ein ueberschriebener
@@ -201,7 +202,7 @@ def _cleanup_app_state() -> None:  # type: ignore[return]
     ist dieser Cleanup eine No-Op.
     """
     try:
-        yield  # type: ignore[misc]
+        yield
     finally:
         app.dependency_overrides.clear()
         if hasattr(app.state, "runtime"):
@@ -297,6 +298,7 @@ def test_schicht2a_fault_realer_poller_pfad_liefert_none(
     reading_repo: InMemoryReadingRepository,
     assessment_repo: InMemoryAssessmentRepository,
     assessment_service: AssessmentService,
+    sensor_id: str,
 ) -> None:
     """E-40 Schicht 2 (REALER Pfad): G1 meldet status=fault -> Poller None -> Service unknown.
 
@@ -314,7 +316,7 @@ def test_schicht2a_fault_realer_poller_pfad_liefert_none(
     # G1-Snapshot mit GRUEN-Werten, aber status=fault. measured_at frisch (kein Stale),
     # damit AUSSCHLIESSLICH die fault-Bedingung den Verwurf ausloest.
     fault_payload = {
-        "sensor_id": "anr-rwy-01",
+        "sensor_id": sensor_id,
         "measured_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "surface_temp_c": 5.0,
         "air_temp_c": 6.0,
@@ -330,7 +332,7 @@ def test_schicht2a_fault_realer_poller_pfad_liefert_none(
         "Poller muss ein G1-Snapshot mit status=fault verwerfen (E-40 Schicht 2, realer Pfad)"
     )
     # reading_repo (mit poller geteilt) darf kein fault-Reading gespeichert haben.
-    assert reading_repo.get_latest("anr-rwy-01", limit=1) == ()
+    assert reading_repo.get_latest(sensor_id, limit=1) == ()
 
     # Schicht 2a (real, Forts.): Service bewertet None -> unknown, nie GRUEN (NF-01)
     result = assessment_service.assess_reading(reading, now)
@@ -385,8 +387,8 @@ def test_schicht3_plausibilitaet_ausserhalb_grenzen_nie_gruen(
 ) -> None:
     """E-40 Schicht 3: Wert ausserhalb plausibler Grenzen -> Poller None -> unknown, nie GRUEN.
 
-    Beweist zwei Real-Pfad-Stufen ohne HTTP-Schicht (G1-HTTP ist G1-external):
-    a) Poller._build_reading verwirft surface_temp_c > plausibilitaet.max_temp_c -> None.
+    Beweist zwei Real-Pfad-Stufen ueber die Public-API (G1-HTTP gemockt wie Schicht 2a):
+    a) poll() verwirft surface_temp_c > plausibilitaet.max_temp_c -> None (keine Persistenz).
     b) AssessmentService.assess_reading(reading=None) -> unknown (NF-01).
     Die Plausibilitaetsgrenzen kommen aus config/thresholds.json (NF-05, kein Hardcode).
 
@@ -413,8 +415,12 @@ def test_schicht3_plausibilitaet_ausserhalb_grenzen_nie_gruen(
         "status": "ok",
     }
 
-    # Schicht 3a: Poller-Plausibilitaetspruefung verwirft -> None (keine Persistenz)
-    reading = poller._build_reading(payload)
+    # Schicht 3a: Poller pollt G1 -> Plausibilitaetspruefung verwirft -> None (keine Persistenz).
+    # Ueber die PUBLIC API poll() (HTTP gemockt wie Schicht 2a, /health 200 + /current payload),
+    # nicht ueber die private _build_reading -> testet den realen Pfad und bleibt
+    # refactoring-robust (kein Zugriff auf Implementierungsdetails).
+    with patch("src.ingest.poller.httpx.get", _mock_g1_get(payload)):
+        reading = poller.poll()
     assert reading is None, (
         "Poller muss surface_temp_c > plausibilitaet.max_temp_c verwerfen (E-40 Schicht 3)"
     )
@@ -602,3 +608,6 @@ def test_schicht6_serve_zeit_recheck_gruen_wird_unknown(
     assert response.dew_point_c is None
     assert response.delta_t is None
     assert response.humidity_pct is None
+    # Hinweis (Review-Frage air_temp_c): AssessmentCurrent fuehrt BEWUSST kein air_temp_c —
+    # die Lufttemperatur ist nur G1-Eingangsgroesse fuer die Taupunkt-Berechnung, nicht Teil
+    # des G2->G3-Wire (Contract §2a). Es gibt daher nichts zu nullen (kein Feld vorhanden).
