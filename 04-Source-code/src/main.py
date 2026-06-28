@@ -49,7 +49,6 @@ from src.api.responses import (
     NO_STORE_HEADERS,
     service_unavailable,
     unauthorized,
-    unprocessable_entity,
 )
 from src.api.runtime import Runtime, get_runtime
 from src.api.v1 import router as v1_router
@@ -411,10 +410,39 @@ async def _api_key_not_configured_handler(
 
 
 @app.exception_handler(RequestValidationError)
-async def _validation_error_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
-    """Body-/Schema-Validierung -> contract-konform 422 (statt FastAPI-{detail}-Liste)."""
-    logger.info("Request-Validierung fehlgeschlagen: %s", exc)
-    return unprocessable_entity("Ungueltiger Request-Body.")
+async def _request_validation_error_handler(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """FastAPI-Validierungsfehler contract-konform abbilden.
+
+    Query-/Pfad-/Header-Fehler sind Request-Fehler -> 400 `Error {code, message}`.
+    Body-Schema-Fehler (POST/PUT/PATCH) bleiben 422, weil der Contract `422` explizit
+    fuer Body-Validierung reserviert (API_FROZEN_v1.md §2D).
+    """
+    errors = exc.errors()
+    has_body_error = any(err.get("loc", [None])[0] == "body" for err in errors)
+    message = "; ".join(
+        f"{' -> '.join(str(loc) for loc in err['loc'])}: {err['msg']}" for err in errors
+    )
+    # Error.message ist auf max_length=512 begrenzt (schemas.py). Bei mehreren/langen
+    # Validierungsfehlern wuerde Error(...) sonst SELBST eine ValidationError werfen und
+    # so einen unkontrollierten Folge-500 IM Handler ausloesen (vgl. Kommentar v1.py).
+    # Defensiv kappen -> der Handler liefert immer ein gueltiges Error{code, message}.
+    message = message[:512]
+    if has_body_error:
+        return JSONResponse(
+            status_code=422,
+            # Contract-konformer 422-Code: openapi.yaml fuehrt UNPROCESSABLE_ENTITY (identisch zur
+            # Konstante UNPROCESSABLE_ENTITY_CODE in api/responses.py, die der Helper
+            # unprocessable_entity() fuer ConfigError-422 nutzt). Bei der #130<-main-Merge-
+            # Aufloesung vom abweichenden "VALIDATION_ERROR" vereinheitlicht, damit derselbe
+            # 422-Fall app-weit denselben Code liefert (DTB-63/DTB-34).
+            content=Error(code="UNPROCESSABLE_ENTITY", message=message).model_dump(),
+        )
+    return JSONResponse(
+        status_code=400,
+        content=Error(code="BAD_REQUEST", message=message).model_dump(),
+    )
 
 
 @app.get(

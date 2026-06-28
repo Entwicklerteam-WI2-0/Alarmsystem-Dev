@@ -27,6 +27,7 @@ from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
 from src.storage.repository import InMemoryReadingRepository
 from src.storage.threshold_set_repository import InMemoryThresholdSetRepository
+from tests._db_helpers import database, db_available  # noqa: F401  (DTB-21: geteilte DB-Fixtures)
 
 
 @pytest.fixture

@@ -97,9 +97,11 @@ Einspielen **als `root`**, Reihenfolge `schema.sql` → `grants.sql` (cwd = `04-
     pytest                 # alle Tests
     pytest --cov=src       # mit Coverage (Ziel: Bewertungslogik >= 80 %)
 
-## Endpoints (G2, Stand 27.06.)
+## Endpoints (G2, Stand 28.06.)
 - `GET /v1/health` -> `{"status": "ok"}` (P0.3).
 - `GET /v1/assessment/current` -> `AssessmentCurrent` (DTB-43). Fail-safe NF-01: Stale/Fault -> 200 `risk_level=unknown` (nie GRÜN); keine Bewertung/DB-Ausfall -> 503 `Error {code, message}`.
+- `GET /v1/thresholds` -> `Thresholds` (DTB-62, NF-05): aktuell aktive Vereisungs-Schwellen (rein lesend, RB-01-neutral).
+- `GET /v1/readings` -> `Reading[]` (DTB-34, FA-03): Messwert-Historie (T1). Query `from`/`to` (ISO-8601 UTC, inklusiv auf `measured_at`), `sensor_id`, `limit` (1..1000, Default 100), `order` (`asc`|`desc`, Default `desc`). Bei mehr Treffern als `limit` wird am älteren Ende abgeschnitten (frischeste `limit` bleiben). `from` nach `to` / `limit` außerhalb [1,1000] / ungültiges `order` -> 400 `Error {code, message}`; DB-Ausfall -> 503 `Error {code, message}`; `Cache-Control: no-store`.
 
 ## Datenfluss
 `G1 (Sensorik)` ──poll `GET /current`──▶ `Ingest/Validierung` ──▶ DB `reading` ──▶ `Bewertung` (4-Stufen)
@@ -132,7 +134,7 @@ G2 ist **Server**; G3 konsumiert per `GET` (REST). Alle Endpoints unter `/v1/` (
 - `GET /v1/assessment/current` — aktuelle Risikostufe (`green|yellow|orange|red|unknown`) + Faktoren + Zeitstempel
 - **Alarme = Push (E-37):** `GET /v1/alarms/stream` (SSE — G2 pusht Alarme live) + `GET /v1/alarms` (Zustands-Abfrage/Resync, **kein** Poll-Scan)
 - `POST /v1/alarms/{id}/ack` (Quittierung — reine UI-/Audit-Aktion, **kein** Bahn-Aktor, RB-01)
-- `GET /v1/readings` — Historie
+- `GET /v1/readings` — Messwert-Historie (T1, DTB-34/FA-03): `from`/`to`/`sensor_id`/`limit`/`order`; **umgesetzt**
 - `GET /v1/thresholds` — aktuelle Schwellenwerte lesen (DTB-62)
 - `POST /v1/thresholds` — Schwellenwerte versioniert ändern (**Auth: `Authorization: Bearer <G2_API_KEY>`**, DTB-63); greift beim nächsten Reload (kein Live-Swap), versioniert per `threshold_set` + Audit (NF-09)
 

@@ -109,6 +109,8 @@ class ReadingResponse(_Base):
     aussen-Schnittstelle, analog AssessmentCurrent.
     """
 
+    model_config = ConfigDict(extra="forbid", title="Reading")
+
     id: int
     sensor_id: str
     measured_at: datetime
