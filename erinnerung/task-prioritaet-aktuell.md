@@ -124,3 +124,39 @@ Szenario per State-Datei **live umschaltbar** (grün/rot/stale/fault/down), kein
 → `feat/`-Branch → PR → Lucas merged.
 **Real-Test 28.06. bestätigt:** voller Pfad Poll→Bewertung→Persistenz→Serving→Alarm→Ack→**Fail-safe NF-01** läuft E2E
 gegen echte MariaDB 11.4.7; 785 Tests grün (siehe Journal/Save-Session 28.06.).
+
+---
+
+## 📌 Offene DTB-Tickets — Restarbeit nach Jira-Reconciliation (Stand 28.06., gegen `main`)
+
+> Nach der Merge-Welle sind **alle Kern-Backend-Tickets** auf `main` + Jira „Erledigt"
+> (DTB-20/24/31/33/34/59/63/64/66/68). Was bleibt: M3-Arbeit (Integration vor Ort + menschliche
+> Doku/Reflexion) + ein paar additive Follow-ups.
+
+**🔴 Integration / vor Ort (Mo 29.06., Pi):**
+- **DTB-17** — E2E-Integration mit **G1** (echte/sim Sensordaten) — Brücke: G1-Sim `tools/g1_sim/`
+- **DTB-23** — E2E-Integration mit **G3** (Frontend konsumiert API)
+- **DTB-57** — Pi-Betrieb: Retention/Rotation `reading` + `audit_log` (SD-Karten-Schutz)
+
+**🟠 Architektenentscheidung (Lucas):**
+- **DTB-39** — Betriebsmodell + Latenz-Zielwert festlegen (AE-01/NF-02)
+- **DTB-67** — G3-Abstimmung: `driving_factor`/`explanation` auf `unknown`-Antworten (das „stale"-Label bei Fault/Down)
+
+**🟡 Additive Code-Follow-ups (kein Blocker):**
+- **DTB-65** — `threshold_set_id` im Assessment-Snapshot protokollieren (NF-05) — Infra steht, Service setzt es noch `None` (greift nach erstem `POST /v1/thresholds`)
+- **DTB-69** — Flatline-Parameter (`flatline_epsilon_c`/`flatline_timeout_min`) gegen finale G1-Sensorauflösung nachkalibrieren
+- **DTB-37** — Restliche Messgrößen (RH, Druck) — im `Reading`-Model bereits vorhanden → nur Verifikation/Abschluss
+
+**🟣 Menschlich / M3-Abgabe (NICHT KI):**
+- **DTB-30** — Testprotokoll (Abnahme-Checkliste)
+- **DTB-36** — Gruppen-Entscheidungslogbuch finalisieren
+- **DTB-42** — RB-01-Nachweis (kein Aktor) — Audit bestätigt sauber, nur Nachweis-Doku
+- **DTB-44** — Abschlusspräsentation + Demo-Skript
+- **DTB-45** — Individuelle Entscheidungsreflexion je Person
+- **DTB-47** — Reflexion: Methodenvergleich Wasserfall vs. Scrum
+
+**⚪ Borderline — faktisch erledigt, Jira-Status prüfen/schließen:**
+- **DTB-21** — pytest-Konfiguration + Fixtures (existiert, 785 Tests laufen)
+- **DTB-46** — Unit-Tests Bewertung ≥ 80 % Coverage (assessment ~100 %, erfüllt)
+
+*Quelle: Jira-Board (Projekt DTB) reconciled gegen `origin/main` am 2026-06-28; 10 gemergte Tickets auf „Erledigt" gesetzt.*
