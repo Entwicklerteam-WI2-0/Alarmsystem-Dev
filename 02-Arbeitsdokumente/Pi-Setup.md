@@ -75,6 +75,10 @@ CREATE DATABASE IF NOT EXISTS alarmsystem CHARACTER SET utf8mb4 COLLATE utf8mb4_
 -- Host '127.0.0.1', NICHT 'localhost': PyMySQL verbindet per TCP. Ein reiner
 -- @'localhost'-Account (= Socket) würde sonst NICHT matchen -> ERROR 1142.
 CREATE USER IF NOT EXISTS 'alarm'@'127.0.0.1' IDENTIFIED BY 'DAS_ECHTE_PASSWORT';
+-- Hinweis: IF NOT EXISTS legt den User NUR beim ersten Mal an. Existiert er
+-- bereits, bleibt das alte Passwort aktiv. Bei Re-Setup oder Passwort-Rotation
+-- stattdessen ALTER USER verwenden:
+--   ALTER USER 'alarm'@'127.0.0.1' IDENTIFIED BY 'NEUES_PASSWORT';
 EXIT;
 ```
 
