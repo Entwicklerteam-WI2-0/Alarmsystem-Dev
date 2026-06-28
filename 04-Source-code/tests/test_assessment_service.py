@@ -632,9 +632,7 @@ def test_dtb65_threshold_set_id_wird_auf_assessment_gestempelt(thresholds):
     # DTB-65 / NF-05: der aktive threshold_set wird auf JEDES Assessment gestempelt
     # (Gutfall UND Fail-safe), damit nachvollziehbar bleibt, welcher Schwellensatz galt.
     arepo = InMemoryAssessmentRepository()
-    service = AssessmentService(
-        thresholds, arepo, InMemoryAuditRepository(), threshold_set_id=42
-    )
+    service = AssessmentService(thresholds, arepo, InMemoryAuditRepository(), threshold_set_id=42)
     now = datetime.now(UTC)
     good = service.assess_reading(_reading(now), now)
     unknown = service.assess_reading(None, now)
