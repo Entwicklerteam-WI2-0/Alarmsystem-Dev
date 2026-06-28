@@ -135,6 +135,8 @@ def test_assessment_unknown_with_nulled_measurements_roundtrip(
     assert latest.dew_point_c is None
     assert latest.delta_t is None
     assert latest.humidity_pct is None
+    assert latest.driving_factor is None
+    assert latest.explanation is None
 
 
 # --- MySqlAuditRepository (DTB-29): append-only Audit-Trail (NF-09) ---
