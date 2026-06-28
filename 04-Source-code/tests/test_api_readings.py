@@ -48,8 +48,8 @@ def _make_reading(sensor_id: str, measured_at: datetime, surface_temp_c: float =
 
 
 def _assert_no_store_header(resp: object) -> None:
-    key, value = next(iter(NO_STORE_HEADERS.items()))
-    assert resp.headers[key.lower()] == value
+    for key, value in NO_STORE_HEADERS.items():
+        assert resp.headers[key.lower()] == value
 
 
 def test_get_readings_returns_history_with_default_sensor(
@@ -289,3 +289,60 @@ def test_get_readings_response_matches_reading_response_schema(
     assert parsed.id is not None
     assert parsed.sensor_id == "anr-rwy-01"
     assert parsed.surface_temp_c == pytest.approx(1.0)
+
+
+def test_get_readings_invalid_order_returns_400_contract(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    """Ungueltiger `order`-Wert muss 400 im Contract-Format liefern, nicht 422/detail."""
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings", params={"order": "invalid"})
+
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["code"] == "BAD_REQUEST"
+    assert "detail" not in body
+
+
+def test_get_readings_empty_result_returns_200_empty_list(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings")
+
+    assert resp.status_code == 200
+    assert resp.json() == []
+    _assert_no_store_header(resp)
+
+
+def test_get_readings_offset_beyond_total_returns_empty_list(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    reading_repo.save(_make_reading("anr-rwy-01", datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC), 1.0))
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings", params={"offset": 10})
+
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_get_readings_limit_at_max_returns_200(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    for minute in range(5):
+        reading_repo.save(
+            _make_reading(
+                "anr-rwy-01",
+                datetime(2026, 6, 23, 10, minute, 0, tzinfo=UTC),
+                float(minute),
+            )
+        )
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings", params={"limit": 1000})
+
+    assert resp.status_code == 200
+    assert len(resp.json()) == 5
