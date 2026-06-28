@@ -89,7 +89,13 @@ def _load_state() -> dict:
 @app.get("/health")
 def health() -> Response:
     """G1-Verfuegbarkeit: 200 ok, oder 503 wenn state.health_down (G1-Ausfall simulieren)."""
-    if _load_state().get("health_down"):
+    state = _load_state()
+    hd = state.get("health_down")
+    if not isinstance(hd, bool):
+        # String-"false" waere sonst truthy -> unbeabsichtigter 503. Wie bei age_s nur warnen
+        # und den Python-Wert weiterreichen (bewusstes Nicht-Erzwingen, siehe _VALID_STATUS).
+        _warn(f"health_down={hd!r} ist kein bool -> als {'True' if hd else 'False'} interpretiert")
+    if hd:
         return Response(status_code=503)
     return Response(content='{"status":"ok"}', media_type="application/json")
 
@@ -101,20 +107,31 @@ def current() -> dict:
     # Robust gegen Hand-Editierfehler: negatives age_s (Zukunft, ausserhalb Spec) auf 0 klemmen;
     # nicht-numerisches age_s ('foo') faengt der except ab (sonst HTTP 500 auf /current).
     try:
-        age_s = max(0.0, float(state.get("age_s", 0)))
+        raw_age = state.get("age_s", 0)
+        age_s = float(raw_age)
     except (TypeError, ValueError):
         _warn(f"age_s={state.get('age_s')!r} ist keine Zahl -> 0")
         age_s = 0.0
+    if age_s < 0:
+        _warn(f"age_s={age_s} ist negativ -> auf 0 geklemmt (Stale-Test wuerde sonst greifen)")
+        age_s = 0.0
     measured = datetime.now(UTC) - timedelta(seconds=age_s)
-    return {
+    # Pflicht-Trias numerisch validieren: ein String-Wert ('kalt') wuerde G2 beim Parsen scheitern
+    # lassen, ohne dass der Sim warnt -> konsistent zu age_s hier abfangen.
+    payload = {
         "sensor_id": state["sensor_id"],
         "measured_at": measured.isoformat().replace("+00:00", "Z"),
-        "surface_temp_c": state["surface_temp_c"],
-        "air_temp_c": state["air_temp_c"],
-        "humidity_pct": state["humidity_pct"],
         "pressure_hpa": state.get("pressure_hpa"),
         "status": state["status"],
     }
+    for field in ("surface_temp_c", "air_temp_c", "humidity_pct"):
+        value = state.get(field)
+        try:
+            payload[field] = float(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            _warn(f"{field}={value!r} ist keine Zahl -> unveraendert an G2 weitergereicht")
+            payload[field] = value
+    return payload
 
 
 def main() -> None:

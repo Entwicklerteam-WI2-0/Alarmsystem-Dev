@@ -28,7 +28,7 @@ G2 dagegen laufen lassen (eigene Shell, gegen eure installierte MariaDB):
 
 ```bash
 DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=alarmsystem DB_USER=alarm DB_PASSWORD=<dev-pw> \
-G1_BASE_URL=http://127.0.0.1:9101 G2_ENABLE_SCHEDULER=true G2_API_KEY=dev-secret \
+G1_BASE_URL=http://127.0.0.1:9101 G2_ENABLE_SCHEDULER=true G2_API_KEY=<dein-dev-api-key> \
   uvicorn src.main:app --port 8000
 ```
 
