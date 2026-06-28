@@ -3,10 +3,6 @@
 > **Autor:** Johannes Petzold · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
-> ℹ️ Die Felder **Begründung** sind bewusst offen (`[➜ von dir]`) — sie gehören deiner Einzelleistung und
-> müssen von dir formuliert werden. Kontext, Entscheidung, Alternativen und Status sind als Faktengerüst
-> vorbereitet; bitte prüfen und bei Bedarf korrigieren.
-
 ---
 
 ## 2026-06-22 — Trigger des CI-Workflows auf `main` beschränkt (Abweichung vom DoD-Wortlaut)
