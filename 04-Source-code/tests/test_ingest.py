@@ -9,6 +9,7 @@ import logging
 import math
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from typing import Literal
 from unittest.mock import Mock, patch
 
 import httpx
@@ -44,6 +45,24 @@ class FakeRepository(Repository):
             r for r in self.readings if r.sensor_id == sensor_id and r.measured_at >= since
         ]
         return tuple(sorted(candidates, key=lambda r: r.measured_at)[:limit])
+
+    def get_between(
+        self,
+        sensor_id: str,
+        from_dt: datetime | None = None,
+        to_dt: datetime | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        order: Literal["asc", "desc"] = "desc",
+    ) -> Sequence[Reading]:
+        candidates = [r for r in self.readings if r.sensor_id == sensor_id]
+        if from_dt is not None:
+            candidates = [r for r in candidates if r.measured_at >= from_dt]
+        if to_dt is not None:
+            candidates = [r for r in candidates if r.measured_at <= to_dt]
+        reverse = order == "desc"
+        ordered = sorted(candidates, key=lambda r: r.measured_at, reverse=reverse)
+        return tuple(ordered[offset : offset + limit])
 
 
 @pytest.fixture
@@ -625,6 +644,17 @@ def test_poll_repository_error_is_failsafe(
         ) -> Sequence[Reading]:
             raise RepositoryError("DB nicht erreichbar")
 
+        def get_between(
+            self,
+            sensor_id: str,
+            from_dt: datetime | None = None,
+            to_dt: datetime | None = None,
+            limit: int = 100,
+            offset: int = 0,
+            order: Literal["asc", "desc"] = "desc",
+        ) -> Sequence[Reading]:
+            raise RepositoryError("DB nicht erreichbar")
+
     repo = RaisingRepository()
     poller = Poller(
         base_url="http://g1.test",
@@ -664,6 +694,17 @@ def test_poll_unexpected_repository_error_is_not_swallowed(
 
         def get_since(
             self, sensor_id: str, since: datetime, limit: int = 1000
+        ) -> Sequence[Reading]:
+            return ()
+
+        def get_between(
+            self,
+            sensor_id: str,
+            from_dt: datetime | None = None,
+            to_dt: datetime | None = None,
+            limit: int = 100,
+            offset: int = 0,
+            order: Literal["asc", "desc"] = "desc",
         ) -> Sequence[Reading]:
             return ()
 
