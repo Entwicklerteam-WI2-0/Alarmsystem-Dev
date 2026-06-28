@@ -47,10 +47,18 @@ def test_alarm_persistiert_und_auditiert():
     alarm_repo, audit_repo = InMemoryAlarmRepository(), InMemoryAuditRepository()
     gen = AlarmGenerator(_engine(), alarm_repo, audit_repo)
     assert gen.verarbeite(RiskLevel.ORANGE, 7, _T0) is None  # Pending
-    alarm_id = gen.verarbeite(RiskLevel.ORANGE, 7, _T0 + timedelta(seconds=60))  # feuert
-    assert alarm_id == 1
+    alarm = gen.verarbeite(RiskLevel.ORANGE, 7, _T0 + timedelta(seconds=60))  # feuert
 
-    # Alarm korrekt persistiert:
+    # verarbeite gibt den persistierten Alarm (mit vergebener id) zurueck — der Push-Seam
+    # (DTB-61) braucht das vollstaendige Alarm-Objekt, nicht nur die id.
+    assert alarm is not None
+    assert alarm.id == 1
+    assert alarm.assessment_id == 7
+    assert alarm.severity is AlarmSeverity.WARNING
+    assert alarm.state is AlarmState.ACTIVE
+    assert alarm.raised_at == _T0 + timedelta(seconds=60)
+
+    # ... und derselbe Alarm ist persistiert:
     gespeichert = alarm_repo.all()[0]
     assert gespeichert.assessment_id == 7
     assert gespeichert.severity is AlarmSeverity.WARNING

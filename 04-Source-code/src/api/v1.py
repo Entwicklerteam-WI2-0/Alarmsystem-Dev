@@ -6,14 +6,20 @@ Alle Endpoints hier sind **rein lesend** (RB-01-neutral): kein Aktor, keine
 Runway-Steuerung.
 """
 
+import logging
+from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Request, Response
+from fastapi.responses import JSONResponse, StreamingResponse
 
-from src.api.responses import NO_STORE_HEADERS
+from src.api.broadcaster import StreamCapacityError, sse_alarm_frames
+from src.api.responses import NO_STORE_HEADERS, service_unavailable
 from src.api.runtime import Runtime, get_runtime
 from src.config.loader import Thresholds
 from src.model.schemas import Error
+
+logger = logging.getLogger(__name__)
 
 # Kein Router-weiter Tag: jeder Endpoint deklariert seinen Ressourcen-Tag selbst
 # (wie assessment/current -> "Assessment" in main.py), damit die FastAPI-Auto-Docs
@@ -64,3 +70,134 @@ def read_thresholds(
     """
     response.headers.update(NO_STORE_HEADERS)
     return thresholds
+
+
+# SSE-Antwortheader (DTB-61): no-store (Echtzeit-Sicherheitsnaht, kein Cache eines
+# ueberholten Stream-Zustands) und X-Accel-Buffering:no (schaltet das Response-Buffering
+# eines Reverse-Proxys wie nginx fuer SSE ab -> Events erreichen G3 sofort statt blockweise).
+# KEIN "Connection: keep-alive": in HTTP/1.1 ohnehin Default (redundant) und in HTTP/2 ein
+# verbotener hop-by-hop-Header (RFC 9113 §8.2.2). Die SSE-Verbindung bleibt durch den
+# offenen Body-Stream offen, nicht durch diesen Header.
+_SSE_HEADERS = {
+    "Cache-Control": "no-store",
+    "X-Accel-Buffering": "no",
+}
+
+# Obergrenze fuer den geloggten Last-Event-ID-Wert (Diagnose reicht; verhindert ueberlange
+# client-kontrollierte Log-Zeilen).
+_MAX_LOGGED_HEADER_LEN = 64
+
+
+def _sanitize_header_value(value: str) -> tuple[str, bool]:
+    """Bereinigt einen Headerwert + meldet, OB nicht-druckbare Zeichen entfernt wurden.
+
+    Returns `(sanitized, had_non_printable)` in EINEM Scan: der bereinigte Log-Wert UND das
+    Injection-Verdacht-Flag des Aufrufers teilen sich dieselbe Iteration (statt den Header
+    zweimal zu durchlaufen).
+
+    Schutz gegen Log-Injection/-Forging (NF-09 Log-Integritaet): ein eingeschmuggelter
+    Zeilenumbruch ODER Unicode-Zeilentrenner (U+2028/U+2029) im (von G3 gesendeten)
+    Last-Event-ID-Header koennte sonst eine gefaelschte/verschleierte Log-Zeile erzeugen.
+    Gefiltert wird per str.isprintable() (entfernt CR/LF, Tabs, C0/C1-Controls, Zero-Width);
+    normaler Text + Leerzeichen bleiben. Geloggt wird nur der bereinigte, begrenzte Wert.
+    `had_non_printable` ist True, sobald IRGENDEIN Zeichen entfernt wurde (an jeder Position) —
+    eine blosse Laengen-Kuerzung eines sauberen Werts loest es NICHT aus (kein False-Positive).
+    """
+    printable = [ch for ch in value if ch.isprintable()]
+    return "".join(printable)[:_MAX_LOGGED_HEADER_LEN], len(printable) != len(value)
+
+
+@router.get(
+    "/alarms/stream",
+    summary="Live-Alarm-Stream (Server-Sent Events)",
+    tags=["Alarms"],
+    # Union-Rueckgabe (StreamingResponse | JSONResponse) ist kein Pydantic-Response-Model;
+    # FastAPI soll daraus KEINS ableiten (200 = SSE-Stream, 503 = Error sind in `responses`
+    # dokumentiert). Ohne dies wirft FastAPI beim Start einen FastAPIError.
+    response_model=None,
+    responses={
+        200: {
+            "content": {"text/event-stream": {}},
+            "description": "Offener SSE-Stream; jedes Event traegt einen Alarm als JSON.",
+        },
+        503: {
+            "model": Error,
+            "description": (
+                "G2 (noch) nicht lieferfaehig (Runtime nicht bereit) ODER Stream-Kapazitaet "
+                "erreicht (zu viele gleichzeitige Verbindungen)."
+            ),
+        },
+    },
+)
+async def stream_alarms(
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+    request: Request,
+) -> StreamingResponse | JSONResponse:
+    """Pusht ausgeloeste Alarme live an G3 (E-37) — kein Polling, kein Aktor (RB-01).
+
+    Bei voller Stream-Kapazitaet (zu viele gleichzeitige Verbindungen) wird die neue
+    Verbindung mit 503 (`Error {code, message}`) abgewiesen, statt unbegrenzt Speicher zu
+    binden — rein abweisend, kein Aktor.
+
+    Der Client haelt eine offene Verbindung; G2 sendet pro neuem Alarm ein SSE-Event
+    (`id:` = Alarm-ID fuer Reconnect via Last-Event-ID, `data:` = Alarm-JSON) und alle
+    ~15 s einen `:keep-alive`-Heartbeat. Verpasste Events nach einem Reconnect holt G3
+    ueber den Resync `GET /v1/alarms` (DTB-31, Sicherheits-Backstop) — der Stream selbst
+    puffert keine Historie.
+
+    `reserve()` legt das Abo synchron + kapazitaetsgeprueft an; `release()` baut es im
+    `_frames`-finally beim Verbindungsende wieder ab; `request.is_disconnected` beendet den
+    Generator, sobald der Client geht.
+
+    Reconnect: das `id:`-Feld jedes Frames IST der Reconnect-Mechanismus — der Client
+    sendet beim Wiederverbinden den zuletzt gesehenen Wert als `Last-Event-ID`-Header.
+    G2 puffert bewusst KEINE Historie (kein Replay); verpasste Alarme holt G3 ueber den
+    Resync `GET /v1/alarms` (DTB-31). Der eingehende Header wird daher nur protokolliert
+    (Diagnose), nicht zum Nachliefern verwendet.
+    """
+    last_event_id = request.headers.get("last-event-id")
+    if last_event_id:
+        sanitized, had_non_printable = _sanitize_header_value(last_event_id)
+        if had_non_printable:
+            # Nicht-druckbare Zeichen im client-kontrollierten Header -> moeglicher Injection-/
+            # Log-Forging-Versuch (G3-Bug oder MitM). Fuer proaktives Security-Monitoring als
+            # WARNING sichtbar machen (NF-09-Geist), statt nur still zu bereinigen.
+            logger.warning(
+                "Last-Event-ID enthielt nicht-druckbare Zeichen — moeglicher Injection-Versuch."
+            )
+        logger.info(
+            "SSE-Reconnect mit Last-Event-ID=%s — G3 sollte via GET /v1/alarms resyncen "
+            "(DTB-31); G2 liefert keine Historie nach.",
+            sanitized,
+        )
+
+    broadcaster = runtime.alarm_broadcaster
+    try:
+        # Abo SYNCHRON reservieren (race-frei) -> bei voller Kapazitaet kann der Endpoint
+        # noch contract-konform mit 503 antworten, BEVOR ein StreamingResponse (200) beginnt.
+        queue = broadcaster.reserve()
+    except StreamCapacityError as exc:
+        logger.warning("SSE-Stream-Kapazitaet erreicht — Verbindung mit 503 abgewiesen: %s", exc)
+        return service_unavailable("Stream-Kapazitaet erreicht; bitte spaeter erneut verbinden.")
+
+    async def _frames() -> AsyncGenerator[str, None]:
+        try:
+            async for frame in sse_alarm_frames(queue, request.is_disconnected):
+                yield frame
+        finally:
+            # Abo am Verbindungsende abmelden (Kapazitaet freigeben, Leak verhindern).
+            # Invarianten-verletzende Alarme (id=None) filtert bereits publish() am Ingress;
+            # ein _frame()-raise bliebe hier defensiv und wuerde via finally sauber released.
+            broadcaster.release(queue)
+
+    try:
+        return StreamingResponse(_frames(), media_type="text/event-stream", headers=_SSE_HEADERS)
+    except Exception:  # noqa: BLE001 - akademisch (StreamingResponse wirft praktisch nie)
+        # Reservierten Slot freigeben, falls die Response-Konstruktion scheitert: der
+        # _frames-finally liefe nie (der Generator startet nicht) -> sonst dauerhaft belegt.
+        # Awareness (PR-Review): sammelt asyncios Async-Gen-Finalizer den nie gestarteten
+        # _frames-Generator spaeter via aclose() ein, koennte dessen finally erneut release()
+        # rufen. Das ist sicher, weil release() idempotent ist (s. AlarmBroadcaster.release) —
+        # die Idempotenz ist hier der bewusste Sicherheitsgurt, keine zufaellige Annahme.
+        broadcaster.release(queue)
+        raise

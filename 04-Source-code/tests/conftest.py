@@ -16,22 +16,21 @@ import pytest
 
 from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator
+from src.api.broadcaster import AlarmBroadcaster
 from src.assessment.service import AssessmentService
 from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
-from src.main import Runtime
+from src.main import _SENSOR_ID, Runtime
 from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
 from src.storage.repository import InMemoryReadingRepository
 from tests._db_helpers import database, db_available  # noqa: F401  (DTB-21: geteilte DB-Fixtures)
 
-# Single-Sensor-Betrieb (anr-rwy-01) — identisch zu src.main._SENSOR_ID.
-_SENSOR_ID = "anr-rwy-01"
-
 
 @pytest.fixture
 def sensor_id() -> str:
+    # Aus src.main importiert (kein Duplikat -> kein Drift bei einem Sensor-Rename).
     return _SENSOR_ID
 
 
@@ -88,6 +87,12 @@ def alarm_generator(thresholds: Thresholds, audit_repo: InMemoryAuditRepository)
 
 
 @pytest.fixture
+def alarm_broadcaster() -> AlarmBroadcaster:
+    # Live-Alarm-Broadcaster (DTB-61): In-Memory Pub/Sub, kontaktiert nichts.
+    return AlarmBroadcaster()
+
+
+@pytest.fixture
 def runtime(
     thresholds: Thresholds,
     reading_repo: InMemoryReadingRepository,
@@ -96,6 +101,7 @@ def runtime(
     poller: Poller,
     assessment_service: AssessmentService,
     alarm_generator: AlarmGenerator,
+    alarm_broadcaster: AlarmBroadcaster,
 ) -> Runtime:
     # Vollstaendiger Runtime-Graph mit In-Memory-Repos; teilt alle Instanzen mit den
     # Einzelfixtures, sodass poller.poll() + service.assess_reading() und die spaetere
@@ -108,6 +114,7 @@ def runtime(
         poller=poller,
         service=assessment_service,
         alarm_generator=alarm_generator,
+        alarm_broadcaster=alarm_broadcaster,
     )
 
 
