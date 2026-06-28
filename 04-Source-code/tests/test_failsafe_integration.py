@@ -215,6 +215,36 @@ def test_schicht2_sensor_fault_nie_gruen(
     assert persisted.risk_level is RiskLevel.UNKNOWN
 
 
+def test_schicht1_und_2_fault_und_stale_gleichzeitig_nie_gruen(
+    reading_repo: InMemoryReadingRepository,
+    assessment_service: AssessmentService,
+    thresholds: Thresholds,
+    sensor_id: str,
+) -> None:
+    """E-40 Schicht 1+2: gleichzeitig fault UND stale -> unknown, nie GRUEN (NF-01).
+
+    Sichert die Reihenfolge-Invariante in service.assess_reading ab: der
+    fault-Zweig (Z. 100) wird VOR dem stale-Zweig (Z. 107) geprueft. Treffen
+    beide Bedingungen zu, darf das System weder GRUEN noch crashen, sondern
+    muss fail-safe unknown liefern. Der Test fixiert, dass eine Umsortierung
+    der Branches den Fail-safe nicht still bricht.
+    """
+    now = datetime.now(UTC)
+    stale_timeout_s = thresholds.datenqualitaet.stale_timeout_s
+    old_ts = now - timedelta(seconds=stale_timeout_s + 60)
+    # Reading ist gleichzeitig veraltet (old_ts) UND meldet fault.
+    reading = _gruen_kandidat(sensor_id, old_ts, thresholds).model_copy(
+        update={"status": SensorStatus.FAULT}
+    )
+    reading_mit_id = _save_and_get_reading(reading_repo, reading)
+
+    result = assessment_service.assess_reading(reading_mit_id, now)
+
+    # fault UND stale gleichzeitig -> unknown, nie GRUEN (NF-01)
+    assert result.risk_level is RiskLevel.UNKNOWN
+    assert result.reading_id == reading_mit_id.id
+
+
 # ---------------------------------------------------------------------------
 # Schicht 3 — Plausibilitaet (ADR E-40 §3, Fundstelle: Poller._build_reading)
 # ---------------------------------------------------------------------------
@@ -295,8 +325,14 @@ def test_schicht4_db_ausfall_liefert_503(runtime: Runtime) -> None:
     assert "message" in body, f"Contract-Format erwartet {{code, message}}, erhalten: {body}"
     assert "code" in body, f"Contract-Format erwartet {{code, message}}, erhalten: {body}"
     assert "detail" not in body, "FastAPI-Rohformat {{detail}} verletzt den Contract (E-36)"
-    # Hauptinvariante: nie GRUEN bei Ausfall (NF-01)
-    assert body.get("risk_level") != "green"
+    # Hauptinvariante: nie GRUEN bei Ausfall (NF-01). Bewusst `not in` statt
+    # `body.get("risk_level") != "green"`: bei einem korrekten Error-Body {code, message}
+    # ist der Key ABWESEND -> body.get(...) waere None und der !=-Vergleich trivial wahr
+    # (er wuerde sogar eine Regression durchlassen, die faelschlich 200+risk_level liefert).
+    # Der Error-Response darf gar kein risk_level-Feld tragen.
+    assert "risk_level" not in body, (
+        f"Error-Response darf kein risk_level-Feld tragen (Contract D), erhalten: {body}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -315,9 +351,14 @@ def test_schicht5_kaskade_fehlender_taupunkt_nie_gruen(
 
     Beweist: fehlt der Taupunkt T_d (dew_point_c=None), nimmt assess_ice_risk
     konservativ Feuchte=wahr an (E-34). Bei T_s <= t_s_gefrierpunkt_c ergibt
-    das mindestens ORANGE — die Schicht 5 bleibt in der regulaeren Ampel (kein
+    das genau ORANGE — die Schicht 5 bleibt in der regulaeren Ampel (kein
     unknown), liefert aber explizit NIE GRUEN (NF-01). Das unterscheidet sie
     von den Schichten 1-4 (die unknown liefern).
+
+    Warum ORANGE und NICHT ROT: der ROT-Zweig in core.assess_ice_risk verlangt
+    `delta_t is not None` (Z. 66). Bei dew_point_c=None ist delta_t=None -> ROT
+    ist strukturell ausgeschlossen; der ORANGE-Zweig (T_s <= Gefrierpunkt UND
+    humid) greift. Die Erwartung ist daher exakt ORANGE, nicht "ORANGE oder ROT".
     """
     now = datetime.now(UTC)
     freezing = thresholds.vereisung.t_s_gefrierpunkt_c
@@ -338,17 +379,18 @@ def test_schicht5_kaskade_fehlender_taupunkt_nie_gruen(
 
     result = assessment_service.assess_reading(reading_mit_id, now)
 
-    # E-40 Schicht 5 (E-34): Kaskade -> mind. ORANGE, nie GRUEN, nie unknown
+    # E-40 Schicht 5 (E-34): Kaskade -> genau ORANGE, nie GRUEN, nie unknown
     assert result.risk_level is not RiskLevel.GREEN, (
         "Schicht 5: fehlender Taupunkt bei T_s <= Gefrierpunkt darf NIE GRUEN ergeben (NF-01)"
     )
     assert result.risk_level is not RiskLevel.UNKNOWN, (
         "Schicht 5 (Kaskade) bleibt in der regulaeren Ampel — unknown gehoert zu Schichten 1-4"
     )
-    # Bei T_s <= Gefrierpunkt + humid=True: ORANGE oder ROT (je nach delta_t)
-    assert result.risk_level in (RiskLevel.ORANGE, RiskLevel.RED), (
-        f"Erwartet ORANGE oder ROT bei T_s <= Gefrierpunkt + dew_point=None, "
-        f"erhalten: {result.risk_level}"
+    # ROT ist bei dew_point_c=None strukturell ausgeschlossen (core.py Z. 66: ROT verlangt
+    # delta_t is not None) -> exakt ORANGE erwarten (nicht "ORANGE oder ROT").
+    assert result.risk_level is RiskLevel.ORANGE, (
+        f"Erwartet exakt ORANGE bei T_s <= Gefrierpunkt + dew_point=None (ROT ausgeschlossen, "
+        f"delta_t=None), erhalten: {result.risk_level}"
     )
     persisted = assessment_repo.get_latest()
     assert persisted is not None
@@ -400,6 +442,11 @@ def test_schicht6_serve_zeit_recheck_gruen_wird_unknown(
         "Schicht 6: persistiertes GRUEN muss zur Serve-Zeit zu unknown werden (NF-01, E-40 §6)"
     )
     assert response.is_stale is True
+    # Contract (E-36): measured_at ist Pflichtfeld und MUSS auch im Fail-safe gesetzt sein
+    # (auf 200 immer vorhanden) — es traegt die G1-Messzeit des ausloesenden Readings.
+    assert response.measured_at == reading_mit_id.measured_at
+    # sensor_status bleibt OK: hier loest nur Stale (Serve-Zeit) den Fail-safe aus, kein fault.
+    assert response.sensor_status is SensorStatus.OK
     # Contract (E-36): Messwerte werden bei Fail-safe genullt
     assert response.surface_temp_c is None
     assert response.dew_point_c is None
