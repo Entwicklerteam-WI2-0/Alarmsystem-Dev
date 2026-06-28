@@ -39,7 +39,7 @@ def _store(repo: InMemoryThresholdSetRepository, params: dict) -> None:
 
 def test_empty_db_falls_back_to_json_seed() -> None:
     # Leere Tabelle -> JSON-Seed (config/thresholds.json).
-    assert _load_active_thresholds(InMemoryThresholdSetRepository()) == load_thresholds()
+    assert _load_active_thresholds(InMemoryThresholdSetRepository()) == (load_thresholds(), None)
 
 
 def test_latest_set_is_loaded_and_parsed() -> None:
@@ -47,9 +47,11 @@ def test_latest_set_is_loaded_and_parsed() -> None:
     params = asdict(load_thresholds())
     params["betrieb"]["poll_interval_s"] = 20.0  # vom Default (30.0) abweichend
     _store(repo, params)
-    result = _load_active_thresholds(repo)
+    thresholds, set_id = _load_active_thresholds(repo)
     # Aktive Schwellen kommen aus dem gespeicherten Satz, nicht aus der JSON-Datei.
-    assert result.betrieb.poll_interval_s == 20.0
+    assert thresholds.betrieb.poll_interval_s == 20.0
+    # DTB-65: die id des geladenen Satzes wird mitgegeben (fuer die Assessment-Stempelung).
+    assert set_id == repo.get_latest().id
 
 
 def test_db_error_falls_back_to_json_seed() -> None:
@@ -57,11 +59,11 @@ def test_db_error_falls_back_to_json_seed() -> None:
         def get_latest(self):
             raise RepositoryError("DB nicht erreichbar")
 
-    assert _load_active_thresholds(_FailingRepo()) == load_thresholds()
+    assert _load_active_thresholds(_FailingRepo()) == (load_thresholds(), None)
 
 
 def test_invalid_stored_set_falls_back_to_json_seed() -> None:
     # Gespeicherter Satz ist unvollstaendig/ungueltig -> ConfigError -> JSON-Seed (fail-safe).
     repo = InMemoryThresholdSetRepository()
     _store(repo, {"unvollstaendig": True})
-    assert _load_active_thresholds(repo) == load_thresholds()
+    assert _load_active_thresholds(repo) == (load_thresholds(), None)

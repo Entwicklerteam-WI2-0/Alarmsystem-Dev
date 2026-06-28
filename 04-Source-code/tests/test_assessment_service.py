@@ -626,3 +626,23 @@ def test_driving_factor_laenge_max_64(thresholds):
             assert len(result.explanation) <= 512, (
                 f"explanation '{result.explanation}' ueberschreitet 512 Zeichen"
             )
+
+
+def test_dtb65_threshold_set_id_wird_auf_assessment_gestempelt(thresholds):
+    # DTB-65 / NF-05: der aktive threshold_set wird auf JEDES Assessment gestempelt
+    # (Gutfall UND Fail-safe), damit nachvollziehbar bleibt, welcher Schwellensatz galt.
+    arepo = InMemoryAssessmentRepository()
+    service = AssessmentService(thresholds, arepo, InMemoryAuditRepository(), threshold_set_id=42)
+    now = datetime.now(UTC)
+    good = service.assess_reading(_reading(now), now)
+    unknown = service.assess_reading(None, now)
+    assert good.threshold_set_id == 42
+    assert unknown.threshold_set_id == 42
+
+
+def test_dtb65_threshold_set_id_default_none_bei_json_seed(thresholds):
+    # Ohne aktiven DB-Satz (JSON-Seed-Config) bleibt threshold_set_id None.
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+    result = service.assess_reading(_reading(now), now)
+    assert result.threshold_set_id is None

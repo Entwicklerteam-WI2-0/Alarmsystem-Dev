@@ -100,7 +100,7 @@ def build_runtime() -> Runtime:
     lauffaehig (der Scheduler ist ohnehin per Default aus).
     """
     threshold_set_repo = MySqlThresholdSetRepository()
-    thresholds = _load_active_thresholds(threshold_set_repo)
+    thresholds, active_threshold_set_id = _load_active_thresholds(threshold_set_repo)
     reading_repo = ReadingRepository()
     assessment_repo = MySqlAssessmentRepository()
     audit_repo = MySqlAuditRepository()
@@ -110,7 +110,7 @@ def build_runtime() -> Runtime:
         data_quality_thresholds=thresholds.datenqualitaet,
         plausibility_thresholds=thresholds.plausibilitaet,
     )
-    service = AssessmentService(thresholds, assessment_repo, audit_repo)
+    service = AssessmentService(thresholds, assessment_repo, audit_repo, active_threshold_set_id)
     # DTB-27/DTB-31: EINE Alarm-Repository-Instanz pro laufende Instanz -- geteilt zwischen
     # AlarmGenerator (Schreiben beim Ausloesen) und GET /v1/alarms (Resync-Lesen ueber
     # runtime.alarm_repo). Ein gemeinsames Repository statt zweier Instanzen.
@@ -141,13 +141,18 @@ def build_runtime() -> Runtime:
     )
 
 
-def _load_active_thresholds(threshold_set_repo: ThresholdSetRepository) -> Thresholds:
-    """Aktive Schwellen = zuletzt gespeicherter `threshold_set`, sonst JSON-Seed.
+def _load_active_thresholds(
+    threshold_set_repo: ThresholdSetRepository,
+) -> tuple[Thresholds, int | None]:
+    """Aktive Schwellen + deren `threshold_set`-id (DB), sonst JSON-Seed (id=None).
 
     Reload-Semantik (DTB-63): ein per POST /v1/thresholds gespeicherter Satz wird beim
     naechsten Start aktiv. Faellt die DB aus oder ist die Tabelle leer, wird die
     JSON-Seed-Config geladen (fail-safe: lieber die committete Basiskalibrierung als
     gar keine Schwellen). Fehler werden laut geloggt (kein stilles Maskieren).
+
+    Die zurueckgegebene id (DTB-65) wird vom AssessmentService auf jedes Assessment
+    gestempelt (NF-05-Traceability); bei JSON-Seed gibt es keinen Satz -> None.
     """
     try:
         latest = threshold_set_repo.get_latest()
@@ -155,19 +160,19 @@ def _load_active_thresholds(threshold_set_repo: ThresholdSetRepository) -> Thres
         logger.warning(
             "threshold_set nicht lesbar (%s) -> JSON-Seed-Config (config/thresholds.json).", exc
         )
-        return load_thresholds()
+        return load_thresholds(), None
     if latest is None:
         logger.info("Kein threshold_set in der DB -> JSON-Seed-Config (config/thresholds.json).")
-        return load_thresholds()
+        return load_thresholds(), None
     try:
-        return parse_thresholds(latest.params)
+        return parse_thresholds(latest.params), latest.id
     except ConfigError as exc:
         logger.error(
             "Gespeicherter threshold_set (id=%s) ist ungueltig (%s) -> JSON-Seed-Config.",
             latest.id,
             exc,
         )
-        return load_thresholds()
+        return load_thresholds(), None
 
 
 def run_assessment_cycle(
