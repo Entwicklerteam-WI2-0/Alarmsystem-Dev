@@ -1,8 +1,9 @@
 """v1-API-Router des G2-Backends (Serving zu G3).
 
 Sammelt die versionierten `/v1/`-Endpoints (AE-03): `GET /v1/thresholds` (DTB-62),
-`GET /v1/alarms/stream` (DTB-61, SSE) und `POST /v1/alarms/{id}/ack` (DTB-24,
-Quittierung). Alle sind **RB-01-neutral**: der ack-Endpoint schreibt zwar (Zustand
+`GET /v1/readings` (DTB-34), `GET /v1/alarms/stream` (DTB-61, SSE) und
+`POST /v1/alarms/{id}/ack` (DTB-24, Quittierung). Alle sind **RB-01-neutral**:
+die GET-Endpoints sind rein lesend; der ack-Endpoint schreibt zwar (Zustand
 `active -> acknowledged` + Audit), ist aber reine UI-/Audit-Quittierung — KEIN Aktor,
 keine Runway-Freigabe/-Sperre.
 """
@@ -10,10 +11,11 @@ keine Runway-Freigabe/-Sperre.
 import logging
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import ValidationError
 
 from src.api.broadcaster import StreamCapacityError, sse_alarm_frames
 from src.api.responses import (
@@ -25,8 +27,9 @@ from src.api.responses import (
     service_unavailable,
 )
 from src.api.runtime import Runtime, get_runtime
+from src.config.constants import DEFAULT_SENSOR_ID
 from src.config.loader import Thresholds
-from src.model.schemas import Acknowledgement, AckRequest, Error
+from src.model.schemas import Acknowledgement, AckRequest, Error, ReadingResponse
 from src.storage.acknowledgement_repository import (
     AlarmNotAcknowledgeableError,
     AlarmNotFoundError,
@@ -84,6 +87,115 @@ def read_thresholds(
     """
     response.headers.update(NO_STORE_HEADERS)
     return thresholds
+
+
+@router.get(
+    "/readings",
+    response_model=list[ReadingResponse],
+    summary="Historie der Messwerte lesen",
+    tags=["Readings"],
+    responses={
+        400: {
+            "model": Error,
+            "description": "Ungueltige Query-Parameter (z. B. from nach to).",
+        },
+        503: {
+            "model": Error,
+            "description": "G2 (noch) nicht lieferfaehig (Runtime nicht bereit / DB-Ausfall).",
+        },
+    },
+)
+def read_readings(
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+    response: Response,
+    from_dt: Annotated[
+        datetime | None,
+        Query(
+            alias="from",
+            description="Untere Zeitgrenze (ISO-8601, UTC), inklusiv.",
+        ),
+    ] = None,
+    to_dt: Annotated[
+        datetime | None,
+        Query(
+            alias="to",
+            description="Obere Zeitgrenze (ISO-8601, UTC), inklusiv.",
+        ),
+    ] = None,
+    sensor_id: Annotated[
+        str,
+        Query(
+            description="Sensor-ID; Default: einziger aktiver Sensor.",
+            min_length=1,
+            max_length=64,
+        ),
+    ] = DEFAULT_SENSOR_ID,
+    limit: Annotated[
+        int,
+        Query(description="Maximale Anzahl Eintraege.", ge=1, le=1000),
+    ] = 100,
+    offset: Annotated[
+        int,
+        Query(description="Anzahl zu ueberspringender Zeilen.", ge=0, le=100_000),
+    ] = 0,
+    order: Annotated[
+        Literal["asc", "desc"],
+        Query(description="Sortierung nach measured_at."),
+    ] = "desc",
+) -> list[ReadingResponse] | JSONResponse:
+    """Liefert die Messwert-Historie fuer G3 (DTB-34, FA-03).
+
+    Rein lesend (RB-01-neutral). Zeitstempel muessen zeitzonenbewusst sein;
+    `from` darf nicht nach `to` liegen. Bei Persistenzfehlern wird fail-safe
+    503 im Contract-Format `Error {code, message}` gemeldet.
+    """
+    response.headers.update(NO_STORE_HEADERS)
+
+    try:
+        readings = runtime.reading_repo.get_between(
+            sensor_id=sensor_id,
+            from_dt=from_dt,
+            to_dt=to_dt,
+            limit=limit,
+            offset=offset,
+            order=order,
+        )
+        # Domain->Wire-Mapping bewusst INNERHALB des try: Schluege es bei unerwartetem
+        # Drift fehl (z. B. id=None, Schema-Drift nach Migration, korrupte DB-Zeile in
+        # _row_to_reading), propagierte sonst ein roher 500 und braeche den
+        # `Error {code, message}`-Contract (NF-01).
+        readings_wire = [ReadingResponse(**reading.model_dump()) for reading in readings]
+    except ValidationError:
+        # WICHTIG: In Pydantic v2 (>=2.x) IST ValidationError eine Subklasse von ValueError
+        # -> dieser Handler MUSS vor `except ValueError` stehen, sonst wuerde ein
+        # serverseitiger Mapping-/Persistenz-Drift faelschlich als 400 (Client-Fehler) mit
+        # der ueberlangen Roh-Pydantic-Message ausgegeben (die zudem Error.message > 512
+        # sprengt und einen Folge-500 ausloeste). Drift ist serverseitig -> fail-safe 503,
+        # ohne interne Details preiszugeben (NF-01).
+        logger.exception("Domain->Wire-Mapping der Readings-Historie fehlgeschlagen (Drift?).")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+    except ValueError as exc:
+        # Ungueltige Parameter (from nach to, naive/Non-UTC Zeitstempel) -> 400.
+        # Debug-Log fuer die Diagnose wiederkehrender Client-400 (z. B. G3 sendet
+        # naive/Non-UTC-Zeitstempel) — die Ursache steht sonst nirgends serverseitig.
+        logger.debug("readings: ungueltige Query-Parameter: %s", exc)
+        return JSONResponse(
+            status_code=400,
+            content=Error(code="BAD_REQUEST", message=str(exc)).model_dump(),
+        )
+    except RepositoryError as exc:
+        # DB-Ausfall -> 503 (Fail-safe, NF-01-Geist). Die gewrappte Ursache am
+        # API-Rand loggen (analog assessment/current), sonst bleibt ein DB-Ausfall
+        # auf diesem Endpoint ohne API-seitige Spur.
+        logger.error("readings: Persistenz nicht verfuegbar: %s", exc)
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+    except Exception:  # noqa: BLE001 - letzter Fail-safe: JEDER Fehlerpfad liefert
+        # `Error {code, message}` (Contract), nie ein roher 500 mit {detail: ...}.
+        # Die volle Ursache bleibt im Log (logger.exception) erhalten (NF-01).
+        logger.exception("Unerwarteter Fehler beim Lesen der Readings-Historie.")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+
+    return readings_wire
 
 
 # SSE-Antwortheader (DTB-61): no-store (Echtzeit-Sicherheitsnaht, kein Cache eines
