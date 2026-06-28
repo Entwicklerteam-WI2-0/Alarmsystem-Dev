@@ -147,11 +147,12 @@ def test_mysql_save_missing_or_zero_lastrowid_failsafe(kein_id):
 
 
 def test_alarmrepository_has_no_mutation_path_rb01():
-    # V3/V11 (RB-01): Das Interface ist save-only -- kein update/delete/clear/acknowledge
-    # (kein Aktor, kein Auto-Zustandswechsel). Strukturell erzwungen.
+    # V3/V11 (RB-01): Das Interface kennt KEINEN Mutationspfad -- kein update/delete/clear/
+    # acknowledge (kein Aktor, kein Auto-Zustandswechsel). Strukturell erzwungen. `get_alarms`
+    # (DTB-31) ist ein reiner LESEpfad und damit RB-01-neutral (kein Mutationsverb).
     for verboten in ("update", "delete", "clear", "acknowledge", "remove"):
         assert not hasattr(AlarmRepository, verboten)
-    assert AlarmRepository.__abstractmethods__ == frozenset({"save"})
+    assert AlarmRepository.__abstractmethods__ == frozenset({"save", "get_alarms"})
 
 
 # --- V7 wird am Modell-Rand erzwungen (Alarm-Konstruktion), nicht im Repo ---
@@ -173,3 +174,165 @@ def test_naive_raised_at_rejected_at_model_boundary():
     naive = datetime(2026, 6, 26, 12, 0)  # bewusst ohne tzinfo
     with pytest.raises(ValidationError):
         Alarm(assessment_id=1, severity=AlarmSeverity.WARNING, raised_at=naive)
+
+
+# --- get_alarms: Lesepfad fuer GET /v1/alarms (DTB-31) -----------------------------
+
+
+def _mock_get_connection(rows):
+    """Baut (gc, cursor) fuer `with get_connection() as conn, conn.cursor() as cur`.
+
+    cur.fetchall() liefert `rows` (DictCursor -> Liste von Dicts).
+    """
+    cursor = MagicMock()
+    cursor.fetchall.return_value = rows
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cursor
+    gc = MagicMock()
+    gc.__enter__.return_value = conn
+    return gc, cursor
+
+
+def _row(id_=1, assessment_id=1, severity="warning", raised_at=UTC_NOW, state="active"):
+    return {
+        "id": id_,
+        "assessment_id": assessment_id,
+        "severity": severity,
+        "raised_at": raised_at,
+        "state": state,
+    }
+
+
+# InMemory-Double
+
+
+def test_inmemory_get_alarms_returns_active_newest_first():
+    repo = InMemoryAlarmRepository()
+    repo.save(_alarm(raised_at=datetime(2026, 6, 26, 10, 0, tzinfo=UTC)))  # id 1, aelter
+    repo.save(_alarm(raised_at=datetime(2026, 6, 26, 12, 0, tzinfo=UTC)))  # id 2, neuer
+    ids = [a.id for a in repo.get_alarms()]
+    assert ids == [2, 1]  # newest-first (raised_at DESC) fuer den Resync
+
+
+def test_inmemory_get_alarms_tie_break_by_id_desc():
+    # Gleiche raised_at -> stabiler Tie-Break id DESC (matcht ORDER BY raised_at DESC, id DESC).
+    repo = InMemoryAlarmRepository()
+    same = datetime(2026, 6, 26, 12, 0, tzinfo=UTC)
+    repo._alarms = [_alarm(id=1, raised_at=same), _alarm(id=2, raised_at=same)]
+    assert [a.id for a in repo.get_alarms()] == [2, 1]
+
+
+def test_inmemory_get_alarms_respects_limit():
+    repo = InMemoryAlarmRepository()
+    for _ in range(3):
+        repo.save(_alarm())
+    assert len(repo.get_alarms(limit=2)) == 2
+
+
+def test_inmemory_get_alarms_returns_copies():
+    repo = InMemoryAlarmRepository()
+    repo.save(_alarm())
+    assert repo.get_alarms()[0] is not repo.get_alarms()[0]
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1, 501])
+def test_inmemory_get_alarms_limit_out_of_range(bad_limit):
+    # Unter 1 ODER ueber der Obergrenze (500) -> ValueError am Repo-Rand (Defense-in-Depth).
+    with pytest.raises(ValueError):
+        InMemoryAlarmRepository().get_alarms(limit=bad_limit)
+
+
+def test_inmemory_get_alarms_default_excludes_cleared():
+    # White-box: das save-only-Double kann offiziell keine nicht-aktiven Alarme aufnehmen
+    # (RB-01), daher den internen Stand bewusst seeden, um den OFFEN-Filter (active+
+    # acknowledged, ohne cleared) der Default-Abfrage zu pruefen.
+    repo = InMemoryAlarmRepository()
+    repo._alarms = [
+        _alarm(id=1, state=AlarmState.ACTIVE),
+        _alarm(id=2, state=AlarmState.ACKNOWLEDGED),
+        _alarm(id=3, state=AlarmState.CLEARED),
+    ]
+    states = {a.state for a in repo.get_alarms()}
+    assert states == {AlarmState.ACTIVE, AlarmState.ACKNOWLEDGED}
+
+
+def test_inmemory_get_alarms_state_filter():
+    repo = InMemoryAlarmRepository()
+    repo._alarms = [
+        _alarm(id=1, state=AlarmState.ACTIVE),
+        _alarm(id=2, state=AlarmState.CLEARED),
+    ]
+    cleared = repo.get_alarms(state=AlarmState.CLEARED)
+    assert [a.id for a in cleared] == [2]
+
+
+# MySQL-Variante (get_connection gemockt)
+
+
+def test_mysql_get_alarms_open_default_uses_in_clause():
+    gc, cursor = _mock_get_connection([_row(id_=1), _row(id_=2, severity="critical")])
+    with patch("src.storage.alarm_repository.get_connection", return_value=gc):
+        alarms = MySqlAlarmRepository().get_alarms(limit=50)
+    sql, params = cursor.execute.call_args[0]
+    assert "FROM alarm" in sql
+    # Ohne Filter: offene Alarme = active + acknowledged (IN-Klausel), cleared ausgeschlossen.
+    assert "state IN (%s, %s)" in sql
+    assert "ORDER BY raised_at DESC" in sql
+    assert "id DESC" in sql  # stabiler Tie-Break muss erhalten bleiben (Sort-Invariante)
+    assert params == ("active", "acknowledged", 50)
+    assert [a.id for a in alarms] == [1, 2]
+    assert alarms[1].severity is AlarmSeverity.CRITICAL
+
+
+def test_mysql_get_alarms_state_filter_uses_equality():
+    gc, cursor = _mock_get_connection([_row(state="cleared")])
+    with patch("src.storage.alarm_repository.get_connection", return_value=gc):
+        MySqlAlarmRepository().get_alarms(state=AlarmState.CLEARED, limit=10)
+    sql, params = cursor.execute.call_args[0]
+    assert "state = %s" in sql
+    assert params == ("cleared", 10)
+
+
+def test_mysql_get_alarms_maps_row_to_alarm():
+    gc, _cursor = _mock_get_connection([_row(id_=9, assessment_id=4, severity="critical")])
+    with patch("src.storage.alarm_repository.get_connection", return_value=gc):
+        alarm = MySqlAlarmRepository().get_alarms()[0]
+    assert alarm.id == 9
+    assert alarm.assessment_id == 4
+    assert alarm.severity is AlarmSeverity.CRITICAL
+    assert alarm.state is AlarmState.ACTIVE
+
+
+def test_mysql_get_alarms_naive_raised_at_becomes_utc():
+    naive = datetime(2026, 6, 26, 12, 0)  # DB liefert zeitzonenlos
+    gc, _cursor = _mock_get_connection([_row(raised_at=naive)])
+    with patch("src.storage.alarm_repository.get_connection", return_value=gc):
+        alarm = MySqlAlarmRepository().get_alarms()[0]
+    assert alarm.raised_at.tzinfo is not None
+    assert alarm.raised_at == naive.replace(tzinfo=UTC)
+
+
+@pytest.mark.parametrize("db_error", [DatabaseConnectionError, DatabaseConfigError, pymysql.Error])
+def test_mysql_get_alarms_wraps_db_error_failsafe(db_error):
+    # Verbindungs-, Config- UND Treiberfehler werden alle zu RepositoryError (NF-01,
+    # symmetrisch zum save-Pfad) -- nie roher Fehler an den Endpoint.
+    gc, _cursor = _mock_get_connection([])
+    gc.__enter__.side_effect = db_error("DB weg")
+    with patch("src.storage.alarm_repository.get_connection", return_value=gc):
+        with pytest.raises(RepositoryError):
+            MySqlAlarmRepository().get_alarms()
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1, 501])
+def test_mysql_get_alarms_limit_out_of_range(bad_limit):
+    with pytest.raises(ValueError):
+        MySqlAlarmRepository().get_alarms(limit=bad_limit)
+
+
+def test_mysql_get_alarms_mapping_drift_failsafe():
+    # Ungueltiger Enum-Wert aus der DB (Schema-/Migrationsdrift) -> Pydantic-ValidationError
+    # beim Mapping. Muss fail-safe als RepositoryError aufschlagen (NF-01), nie roh als 500.
+    gc, _cursor = _mock_get_connection([_row(severity="bogus")])
+    with patch("src.storage.alarm_repository.get_connection", return_value=gc):
+        with pytest.raises(RepositoryError):
+            MySqlAlarmRepository().get_alarms()

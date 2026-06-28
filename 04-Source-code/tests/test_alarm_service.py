@@ -28,6 +28,9 @@ class _FailingAlarmRepo(AlarmRepository):
     def save(self, alarm: Alarm) -> int:
         raise RepositoryError("save kaputt")
 
+    def get_alarms(self, state: AlarmState | None = None, limit: int = 100) -> list[Alarm]:
+        return []  # Lesepfad in diesem Schreibpfad-Test ungenutzt (ABC-Pflicht, DTB-31)
+
 
 class _FailingAuditRepo(AuditRepository):
     def append(self, entry: AuditLogEntry) -> int:
@@ -94,6 +97,9 @@ def test_unerwarteter_save_fehler_armt_engine_neu():
     class _BuggyAlarmRepo(AlarmRepository):
         def save(self, alarm: Alarm) -> int:
             raise TypeError("unerwarteter Bug im Repo")
+
+        def get_alarms(self, state: AlarmState | None = None, limit: int = 100) -> list[Alarm]:
+            return []  # Lesepfad ungenutzt (ABC-Pflicht, DTB-31)
 
     engine = _engine()
     gen = AlarmGenerator(engine, _BuggyAlarmRepo(), InMemoryAuditRepository())

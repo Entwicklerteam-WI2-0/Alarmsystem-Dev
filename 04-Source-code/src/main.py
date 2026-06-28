@@ -110,12 +110,14 @@ def build_runtime() -> Runtime:
         plausibility_thresholds=thresholds.plausibilitaet,
     )
     service = AssessmentService(thresholds, assessment_repo, audit_repo)
+    # DTB-27/DTB-31: EINE Alarm-Repository-Instanz pro laufende Instanz -- geteilt zwischen
+    # AlarmGenerator (Schreiben beim Ausloesen) und GET /v1/alarms (Resync-Lesen ueber
+    # runtime.alarm_repo). Ein gemeinsames Repository statt zweier Instanzen.
+    alarm_repo = MySqlAlarmRepository()
     # DTB-27: Alarm-Generierung als Konsument der Bewertung. AlarmHysterese ist pro Sensor
     # zustandsbehaftet (On-Delay) -> gehört in den langlebigen DI-Graph (eine Instanz je
     # laufende Instanz; aktuell genau ein Sensor). Audit-Log wird mit dem Service geteilt.
-    alarm_generator = AlarmGenerator(
-        AlarmHysterese(thresholds.hysterese), MySqlAlarmRepository(), audit_repo
-    )
+    alarm_generator = AlarmGenerator(AlarmHysterese(thresholds.hysterese), alarm_repo, audit_repo)
     # DTB-61: ein Broadcaster pro laufende Instanz — geteilt zwischen run_scheduler (Producer)
     # und GET /v1/alarms/stream (Consumer). Haelt nur In-Memory-Abos, kontaktiert nichts.
     alarm_broadcaster = AlarmBroadcaster()
@@ -124,6 +126,7 @@ def build_runtime() -> Runtime:
         reading_repo=reading_repo,
         assessment_repo=assessment_repo,
         audit_repo=audit_repo,
+        alarm_repo=alarm_repo,
         threshold_set_repo=threshold_set_repo,
         poller=poller,
         service=service,
