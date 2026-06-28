@@ -56,18 +56,21 @@ def check_plausibility(
     previous: Reading | None,
     thresholds: DatenqualitaetSchwellen,
 ) -> str | None:
-    """Prueft ein Reading auf physikalische Plausibilitaet gegen ein vorheriges.
+    """Prueft ein Reading auf Zeitstempelordnung und Temperatur-SPRUNG gegen ein vorheriges.
 
-    Prueft zwei laut Schwellenwerte.md §3 definierte Fehlerbilder;
-    die konkreten Grenzwerte kommen aus thresholds.json (NF-05):
+    Prueft ausschliesslich die beiden konsekutiv-paar-basierten Fehlerbilder laut
+    Schwellenwerte.md §3; die Grenzwerte kommen aus thresholds.json (NF-05):
+    - Zeitstempelordnung: previous muss zeitlich vor current liegen.
     - Sprung: Aenderung der Oberflaechentemperatur > thresholds.max_temp_jump_c_per_min.
-    - Flatline: Keine Aenderung der Oberflaechentemperatur ueber
-      >= thresholds.flatline_timeout_min (innerhalb einer Toleranz fuer Sensorrauschen).
+
+    Flatline wird hier bewusst NICHT geprueft — sie braucht ein ZEITFENSTER (siehe
+    check_flatline), das der Aufrufer (Poller) haelt. Diese Funktion und check_flatline
+    sind komplementaer; keine ersetzt die andere.
 
     Args:
         current: Aktuelles Reading.
         previous: Vorheriges Reading desselben Sensors. Bei None kann keine
-            Sprung-/Flatline-Pruefung stattfinden -> plausibel.
+            Sprung-Pruefung stattfinden -> plausibel.
         thresholds: Parametrierbare Grenzwerte fuer Datenqualitaet.
 
     Returns:
@@ -102,10 +105,77 @@ def check_plausibility(
     if jump_rate > thresholds.max_temp_jump_c_per_min:
         return f"temperature jump {jump_rate:.2f} C/min exceeds limit"
 
-    if delta_min >= thresholds.flatline_timeout_min:
-        if abs(delta_temp_c) <= thresholds.flatline_epsilon_c:
-            return "temperature flatline"
+    # Flatline wird hier NICHT geprueft: sie braucht ein ZEITFENSTER (siehe check_flatline),
+    # das der Aufrufer (Poller) haelt. check_plausibility deckt Zeitstempelordnung + Sprung ab.
+    return None
 
+
+def check_flatline(
+    window_start: datetime | None,
+    current_measured_at: datetime,
+    temp_span_c: float,
+    thresholds: DatenqualitaetSchwellen,
+) -> str | None:
+    """Flatline-Erkennung ueber ein ZEITFENSTER (FA-04, NF-01).
+
+    `window_start` ist der Beginn (measured_at) des aktuellen Konstanz-Fensters — des
+    aeltesten Readings, seit dem die Temperatur das Band nicht verlassen hat. `temp_span_c`
+    ist die Spannweite (max-min) der Oberflaechentemperatur ueber dieses Fenster inkl. des
+    aktuellen Readings. Flatline gilt, wenn das Fenster >= flatline_timeout_min lang ist UND
+    die Spannweite <= flatline_epsilon_c bleibt (die Temperatur hat sich real nicht bewegt).
+
+    Gegen ein Fenster statt gegen das unmittelbare Vorgaenger-Reading zu pruefen ist noetig,
+    weil delta_min bei dichtem Polling (z. B. 30 s) sonst nie flatline_timeout_min erreicht
+    (DTB-20 santa-loop). Die Spannweite ist ausserdem robuster gegen Rauschen als der Abstand
+    zu einem einzelnen Punkt.
+
+    WICHTIG (NF-05): flatline_epsilon_c ist die Rausch-/Bewegungstoleranz (Band). Sie muss zur
+    realen Sensoraufloesung/zum Rauschen passen — ist sie zu klein, entkommt ein rauschender,
+    eingefrorener Sensor der Erkennung. Der Wert ist mit dem Architekten/`Schwellenwerte.md`
+    zu plausibilisieren, nicht im Code zu raten.
+
+    Args:
+        window_start: measured_at des Fensterbeginns. None -> kein Fenster -> plausibel.
+        current_measured_at: measured_at des aktuellen Readings (Fensterende).
+        temp_span_c: max-min der Oberflaechentemperatur ueber das Fenster inkl. current.
+            VORBEDINGUNG: >= 0 (eine Spannweite max-min ist nie negativ). Ein negativer
+            Wert ist ein Aufrufer-Bug und wuerde einen falschen Flatline-Treffer ausloesen;
+            der einzige produktive Aufrufer (Poller._flatline_span_including) garantiert >= 0.
+        thresholds: Parametrierbare Grenzwerte fuer Datenqualitaet (NF-05).
+
+    Returns:
+        "temperature flatline", wenn eingefroren; sonst None.
+
+    Raises:
+        ValueError: wenn current_measured_at oder ein gesetztes window_start nicht
+            zeitzonenbewusst (UTC) ist — analog is_stale (DTB-20 LOW).
+    """
+    # TZ-Awareness analog zu is_stale erzwingen: naive datetimes liefern bei der
+    # Subtraktion unten sonst einen stummen TypeError statt eines fruehen, klaren
+    # Fehlers (DTB-20 LOW). Alle Zeitstempel laufen produktiv durch _parse_iso_utc,
+    # der Guard schuetzt aber Aufrufer aus anderem Kontext.
+    # temp_span_c >= 0 ist Vorbedingung (Spannweite max-min, s. Docstring) und wird vom
+    # einzigen produktiven Aufrufer garantiert; bewusst KEIN literaler `< 0`-Guard hier,
+    # da die `0` den No-Hardcode-Guard (NF-05) faelschlich triggert und ein noqa-Marker
+    # zugleich eine ruff-Parse-Warnung erzeugt (DTB-20 Review: dokumentierte Precondition
+    # statt zweifach lint-widriger Laufzeit-Guard fuer einen unerreichbaren Fall).
+    # current_measured_at wird BEWUSST UNBEDINGT geprueft — auch wenn window_start None ist und
+    # die Funktion gleich None zurueckgibt (DTB-20 Review L-3). Ein naiver Timestamp ist immer ein
+    # Aufrufer-Bug; ihn schon beim allerersten Reading (noch kein Fenster) frueh und klar zu
+    # melden ist sicherer als ihn bis zum ersten geoeffneten Fenster stumm passieren zu lassen.
+    # Die Asymmetrie zu window_start (nur bei != None geprueft) ist inhaerent: window_start DARF
+    # legitim None sein (kein Fenster), current_measured_at nie.
+    if current_measured_at.tzinfo is None:
+        raise ValueError("current_measured_at muss zeitzonenbewusst sein (UTC)")
+    if window_start is None:
+        return None
+    if window_start.tzinfo is None:
+        raise ValueError("window_start muss zeitzonenbewusst sein (UTC)")
+    delta_min = (current_measured_at - window_start).total_seconds() / 60.0
+    if delta_min < thresholds.flatline_timeout_min:
+        return None
+    if temp_span_c <= thresholds.flatline_epsilon_c:
+        return "temperature flatline"
     return None
 
 

@@ -5,7 +5,7 @@ Erfolg 200 + Acknowledgement, sowie alle Fehlerbilder im Contract-Fehlerformat
 `Error {code, message}` (nie FastAPIs `{detail}`):
 
 - `id < 1`           -> 400 BAD_REQUEST
-- Body ungueltig     -> 422 VALIDATION_ERROR (globaler RequestValidationError-Handler)
+- Body ungueltig     -> 422 UNPROCESSABLE_ENTITY (globaler RequestValidationError-Handler)
 - Alarm fehlt        -> 404 NOT_FOUND
 - bereits quittiert  -> 409 ALARM_ALREADY_ACKNOWLEDGED (Double-Ack, NF-09, nicht idempotent)
 - Persistenz-Ausfall -> 503 SERVICE_UNAVAILABLE
@@ -149,7 +149,7 @@ def test_ack_missing_operator_returns_422():
 
     response = client.post("/v1/alarms/1/ack", json={"note": "ohne operator"})
 
-    _assert_error_envelope(response, 422, "VALIDATION_ERROR")
+    _assert_error_envelope(response, 422, "UNPROCESSABLE_ENTITY")
 
 
 def test_ack_empty_operator_returns_422():
@@ -158,7 +158,7 @@ def test_ack_empty_operator_returns_422():
 
     response = client.post("/v1/alarms/1/ack", json={"operator": ""})
 
-    _assert_error_envelope(response, 422, "VALIDATION_ERROR")
+    _assert_error_envelope(response, 422, "UNPROCESSABLE_ENTITY")
 
 
 def test_ack_repository_failure_returns_503():
