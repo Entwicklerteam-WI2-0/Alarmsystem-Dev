@@ -1,0 +1,74 @@
+An: Nick (G3-Lead)
+Von: Lucas (G2 / Systemarchitekt)
+Datum: 2026-06-27
+Betreff: Naht-Info — GET /v1/thresholds liefert 4 zusaetzliche prognose-Felder (additiv, non-breaking)
+
+Hi Nick,
+
+kurze Seam-Info zu einer ADDITIVEN Erweiterung an einem G2->G3-Endpoint. Der eingefrorene
+Wire-Kern (GET /v1/assessment/current, /v1/health, /v1/alarms*) ist NICHT betroffen und
+bleibt unveraendert.
+
+WAS sich aendert
+----------------
+Mit dem Feature "30-min-T_s-Prognose" (FA-06, DTB-33) liefert der bereits bekannte
+Post-Freeze-Endpoint
+
+  GET /v1/thresholds
+
+im Abschnitt "prognose" jetzt 4 zusaetzliche Felder. Bisher war dort nur t_s_grenz_c.
+Neue Felder:
+
+  prognose:
+    t_s_grenz_c:        0.0     (bekannt) GELB-Prognoseschwelle in Grad C
+    trend_window_min:   30.0    NEU  Laenge des Trendfensters (min)
+    horizon_min:        30.0    NEU  Prognosehorizont (min, FA-06 = 30)
+    min_points:         3       NEU  interner Regressions-Parameter
+    max_readings_limit: 1000    NEU  interner DB-Last-Cap
+
+FUER DAS G3-MENUE relevant (Kalibrierwerte):
+  - t_s_grenz_c, trend_window_min, horizon_min
+
+NICHT fuer die Anzeige gedacht (rein G2-interne Tuning-/DB-Knoepfe — bitte NICHT als
+Bedien-Parameter im Schwellenwert-Menue zeigen):
+  - min_points, max_readings_limit
+
+Warum kein Problem fuer euch
+----------------------------
+- Die Aenderung ist rein ADDITIV. Bestehende Felder/Typen bleiben gleich.
+- Es gibt kein additionalProperties:false auf der Naht — unbekannte Felder duerft ihr
+  einfach ignorieren. Euer aktueller Client bricht NICHT.
+- Endpoint bleibt rein lesend (RB-01-neutral, kein Aktor).
+
+Source of Truth + aktualisierte Spec anbei
+------------------------------------------
+Massgeblich: docs/api/v1/openapi.yaml -> components.schemas.Thresholds.properties.prognose
+(Werte sind aktuell DUMMY; die finalen Schwellen kommen von G1.)
+
+WICHTIG: Eure bisherige Spec-Kopie war veraltet (noch ohne /v1/thresholds). Anbei die
+AKTUELLE vollstaendige Spec als G2-API-v1-openapi.yaml (info.version bleibt 1.0.0, da die
+Aenderungen rein additiv/post-freeze sind und den Wire-Kern nicht brechen).
+
+Die beiliegende Spec bringt euch ausserdem zwei Dinge, die in eurer alten Kopie noch
+NICHT enthalten waren und die ihr direkt aufruft/kennen muesst:
+  - GET /v1/health (DTB-64): finale Form = 200 Health{status:"ok"} bzw. 503
+    Error{code,message}, solange G2 (Startup/Ausfall) nicht bereit ist. Bitte gegen euren
+    Health-/Liveness-Poll checken.
+  - Stale-/Fail-safe-Semantik auf GET /v1/assessment/current: bei veralteten Daten KEIN
+    Fehler, sondern HTTP 200 mit is_stale=true + risk_level=unknown (nie GRUEN). GRUEN nur,
+    wenn is_stale=false UND sensor_status=ok. "Gar keine Daten / interner Ausfall" = 503.
+    -> Im UI bitte unknown am risk_level erkennen (nicht allein an is_stale).
+
+Bitte um Bestaetigung (zwei Punkte)
+-----------------------------------
+1) /v1/thresholds als Ganzes: Dieser Endpoint kam NACH dem v1.0-Freeze dazu (DTB-62) und
+   hat von euch noch kein seam-sync-confirmed. Bitte bestaetigt kurz, dass die Form fuer
+   euch passt (oder was ihr braucht).
+2) Die 4 neuen prognose-Felder: Reicht es euch so (unbekannte/interne Felder ignorieren),
+   oder soll G2 die internen Felder (min_points, max_readings_limit) gar nicht erst
+   ausliefern (eigenes schlankes Response-DTO)? Beides ist machbar.
+
+Sag kurz Bescheid, dann ziehen wir die Naht final + setzen seam-sync-confirmed.
+
+Danke + Gruss
+Lucas (G2)

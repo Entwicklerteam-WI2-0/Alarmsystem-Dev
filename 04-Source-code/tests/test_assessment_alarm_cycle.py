@@ -631,7 +631,13 @@ def test_scheduler_klemmt_rueckwaerts_wallclock_und_loggt_warning(monkeypatch, c
 
     captured: list[datetime] = []
 
-    def _capture_now(_service: object, _generator: object, _reading: object, now: datetime) -> None:
+    def _capture_now(
+        _service: object,
+        _generator: object,
+        _reading: object,
+        now: datetime,
+        forecast_surface_temp_c: object = None,
+    ) -> None:
         captured.append(now)
         return None
 
