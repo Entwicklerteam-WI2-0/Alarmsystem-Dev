@@ -77,7 +77,13 @@ def _load_state() -> dict:
     if unknown:
         _warn(f"unbekannte State-Keys (Tippfehler?): {sorted(unknown)}")
     status = raw.get("status")
-    if status is not None and status not in _VALID_STATUS:
+    if status is None:
+        # status ist Contract-Pflicht -> null ist eine staerkere Verletzung als ein Tippfehler.
+        # Konsistent zu age_s/trias warnen (Review #144 Runde 5), aber NICHT auf 'ok' klemmen:
+        # G2 verwirft unknown status ohnehin -> unknown/fail-safe; bewusste Contract-Verstoesse
+        # als Negativtest bleiben moeglich.
+        _warn("status fehlt/ist null im State-File -> G2 sieht status:null")
+    elif status not in _VALID_STATUS:
         # Bewusst NUR warnen, NICHT auf 'ok' klemmen (Review #144): (1) ein Tippfehler 'faul'
         # darf nicht still zum sicheren 'ok' werden (falsche Fail-safe-Richtung); G2 verwirft
         # einen ungueltigen status ohnehin -> unknown. (2) Ein Test-Tool soll liefern, was man
