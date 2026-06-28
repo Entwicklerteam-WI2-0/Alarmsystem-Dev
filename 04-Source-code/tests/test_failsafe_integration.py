@@ -185,6 +185,9 @@ def _gruen_kandidat(sensor_id: str, measured_at: datetime, thresholds: Threshold
       -> GRUEN
     """
     v = thresholds.vereisung
+    # Relative Offsets (+3.0 / +1.0 K) auf die Config-Schwellen, kein Hardcode (NF-05). Bei
+    # extrem engen externen Schwellen koennte daraus kein echtes GRUEN entstehen — der
+    # Precondition-Assert in Schicht 6 faengt genau diesen Fall explizit ab.
     # Deutlich ueber beiden Untergrenz-Schwellen, damit T_s kein GELB ausloest.
     surface = max(v.t_s_gefrierpunkt_c, v.t_s_gelb_auffang_c) + 3.0
     # Taupunkt so weit unter T_s, dass delta_t > delta_t_feucht_k (trockene Oberflaeche).
@@ -345,7 +348,10 @@ def test_schicht2a_fault_realer_poller_pfad_liefert_none(
     assert reading is None, (
         "Poller muss ein G1-Snapshot mit status=fault verwerfen (E-40 Schicht 2, realer Pfad)"
     )
-    # reading_repo (mit poller geteilt) darf kein fault-Reading gespeichert haben.
+    # Invariante (conftest): die reading_repo-Fixture und poller.repository sind DIESELBE
+    # In-Memory-Instanz (poller-Fixture: repository=reading_repo). Nur dann beweist diese
+    # Assertion, dass der Poller nichts persistiert hat. Wird die Fixture-Hierarchie je
+    # entkoppelt (eigener Poller-Repo), muss diese Assertion mitgezogen werden.
     assert reading_repo.get_latest(sensor_id, limit=1) == ()
 
     # Schicht 2a (real, Forts.): Service bewertet None -> unknown, nie GRUEN (NF-01)
@@ -385,6 +391,8 @@ def test_schicht1_und_2_fault_und_stale_gleichzeitig_nie_gruen(
     # fault UND stale gleichzeitig -> unknown, nie GRUEN (NF-01)
     assert result.risk_level is RiskLevel.UNKNOWN
     assert result.reading_id == reading_mit_id.id
+    # Persistenz-Assertion bewusst weggelassen: dieser Test fokussiert die Branch-Reihenfolge
+    # (fault VOR stale) im Service; die Repo-Persistenz decken Schicht 1 + Schicht 2 ab.
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +428,7 @@ def test_schicht3_plausibilitaet_ausserhalb_grenzen_nie_gruen(
     max_temp = thresholds.plausibilitaet.max_temp_c
 
     # G1-Payload mit surface_temp_c klar ausserhalb der Obergrenze.
-    payload: dict = {
+    payload: dict[str, object] = {
         "sensor_id": sensor_id,
         "measured_at": _g1_iso(now),
         "surface_temp_c": max_temp + 10.0,  # klar jenseits der Plausibilitaetsgrenze
