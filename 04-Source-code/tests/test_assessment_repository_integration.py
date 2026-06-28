@@ -131,6 +131,8 @@ def test_assessment_unknown_with_nulled_measurements_roundtrip(
     assert latest is not None
     assert latest.id == new_id
     assert latest.risk_level is RiskLevel.UNKNOWN
+    assert latest.driving_factor is None
+    assert latest.explanation is None
     assert latest.surface_temp_c is None
     assert latest.dew_point_c is None
     assert latest.delta_t is None

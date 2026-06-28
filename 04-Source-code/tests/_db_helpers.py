@@ -84,7 +84,13 @@ def db_available() -> bool:
 
 @pytest.fixture(scope="session")
 def database(db_available: bool) -> str:
-    """Erzeugt (idempotent) die Test-DB, spielt das Schema ein, gibt den Namen zurueck."""
+    """Erzeugt (idempotent) die Test-DB, spielt das Schema ein, gibt den Namen zurueck.
+
+    Bei Schema-Aenderungen (neue Spalten, geaenderte Enums) reicht CREATE DATABASE IF NOT
+    EXISTS nicht, weil die bestehende DB ihr altes Schema behaelt. Setze
+    `DB_TEST_FORCE_RECREATE=1`, um die Test-DB vor dem Schema-Load zu droppen und neu
+    anzulegen (DTB-21-Review MEDIUM).
+    """
     if not db_available:
         pytest.skip("MariaDB-Test-DB nicht erreichbar (DB_HOST/DB_PORT/DB_USER/DB_PASSWORD).")
     name = test_db_name()
@@ -94,6 +100,8 @@ def database(db_available: bool) -> str:
     # wie der db_available-Leak, DTB-21-Review).
     try:
         with root.cursor() as cursor:
+            if os.environ.get("DB_TEST_FORCE_RECREATE", "").strip() == "1":
+                cursor.execute(f"DROP DATABASE IF EXISTS {name}")
             cursor.execute(
                 f"CREATE DATABASE IF NOT EXISTS {name} "
                 "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"

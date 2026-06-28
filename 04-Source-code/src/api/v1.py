@@ -8,16 +8,18 @@ Runway-Steuerung.
 
 import logging
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.api.broadcaster import StreamCapacityError, sse_alarm_frames
-from src.api.responses import NO_STORE_HEADERS, service_unavailable
+from src.api.responses import NO_STORE_HEADERS, bad_request, service_unavailable
 from src.api.runtime import Runtime, get_runtime
 from src.config.loader import Thresholds
-from src.model.schemas import Error
+from src.model.schemas import Error, Reading
+from src.storage import RepositoryError
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +72,118 @@ def read_thresholds(
     """
     response.headers.update(NO_STORE_HEADERS)
     return thresholds
+
+
+# Erlaubte Sortierwerte fuer GET /v1/readings (openapi.yaml: enum [asc, desc]). Eigene
+# API-Boundary-Whitelist (nicht der Storage-internen Konstante entlehnt -> keine
+# Layer-ueberkreuzende Kopplung); die Repository-Schicht validiert zusaetzlich selbst.
+_READINGS_ORDERS = frozenset({"asc", "desc"})
+
+# Wire-Obergrenze fuer limit (openapi.yaml: maximum 1000). Default 100 (= openapi default).
+_READINGS_MAX_LIMIT = 1000
+
+
+@router.get(
+    "/readings",
+    response_model=list[Reading],
+    summary="Historie der Messwerte (T1)",
+    tags=["Readings"],
+    responses={
+        400: {
+            "model": Error,
+            "description": (
+                "Ungueltige Anfrage (z. B. 'from' nach 'to', 'limit' ausserhalb [1,1000], "
+                "ungueltiges 'order'). Contract-Fehlerformat Error {code, message}."
+            ),
+        },
+        503: {
+            "model": Error,
+            "description": "G2 (noch) nicht lieferfaehig (DB-Ausfall / Runtime nicht bereit).",
+        },
+    },
+)
+def list_readings(
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+    response: Response,
+    from_: Annotated[
+        datetime | None,
+        Query(alias="from", description="Untere Zeitgrenze (ISO-8601, UTC), inklusiv."),
+    ] = None,
+    to: Annotated[
+        datetime | None,
+        Query(description="Obere Zeitgrenze (ISO-8601, UTC), inklusiv."),
+    ] = None,
+    sensor_id: Annotated[
+        str | None, Query(description="Auf einen Sensor einschraenken (None = alle).")
+    ] = None,
+    limit: Annotated[
+        int,
+        # json_schema_extra dokumentiert die Grenzen in /openapi.json (Deckung mit der
+        # eingefrorenen openapi.yaml) OHNE FastAPIs Query(ge,le)-Validierung -> kein 422
+        # {detail}; die Bereichspruefung bleibt manuell und antwortet 400 Error (Contract).
+        Query(
+            description="Maximale Anzahl Eintraege (1..1000).",
+            json_schema_extra={"minimum": 1, "maximum": 1000},
+        ),
+    ] = 100,
+    order: Annotated[
+        str,
+        # enum nur als Schema-Hinweis (Deckung mit openapi.yaml), NICHT als Literal-Validierung
+        # -> ungueltiges order ergibt 400 Error (manuell), nicht 422 {detail}.
+        Query(
+            description="Sortierung nach measured_at: asc | desc.",
+            json_schema_extra={"enum": ["asc", "desc"]},
+        ),
+    ] = "desc",
+) -> list[Reading] | JSONResponse:
+    """Liefert die Messwert-Historie (Contract v1, DTB-34/FA-03) — rein lesend, kein Aktor (RB-01).
+
+    Optional per `from`/`to` (auf `measured_at`, inklusiv), `sensor_id` und `limit`
+    eingrenzbar; `order` (Default `desc` = neueste zuerst). Bei mehr Treffern als `limit`
+    wird am AELTEREN Ende abgeschnitten (die frischesten `limit` bleiben).
+
+    Fehlerbild contract-konform (openapi.yaml, nie FastAPIs `{detail}`):
+    - Geschaeftsregel-/Bereichsfehler (`from` nach `to`, `limit` ausserhalb [1,1000],
+      ungueltiges `order`) -> **400** `Error {code, message}`.
+    - DB-Ausfall (`RepositoryError`) / Runtime nicht bereit -> **503** `Error {code, message}`.
+
+    `Cache-Control: no-store` (konsistent zur restlichen /v1-Naht): kein Proxy/Browser
+    soll ein ueberholtes Historien-Fenster ausliefern (NF-01-Geist).
+    """
+    # Zeitstempel auf UTC normalisieren (Contract: alle Zeiten UTC). Ein tz-naiver Query-
+    # Wert wird als UTC interpretiert; das haelt den Vergleich from<=to konsistent und
+    # verhindert zugleich den ValueError der Repository-Schicht bei naiven Grenzen.
+    if from_ is not None and from_.tzinfo is None:
+        from_ = from_.replace(tzinfo=UTC)
+    if to is not None and to.tzinfo is None:
+        to = to.replace(tzinfo=UTC)
+
+    if from_ is not None and to is not None and from_ > to:
+        return bad_request("'from' darf nicht nach 'to' liegen.")
+    if not 1 <= limit <= _READINGS_MAX_LIMIT:
+        return bad_request(f"'limit' muss zwischen 1 und {_READINGS_MAX_LIMIT} liegen.")
+    if order not in _READINGS_ORDERS:
+        return bad_request("'order' muss 'asc' oder 'desc' sein.")
+
+    # no-store auf dem 200-Pfad; die direkt zurueckgegebenen 400/503-JSONResponses tragen
+    # den Header selbst (bad_request / service_unavailable).
+    response.headers.update(NO_STORE_HEADERS)
+    try:
+        readings = runtime.reading_repo.get_readings(
+            sensor_id=sensor_id, start=from_, end=to, limit=limit, order=order
+        )
+    except ValueError as exc:
+        # Defense-in-depth: der Endpoint validiert order/limit oben und normalisiert die
+        # Zeitgrenzen, daher ist die Repository-Validierung (ValueError) hier nicht erreichbar.
+        # Falls die Pruefung je gelockert/umgestellt wird, bleibt die Naht contract-konform
+        # (400 Error) statt eines rohen 500/{detail}. Detail nur server-seitig (Contract D).
+        logger.error("readings: ungueltige Anfrage an die Persistenzschicht: %s", exc)
+        return bad_request("Ungueltige Anfrage.")
+    except RepositoryError as exc:
+        # DB-Ausfall: Detail nur server-seitig loggen, nach aussen generisch (Contract D).
+        logger.error("readings: Persistenz nicht verfuegbar: %s", exc)
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+    return list(readings)
 
 
 # SSE-Antwortheader (DTB-61): no-store (Echtzeit-Sicherheitsnaht, kein Cache eines

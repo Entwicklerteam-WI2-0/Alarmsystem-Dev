@@ -45,6 +45,9 @@ class FakeRepository(Repository):
         ]
         return tuple(sorted(candidates, key=lambda r: r.measured_at)[:limit])
 
+    def get_readings(self, **_kwargs: object) -> Sequence[Reading]:
+        raise NotImplementedError  # vom Poller nicht genutzt (DTB-34 Serving)
+
 
 @pytest.fixture
 def fake_repo() -> FakeRepository:
@@ -625,6 +628,9 @@ def test_poll_repository_error_is_failsafe(
         ) -> Sequence[Reading]:
             raise RepositoryError("DB nicht erreichbar")
 
+        def get_readings(self, **_kwargs: object) -> Sequence[Reading]:
+            raise RepositoryError("DB nicht erreichbar")
+
     repo = RaisingRepository()
     poller = Poller(
         base_url="http://g1.test",
@@ -665,6 +671,9 @@ def test_poll_unexpected_repository_error_is_not_swallowed(
         def get_since(
             self, sensor_id: str, since: datetime, limit: int = 1000
         ) -> Sequence[Reading]:
+            return ()
+
+        def get_readings(self, **_kwargs: object) -> Sequence[Reading]:
             return ()
 
     poller = Poller(

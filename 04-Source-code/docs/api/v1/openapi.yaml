@@ -298,6 +298,18 @@ paths:
               example:
                 code: BAD_REQUEST
                 message: "'from' darf nicht nach 'to' liegen."
+        "503":
+          description: >-
+            G2 (noch) nicht lieferfaehig (DB-Ausfall / Runtime nicht bereit). Generische
+            Meldung, keine internen Details (Contract D). NICHT fuer eine leere Historie —
+            eine leere Trefferliste ist `200` mit `[]`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              example:
+                code: SERVICE_UNAVAILABLE
+                message: "G2 momentan nicht lieferfaehig."
 
   /v1/alarms:
     get:

@@ -45,7 +45,7 @@ def assessment_id(database: str) -> int:
         conn.close()
 
 
-def _alarm(assessment_id: int, **overrides) -> Alarm:
+def _alarm(assessment_id: int, **overrides: object) -> Alarm:
     base = dict(assessment_id=assessment_id, severity=AlarmSeverity.CRITICAL, raised_at=_UTC_NOW)
     base.update(overrides)
     return Alarm(**base)

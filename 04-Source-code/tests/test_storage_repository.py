@@ -484,3 +484,104 @@ def test_insert_logs_when_rollback_fails(caplog: pytest.LogCaptureFixture) -> No
             ReadingRepository._insert(_FailingConnection(), ())
 
     assert any("Rollback" in record.getMessage() for record in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# get_readings — Historie-Abfrage (DTB-34, FA-03)
+# ---------------------------------------------------------------------------
+def _save_minute(repository: ReadingRepository, sensor_id: str, minute: int, temp: float) -> None:
+    ts = datetime(2026, 6, 23, 10, minute, 0, tzinfo=UTC)
+    repository.save(
+        Reading(
+            sensor_id=sensor_id,
+            measured_at=ts,
+            received_at=ts,
+            surface_temp_c=temp,
+            air_temp_c=1.0,
+            humidity_pct=80.0,
+            source=Source.REAL,
+            status=SensorStatus.OK,
+        )
+    )
+
+
+def test_get_readings_default_desc(repository: ReadingRepository) -> None:
+    for minute in range(3):
+        _save_minute(repository, "anr-hist", minute, float(minute))
+
+    result = repository.get_readings(sensor_id="anr-hist")
+
+    assert [r.surface_temp_c for r in result] == [
+        pytest.approx(2.0),
+        pytest.approx(1.0),
+        pytest.approx(0.0),
+    ]
+
+
+def test_get_readings_order_asc(repository: ReadingRepository) -> None:
+    for minute in range(3):
+        _save_minute(repository, "anr-hist-asc", minute, float(minute))
+
+    result = repository.get_readings(sensor_id="anr-hist-asc", order="asc")
+
+    assert [r.surface_temp_c for r in result] == [
+        pytest.approx(0.0),
+        pytest.approx(1.0),
+        pytest.approx(2.0),
+    ]
+
+
+def test_get_readings_without_sensor_spans_all(repository: ReadingRepository) -> None:
+    _save_minute(repository, "anr-x", 0, 1.0)
+    _save_minute(repository, "anr-y", 1, 2.0)
+
+    result = repository.get_readings()
+
+    assert {r.sensor_id for r in result} == {"anr-x", "anr-y"}
+
+
+def test_get_readings_between_from_to_inclusive(repository: ReadingRepository) -> None:
+    for minute in range(4):
+        _save_minute(repository, "anr-win", minute, float(minute))
+
+    start = datetime(2026, 6, 23, 10, 1, 0, tzinfo=UTC)
+    end = datetime(2026, 6, 23, 10, 2, 0, tzinfo=UTC)
+    result = repository.get_readings(sensor_id="anr-win", start=start, end=end, order="asc")
+
+    assert [r.surface_temp_c for r in result] == [pytest.approx(1.0), pytest.approx(2.0)]
+
+
+def test_get_readings_limit_keeps_freshest(repository: ReadingRepository) -> None:
+    for minute in range(4):
+        _save_minute(repository, "anr-lim", minute, float(minute))
+
+    result = repository.get_readings(sensor_id="anr-lim", limit=2, order="asc")
+
+    # FRISCHESTE zwei behalten (Minute 2 + 3), aufsteigend ausgegeben.
+    assert [r.surface_temp_c for r in result] == [pytest.approx(2.0), pytest.approx(3.0)]
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1, -100])
+def test_get_readings_rejects_non_positive_limit(bad_limit: int) -> None:
+    # Keine DB noetig: der Guard greift vor dem Datenbankzugriff.
+    repo = ReadingRepository()
+    with pytest.raises(ValueError, match="limit muss positiv sein"):
+        repo.get_readings(limit=bad_limit)
+
+
+def test_get_readings_rejects_invalid_order() -> None:
+    repo = ReadingRepository()
+    with pytest.raises(ValueError, match="order"):
+        repo.get_readings(order="sideways")
+
+
+def test_get_readings_rejects_naive_from() -> None:
+    repo = ReadingRepository()
+    with pytest.raises(ValueError, match="zeitzonenbewusst"):
+        repo.get_readings(start=datetime(2026, 6, 23, 10, 0, 0))
+
+
+def test_get_readings_rejects_naive_to() -> None:
+    repo = ReadingRepository()
+    with pytest.raises(ValueError, match="zeitzonenbewusst"):
+        repo.get_readings(end=datetime(2026, 6, 23, 10, 0, 0))

@@ -71,9 +71,17 @@ DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=alarmsystem DB_USER=app DB_PASSWORD=<dev-
 # Nur die DB-Integrationstests:
 DB_HOST=127.0.0.1 ... python -m pytest tests/test_storage_repository.py \
   tests/test_alarm_repository_integration.py tests/test_assessment_repository_integration.py -v
+# Nach Schema-Aenderungen (neue Spalten, geaenderte Enums) Test-DB neu aufbauen:
+DB_TEST_FORCE_RECREATE=1 DB_HOST=127.0.0.1 ... python -m pytest tests/test_storage_repository.py \
+  tests/test_alarm_repository_integration.py tests/test_assessment_repository_integration.py -v
 ```
 
 Erwartung mit erreichbarer DB: alle 4 MySql-Repos (reading/alarm/assessment/audit) grün; volle Suite grün.
+
+> **`DB_TEST_FORCE_RECREATE=1`**: Die Test-Fixture legt die Test-DB nur einmal pro Session an
+> (`CREATE DATABASE IF NOT EXISTS`). Bei Schema-Aenderungen greift das nicht, weil die bestehende
+> DB ihr altes Schema behaelt. Mit `DB_TEST_FORCE_RECREATE=1` wird die Test-DB vor dem Schema-Load
+> gedroppt und neu angelegt (DTB-21-Review MEDIUM).
 
 ## Gotchas (real aufgetreten, nicht theoretisch)
 

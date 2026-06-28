@@ -24,6 +24,35 @@ from src.storage.database import (
 
 logger = logging.getLogger(__name__)
 
+# Erlaubte Sortierrichtungen fuer get_readings (nach measured_at). Whitelist, weil die
+# ORDER-BY-Richtung in SQL NICHT parametrisierbar ist: nur diese festen Literale werden in
+# die Query interpoliert (Injection-Schutz), nie der rohe Eingabewert. Default desc = neueste
+# zuerst (openapi.yaml /v1/readings, DTB-34).
+_ORDER_DIRECTIONS = {"asc": "ASC", "desc": "DESC"}
+
+
+def _validate_readings_query(
+    start: datetime | None, end: datetime | None, limit: int, order: str
+) -> str:
+    """Validiert die get_readings-Parameter und liefert die SQL-Sortierrichtung (Whitelist).
+
+    Geteilt von In-Memory- und PyMySQL-Implementierung, damit beide exakt dieselbe
+    Eingabe-Semantik haben (DTB-34). Greift VOR jedem DB-Zugriff.
+
+    Raises:
+        ValueError: Bei ungueltigem `order`, nicht-positivem `limit` oder einer
+            zeitzonen-naiven `start`/`end`-Grenze (UTC erwartet).
+    """
+    if order not in _ORDER_DIRECTIONS:
+        raise ValueError(f"order muss 'asc' oder 'desc' sein, erhalten: {order!r}")
+    if limit <= 0:
+        raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
+    if start is not None and start.tzinfo is None:
+        raise ValueError("start (from) muss zeitzonenbewusst sein (UTC)")
+    if end is not None and end.tzinfo is None:
+        raise ValueError("end (to) muss zeitzonenbewusst sein (UTC)")
+    return _ORDER_DIRECTIONS[order]
+
 
 class RepositoryError(Exception):
     """Domänen-Exception für Fehler in der Persistenzschicht.
@@ -98,6 +127,39 @@ class Repository(ABC):
         """
         ...
 
+    @abstractmethod
+    def get_readings(
+        self,
+        *,
+        sensor_id: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        limit: int = 100,
+        order: str = "desc",
+    ) -> Sequence[Reading]:
+        """Liefert die Messwert-Historie als Liste (DTB-34, FA-03 — Serving zu G3).
+
+        Optional eingrenzbar nach Sensor und Zeitfenster; sortiert nach measured_at.
+        Bei mehr Treffern als `limit` wird am AELTEREN Ende abgeschnitten (die
+        frischesten `limit` bleiben, analog get_since), unabhaengig von `order`.
+
+        Args:
+            sensor_id: Nur Readings dieses Sensors (None = alle Sensoren).
+            start: Untere Zeitgrenze (inklusiv, UTC) auf measured_at (None = offen).
+            end: Obere Zeitgrenze (inklusiv, UTC) auf measured_at (None = offen).
+            limit: Maximale Anzahl Eintraege (> 0; Endpoint begrenzt zusaetzlich auf 1000).
+            order: Sortierung nach measured_at — "asc" oder "desc" (Default "desc").
+
+        Returns:
+            Sequenz von Readings in der gewuenschten Reihenfolge. Leer, wenn keine passen.
+
+        Raises:
+            RepositoryError: Bei Datenbankfehlern.
+            ValueError: Bei ungueltigem `order`, nicht-positivem `limit` oder einer
+                zeitzonen-naiven Grenze (UTC erwartet).
+        """
+        ...
+
 
 class InMemoryReadingRepository(Repository):
     """In-Memory-Double fuer Tests und lokale Laeufe (keine DB noetig).
@@ -137,6 +199,34 @@ class InMemoryReadingRepository(Repository):
         # DESC-LIMIT-Subquery), dann aufsteigend zurueckgeben (aeussere ASC-Sortierung).
         newest = sorted(candidates, key=lambda r: (r.measured_at, r.id or 0), reverse=True)[:limit]
         ordered = sorted(newest, key=lambda r: (r.measured_at, r.id or 0))
+        return tuple(ordered)
+
+    def get_readings(
+        self,
+        *,
+        sensor_id: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        limit: int = 100,
+        order: str = "desc",
+    ) -> Sequence[Reading]:
+        # Validierung (order/limit/tz) + Sortierrichtung geteilt mit der PyMySQL-Variante
+        # -> identische Eingabe-Semantik. `direction` ("ASC"/"DESC") steuert die Endsortierung.
+        direction = _validate_readings_query(start, end, limit, order)
+        candidates = [
+            r
+            for r in self._items
+            if (sensor_id is None or r.sensor_id == sensor_id)
+            and (start is None or r.measured_at >= start)
+            and (end is None or r.measured_at <= end)
+        ]
+        # limit kappt am AELTEREN Ende: erst die FRISCHESTEN `limit` behalten (analog
+        # get_since / der inneren Subquery von ReadingRepository.get_readings), dann in der
+        # gewuenschten Richtung ausgeben.
+        newest = sorted(candidates, key=lambda r: (r.measured_at, r.id or 0), reverse=True)[:limit]
+        ordered = sorted(
+            newest, key=lambda r: (r.measured_at, r.id or 0), reverse=(direction == "DESC")
+        )
         return tuple(ordered)
 
 
@@ -260,6 +350,62 @@ class ReadingRepository(Repository):
         if limit <= 0:
             raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
         return self._execute_read(self._SINCE_SQL, (sensor_id, since, limit))
+
+    # Spaltenliste der Historie-Abfrage (= _row_to_reading-Vertrag). Eigene Konstante, damit
+    # get_readings dieselbe feste Auswahl wie _LATEST_SQL/_SINCE_SQL nutzt (kein SELECT *).
+    _READING_COLUMNS = (
+        "id, sensor_id, measured_at, received_at, "
+        "surface_temp_c, air_temp_c, humidity_pct, "
+        "pressure_hpa, dew_point_c, source, status"
+    )
+
+    def get_readings(
+        self,
+        *,
+        sensor_id: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        limit: int = 100,
+        order: str = "desc",
+    ) -> Sequence[Reading]:
+        """Liefert die Messwert-Historie (DTB-34). Alle WERTE sind parametrisiert.
+
+        Injection-Schutz: die optionalen Filter werden als feste `col = %s`-Fragmente
+        zusammengesetzt (Spaltennamen sind Literale im Code, nie Eingabe); die
+        ORDER-BY-Richtung kommt aus der `_validate_readings_query`-Whitelist (ASC/DESC),
+        nie aus dem rohen `order`-Wert. Nur die Werte (`sensor_id`, Grenzen, `limit`)
+        fliessen als PyMySQL-Parameter.
+
+        Raises:
+            RepositoryError: Bei Datenbankfehlern.
+            ValueError: Bei ungueltigem `order`, nicht-positivem `limit` oder naiver Grenze.
+        """
+        direction = _validate_readings_query(start, end, limit, order)
+        conditions: list[str] = []
+        params: list[Any] = []
+        if sensor_id is not None:
+            conditions.append("sensor_id = %s")
+            params.append(sensor_id)
+        if start is not None:
+            conditions.append("measured_at >= %s")
+            params.append(start)
+        if end is not None:
+            conditions.append("measured_at <= %s")
+            params.append(end)
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.append(limit)
+        # Innere Subquery kappt absteigend (FRISCHESTE `limit` behalten, analog _SINCE_SQL);
+        # die aeussere Sortierung stellt die gewuenschte `order`-Richtung wieder her.
+        sql = (
+            f"SELECT * FROM ("
+            f" SELECT {self._READING_COLUMNS} FROM reading"
+            f" {where}"
+            f" ORDER BY measured_at DESC, id DESC"
+            f" LIMIT %s"
+            f" ) AS recent"
+            f" ORDER BY measured_at {direction}, id {direction}"
+        )
+        return self._execute_read(sql, tuple(params))
 
     def _execute_read(self, sql: str, params: tuple) -> Sequence[Reading]:
         """Fuehrt eine Lese-Query aus und mappt Zeilen auf Reading-Objekte."""

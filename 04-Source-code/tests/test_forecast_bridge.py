@@ -45,6 +45,9 @@ class _FakeReadingRepo(Repository):
             raise RepositoryError("boom")
         return self._readings
 
+    def get_readings(self, **_kwargs: object) -> Sequence[Reading]:
+        raise NotImplementedError  # Bridge nutzt nur get_since (DTB-34 Serving)
+
 
 def _reading(minutes_ago: float, surface: float) -> Reading:
     ts = _NOW - timedelta(minutes=minutes_ago)
