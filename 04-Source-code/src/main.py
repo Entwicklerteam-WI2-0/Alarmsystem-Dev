@@ -38,15 +38,17 @@ from fastapi.responses import JSONResponse
 
 from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator, AuditError
+from src.api.broadcaster import AlarmBroadcaster
 from src.api.exceptions import RuntimeNotReadyError
 from src.api.responses import NO_STORE_HEADERS, service_unavailable
 from src.api.runtime import Runtime, get_runtime
 from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
+from src.config.constants import DEFAULT_SENSOR_ID
 from src.config.loader import load_thresholds
 from src.forecast.bridge import compute_forecast_for_cycle
 from src.ingest.poller import Poller
-from src.model.schemas import AssessmentCurrent, Error, Health, Reading
+from src.model.schemas import Alarm, AssessmentCurrent, Error, Health, Reading
 from src.storage import (
     MySqlAssessmentRepository,
     MySqlAuditRepository,
@@ -65,11 +67,6 @@ logger = logging.getLogger(__name__)
 # gewuenscht wird.
 _DEFAULT_G1_BASE_URL = "http://g1-sensorik.local"
 
-# Single-Sensor-Betrieb (anr-rwy-01). Bewusst eine benannte Konstante statt eines
-# inline-Strings. TODO F24/Geo: Sensor-/Standort-Liste aus config/ laden statt hier
-# zu fixieren — das get_latest()-Assessment ist ohnehin noch global (nicht pro Sensor),
-# daher ist die ID hier nur die Reading-Auswahl fuer den Aktualitaets-/Status-Check.
-_SENSOR_ID = "anr-rwy-01"
 
 # CORS (C1, Vorbereitung G3-Browser-Integration / DTB-23): G3 ist ein Browser-Frontend
 # von ANDERER Origin (eigener Host/Port). Ohne CORS-Header blockt der Browser per
@@ -101,6 +98,9 @@ def build_runtime() -> Runtime:
     alarm_generator = AlarmGenerator(
         AlarmHysterese(thresholds.hysterese), MySqlAlarmRepository(), audit_repo
     )
+    # DTB-61: ein Broadcaster pro laufende Instanz — geteilt zwischen run_scheduler (Producer)
+    # und GET /v1/alarms/stream (Consumer). Haelt nur In-Memory-Abos, kontaktiert nichts.
+    alarm_broadcaster = AlarmBroadcaster()
     return Runtime(
         thresholds=thresholds,
         reading_repo=reading_repo,
@@ -109,6 +109,7 @@ def build_runtime() -> Runtime:
         poller=poller,
         service=service,
         alarm_generator=alarm_generator,
+        alarm_broadcaster=alarm_broadcaster,
     )
 
 
@@ -118,7 +119,7 @@ def run_assessment_cycle(
     reading: Reading | None,
     now: datetime,
     forecast_surface_temp_c: float | None = None,
-) -> None:
+) -> Alarm | None:
     """Ein vollständiger Zyklus: Bewertung (DTB-64) -> Alarm-Generierung (DTB-27).
 
     `assess_reading` erzwingt das Laufzeit-NF-01 (stale/fault/keine Daten -> unknown) und
@@ -129,6 +130,10 @@ def run_assessment_cycle(
     `forecast_surface_temp_c` ist die optionale 30-min-T_s-Prognose (DTB-33/FA-06); sie wird
     an die Bewertung durchgereicht und speist die GELB-Vorwarnung. None (Default) = keine
     Prognose verfügbar (Fail-safe) -> Bewertung allein aus dem aktuellen Reading.
+
+    Returns:
+        Den ausgelösten `Alarm` (mit id), wenn dieser Zyklus einen Alarm erzeugt hat; sonst
+        `None`. `run_scheduler` reicht ihn an den `AlarmBroadcaster` weiter (DTB-61, Live-Push).
 
     Bewusst KEIN eigenes try/except: Persistenz-/Audit-Fehler propagieren in die Fail-safe-
     Schleife des Schedulers (NF-01: ein Zyklus-Fehler beendet den Betrieb nicht).
@@ -146,7 +151,7 @@ def run_assessment_cycle(
         raise ValueError(
             "assessment.id ist None trotz Persistenz (assess_reading-Invariante verletzt)"
         )
-    alarm_generator.verarbeite(assessment.risk_level, assessment.id, now)
+    return alarm_generator.verarbeite(assessment.risk_level, assessment.id, now)
 
 
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
@@ -209,7 +214,7 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                 # er sichtbar; die Bewertung läuft unbedingt weiter (NF-01).
                 logger.exception("Prognose fehlgeschlagen (fail-safe, forecast=None).")
                 forecast = None
-            await asyncio.to_thread(
+            raised = await asyncio.to_thread(
                 run_assessment_cycle,
                 runtime.service,
                 runtime.alarm_generator,
@@ -219,6 +224,13 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                 # damit eine Signaturreihenfolgen-Aenderung die Argumente nicht still vertauscht.
                 forecast_surface_temp_c=forecast,
             )
+            if raised is not None:
+                # DTB-61: Live-Push BEWUSST auf dem Event-Loop (nicht im to_thread-Worker) ->
+                # der Broadcaster greift direkt auf asyncio.Queues zu, das ist nur loop-seitig
+                # safe (kein cross-thread put). publish ist best-effort und wirft nie (NF-01).
+                # (Der AuditError-Pfad pusht separat im except unten -> SSE bleibt vollstaendig,
+                # G3 muss nicht auf den GET /v1/alarms-Resync warten; NF-01 vor NF-09.)
+                runtime.alarm_broadcaster.publish(raised)
         except AuditError as exc:
             # Alarm IST gespeichert + Engine aktiv (KEIN Re-Arm), aber OHNE Audit-Trail -> ERROR
             # (nicht WARNING): ein persistierter Alarm ohne Audit-Eintrag ist eine Luecke in der
@@ -229,6 +241,10 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                 exc.alarm_id,
                 exc,
             )
+            # NF-01 vor NF-09: der Alarm IST persistiert -> trotz der (oben geloggten) Audit-
+            # Luecke live an G3 pushen, damit der SSE-Stream vollstaendig bleibt und G3 nicht auf
+            # den GET /v1/alarms-Resync warten muss. publish ist best-effort und wirft nie (NF-01).
+            runtime.alarm_broadcaster.publish(exc.alarm)
         except RepositoryError as exc:
             logger.error("Bewertungszyklus fehlgeschlagen (fail-safe, weiter): %s", exc)
         except ValueError:
@@ -401,7 +417,7 @@ def assessment_current(
     response.headers.update(NO_STORE_HEADERS)
     try:
         assessment = runtime.assessment_repo.get_latest()
-        readings = runtime.reading_repo.get_latest(_SENSOR_ID, limit=1)
+        readings = runtime.reading_repo.get_latest(DEFAULT_SENSOR_ID, limit=1)
     except RepositoryError as exc:
         # DB-Ausfall: Detail server-seitig loggen, nach aussen nur generisch (Contract D).
         logger.error("assessment/current: Persistenz nicht verfuegbar: %s", exc)

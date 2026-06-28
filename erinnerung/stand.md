@@ -381,6 +381,23 @@ PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separ
   Backend-Konzept §4/§7). Operator-Hinweis (beenden-60s-Fenster) als `.txt` an G3/Nick weiterzuleiten.
 —architekt/Petzold
 
+## Update [27.06., 22:48] — DTB-20 Flatline: Design-Konflikt mit #120, in Koordination (backend-dev/Ganter)
+- **DTB-20 (Sensor-Defekt/Flatline)** auf `feat/dtb-20-defekt-erkennung` implementiert: Flatline als
+  **fenster-/spannweitenbasierte** `check_flatline` (statt Single-Point in `check_plausibility`) + im Poller
+  pro Sensor verdrahtet. 2 santa-loop-CRITICALs geschlossen (30-s-Polling-Tod, Dither-Escape), ε=0,15 (DS18B20
+  ~2×LSB, Architekt-autorisiert). Branch mit main gemergt (`7aaedd6`), Suite grün **außer** einem Test.
+- **⚠️ Konflikt:** DTB-20 wurde **parallel via PR #120** (bereits auf main gemergt) anders gelöst — reine
+  ε-Kalibrierung + Dither-Regressionstest auf der bestehenden DTB-13-`check_plausibility`-Logik. Mein Refactor
+  bricht deren Test `test_check_plausibility_lsb_dither_is_flatline`. Zudem: `check_plausibility` ist auf main
+  **nicht im Poller verdrahtet** (Flatline/Sprung laufen im Poll-Pfad nicht). **Code-Branch bewusst NICHT gepusht.**
+- **Entscheidung Option 1** (mit Lucas beraten, sicherheitsrelevant): `flatline_timeout_min` bei **15** lassen,
+  nicht 30 (kürzeres Fenster fängt klemmenden Sensor doppelt so schnell; deckt sich mit `Schwellenwerte.md §3`).
+  Schleich-Drift-Fehlalarm < 0,6 °C/h bewusst akzeptiert (fail-safe). **Tuning-Ticket DTB-69** (Lucas) + G1-Anfrage.
+- **Entscheidungslog** auf `docs/ganter-entscheidungslog-dtb20` gepusht (`f226e03`).
+- **Nächster Schritt:** Mit **Lucas + #120-Autor** Design klären (Fenster vs. Single-Point) → dann DTB-20-Code
+  finalisieren. Log-Branch als Doku-PR mergebar.
+—backenddev/Ganter
+
 ## Update [27.06. — DTB-33 30-min-T_s-Prognose-Producer fertig (Leon H.)
 - **DTB-33 (FA-06) umgesetzt** auf `feat/dtb-33-forecast-producer`:
   - `src/forecast/trend.py`: reine Funktion `forecast_surface_temp()` — lineare Regression auf relative Minuten,

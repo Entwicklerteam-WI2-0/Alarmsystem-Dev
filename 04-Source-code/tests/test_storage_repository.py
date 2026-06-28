@@ -435,6 +435,178 @@ def test_get_since_rejects_naive_datetime(repository: ReadingRepository) -> None
         repository.get_since(sensor_id="anr-rwy-01", since=naive_since)
 
 
+def _save_reading(
+    repository: ReadingRepository,
+    sensor_id: str,
+    measured_at: datetime,
+    surface_temp_c: float = 0.0,
+) -> None:
+    """Hilfsfunktion fuer get_between-Tests."""
+    repository.save(
+        Reading(
+            sensor_id=sensor_id,
+            measured_at=measured_at,
+            received_at=measured_at,
+            surface_temp_c=surface_temp_c,
+            air_temp_c=1.0,
+            humidity_pct=80.0,
+            source=Source.REAL,
+            status=SensorStatus.OK,
+        )
+    )
+
+
+def test_get_between_returns_readings_in_window(repository: ReadingRepository) -> None:
+    sensor_id = "anr-rwy-between"
+    _save_reading(repository, sensor_id, datetime(2026, 6, 23, 9, 55, 0, tzinfo=UTC), 1.0)
+    _save_reading(repository, sensor_id, datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC), 2.0)
+    _save_reading(repository, sensor_id, datetime(2026, 6, 23, 10, 5, 0, tzinfo=UTC), 3.0)
+
+    result = repository.get_between(
+        sensor_id=sensor_id,
+        from_dt=datetime(2026, 6, 23, 9, 58, 0, tzinfo=UTC),
+        to_dt=datetime(2026, 6, 23, 10, 3, 0, tzinfo=UTC),
+    )
+
+    assert len(result) == 1
+    assert result[0].surface_temp_c == pytest.approx(2.0)
+
+
+def test_get_between_bounds_are_inclusive(repository: ReadingRepository) -> None:
+    sensor_id = "anr-rwy-bounds"
+    _save_reading(repository, sensor_id, datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC), 1.0)
+    _save_reading(repository, sensor_id, datetime(2026, 6, 23, 10, 5, 0, tzinfo=UTC), 2.0)
+
+    result = repository.get_between(
+        sensor_id=sensor_id,
+        from_dt=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+        to_dt=datetime(2026, 6, 23, 10, 5, 0, tzinfo=UTC),
+    )
+
+    assert len(result) == 2
+    assert result[0].surface_temp_c == pytest.approx(2.0)
+    assert result[1].surface_temp_c == pytest.approx(1.0)
+
+
+def test_get_between_ascending_order(repository: ReadingRepository) -> None:
+    sensor_id = "anr-rwy-asc"
+    _save_reading(repository, sensor_id, datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC), 1.0)
+    _save_reading(repository, sensor_id, datetime(2026, 6, 23, 10, 5, 0, tzinfo=UTC), 2.0)
+
+    result = repository.get_between(
+        sensor_id=sensor_id,
+        from_dt=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+        to_dt=datetime(2026, 6, 23, 10, 5, 0, tzinfo=UTC),
+        order="asc",
+    )
+
+    assert len(result) == 2
+    assert result[0].surface_temp_c == pytest.approx(1.0)
+    assert result[1].surface_temp_c == pytest.approx(2.0)
+
+
+def test_get_between_limit_and_offset(repository: ReadingRepository) -> None:
+    sensor_id = "anr-rwy-page"
+    for minute in range(5):
+        _save_reading(
+            repository,
+            sensor_id,
+            datetime(2026, 6, 23, 10, minute, 0, tzinfo=UTC),
+            float(minute),
+        )
+
+    result = repository.get_between(
+        sensor_id=sensor_id,
+        limit=2,
+        offset=1,
+    )
+
+    assert len(result) == 2
+    # DESC -> neueste zuerst; offset=1 ueberspringt Minute 4 -> Minute 3, Minute 2.
+    assert result[0].surface_temp_c == pytest.approx(3.0)
+    assert result[1].surface_temp_c == pytest.approx(2.0)
+
+
+def test_get_between_optional_bounds(repository: ReadingRepository) -> None:
+    sensor_id = "anr-rwy-open"
+    _save_reading(repository, sensor_id, datetime(2026, 6, 23, 9, 0, 0, tzinfo=UTC), 1.0)
+    _save_reading(repository, sensor_id, datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC), 2.0)
+    _save_reading(repository, sensor_id, datetime(2026, 6, 23, 11, 0, 0, tzinfo=UTC), 3.0)
+
+    only_from = repository.get_between(
+        sensor_id=sensor_id,
+        from_dt=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+    )
+    assert len(only_from) == 2
+    assert only_from[0].surface_temp_c == pytest.approx(3.0)
+
+    only_to = repository.get_between(
+        sensor_id=sensor_id,
+        to_dt=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+    )
+    assert len(only_to) == 2
+    assert only_to[0].surface_temp_c == pytest.approx(2.0)
+
+    no_bounds = repository.get_between(sensor_id=sensor_id)
+    assert len(no_bounds) == 3
+    assert no_bounds[0].surface_temp_c == pytest.approx(3.0)
+
+
+def test_get_between_isolated_per_sensor(repository: ReadingRepository) -> None:
+    _save_reading(repository, "anr-a", datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC), 1.0)
+    _save_reading(repository, "anr-b", datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC), 2.0)
+
+    result = repository.get_between(sensor_id="anr-a")
+    assert len(result) == 1
+    assert result[0].surface_temp_c == pytest.approx(1.0)
+
+
+def test_get_between_rejects_from_after_to(repository: ReadingRepository) -> None:
+    with pytest.raises(ValueError, match="'from' darf nicht nach 'to' liegen"):
+        repository.get_between(
+            sensor_id="anr-rwy-01",
+            from_dt=datetime(2026, 6, 23, 11, 0, 0, tzinfo=UTC),
+            to_dt=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+        )
+
+
+@pytest.mark.parametrize("bad_limit", [0, -1])
+def test_get_between_rejects_non_positive_limit(
+    repository: ReadingRepository, bad_limit: int
+) -> None:
+    with pytest.raises(ValueError, match="limit muss positiv sein"):
+        repository.get_between(sensor_id="anr-rwy-01", limit=bad_limit)
+
+
+@pytest.mark.parametrize("bad_offset", [-1, -10])
+def test_get_between_rejects_negative_offset(
+    repository: ReadingRepository, bad_offset: int
+) -> None:
+    with pytest.raises(ValueError, match="offset darf nicht negativ sein"):
+        repository.get_between(sensor_id="anr-rwy-01", offset=bad_offset)
+
+
+def test_get_between_rejects_naive_from(repository: ReadingRepository) -> None:
+    with pytest.raises(ValueError, match="'from' muss zeitzonenbewusst sein"):
+        repository.get_between(
+            sensor_id="anr-rwy-01",
+            from_dt=datetime(2026, 6, 23, 10, 0, 0),
+        )
+
+
+def test_get_between_rejects_naive_to(repository: ReadingRepository) -> None:
+    with pytest.raises(ValueError, match="'to' muss zeitzonenbewusst sein"):
+        repository.get_between(
+            sensor_id="anr-rwy-01",
+            to_dt=datetime(2026, 6, 23, 10, 0, 0),
+        )
+
+
+def test_get_between_empty_for_unknown_sensor(repository: ReadingRepository) -> None:
+    result = repository.get_between(sensor_id="nicht-existiert")
+    assert result == ()
+
+
 def test_get_latest_isolated_per_sensor(repository: ReadingRepository) -> None:
     for sensor_id, temp in [("anr-a", 1.0), ("anr-b", 2.0)]:
         repository.save(
