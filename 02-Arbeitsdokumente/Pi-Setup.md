@@ -48,7 +48,13 @@ git clone https://github.com/Entwicklerteam-WI2-0/Alarmsystem-Dev.git
 cd Alarmsystem-Dev/04-Source-code
 # Bei Updates stattdessen:  git pull
 
-# Virtuelle Umgebung + Abhängigkeiten (Python >= 3.12):
+# Python-Version ZUERST prüfen (Stack braucht >= 3.12!):
+python3 --version          # muss 3.12 oder höher zeigen
+#   Raspberry Pi OS Bookworm liefert ab Werk nur Python 3.11 -> dann python3.12 nachinstallieren
+#   (z. B. via pyenv) und unten 'python3' durch 'python3.12' ersetzen. Sonst ist die >=3.12-
+#   Anforderung still NICHT erfüllt und es kracht erst später.
+
+# Virtuelle Umgebung + Abhängigkeiten:
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt   # eine Quelle fuer alle Envs -> Pi und Dev-Laptops identisch
@@ -85,17 +91,18 @@ sudo mariadb alarmsystem < migrations/schema.sql
 # 4b) Least-Privilege-Rechte (append-only, NF-09) vergeben.
 #     grants.sql vergibt an einen festen Host-Specifier (aktuell 'alarm'@'localhost').
 #     Unser App-User ist 'alarm'@'127.0.0.1' (PyMySQL verbindet per TCP). Wir schreiben
-#     deshalb beim Einspielen JEDEN @'...'-Host auf '127.0.0.1' um -> egal ob grants.sql
-#     'localhost', '%' o.ä. nutzt, die Rechte landen immer beim richtigen User.
-#     migrations/grants.sql im Repo bleibt UNVERÄNDERT.
+#     deshalb beim Einspielen NUR den Host des App-Users 'alarm' auf '127.0.0.1' um
+#     -> egal ob grants.sql 'localhost', '%' o.ä. nutzt, die Rechte landen beim richtigen User.
+#     Der enge Scope 'alarm'@ lässt etwaige weitere User/Host-Angaben unberührt (grants.sql
+#     enthält aktuell nur 'alarm'). migrations/grants.sql im Repo bleibt UNVERÄNDERT.
 #     --force: harmlose REVOKE-Hinweise auf frischem User überspringen.
-sed "s/@'[^']*'/@'127.0.0.1'/g" migrations/grants.sql | sudo mariadb --force alarmsystem
+sed "s/'alarm'@'[^']*'/'alarm'@'127.0.0.1'/g" migrations/grants.sql | sudo mariadb --force alarmsystem
 ```
 
 > ⚠️ **Pflicht-Check direkt danach (nicht überspringen):** Die `SHOW GRANTS`-Verifikation unten beweist
 > sofort, dass `alarm`@`127.0.0.1` die Rechte wirklich bekommen hat. Sie ist der Schutz davor, dass eine
 > Host-Verschiebung in `grants.sql` unbemerkt bleibt und erst später unter Last als `ERROR 1142` auffällt.
-> (Das `@'[^']*'`-Muster oben fängt jede Host-Schreibweise ab — der Check ist trotzdem Pflicht.)
+> (Das `'alarm'@'[^']*'`-Muster oben fängt jede Host-Schreibweise des App-Users ab — der Check ist trotzdem Pflicht.)
 
 **Verifikation (als Admin) — Pflicht, nicht optional:**
 ```bash
@@ -139,6 +146,8 @@ DB_PASSWORD=DAS_ECHTE_PASSWORT     # aus dem Passwort-Manager, NICHT committen
 - `--host 0.0.0.0` → die **API** ist von anderen Geräten im Netz erreichbar (für G3/Tests). Die
   **DB** bleibt davon unberührt auf `127.0.0.1` (Merksatz: **„DB zu, API offen"**).
 - `--env-file .env` → uvicorn lädt die Variablen in die Umgebung (der Code tut das nicht selbst).
+  Braucht **uvicorn ≥ 0.21** (in `requirements.txt` mit `>=0.30` abgedeckt). Ältere Installs kennen das
+  Flag nicht → Start scheitert mit `Unknown argument`; dann uvicorn aktualisieren (`pip install -U -r requirements.txt`).
 - Zum Entwickeln optional `--reload` ergänzen (lädt bei Code-Änderungen neu).
 
 > **Hinweis Scheduler:** In `.env` steht `G2_ENABLE_SCHEDULER=false` (Default). Echte Bewertungen
@@ -204,6 +213,7 @@ Vorgehen siehe `Raspberry-Pi-Hosting-Anleitung.md` §5. Der Startbefehl im Servi
   Geräte im Netz sichtbar — gewollt für G3/Tests im vertrauenswürdigen LAN. Läuft der Pi in einem **offenen/
   fremden** Netz, den Port auf bekannte IPs begrenzen, z. B. nur G3 freigeben:
   ```bash
+  sudo ufw allow ssh                                   # ZUERST! sonst kappt 'ufw enable' die laufende SSH-Sitzung
   sudo ufw allow from <G3-IP> to any port 8000 proto tcp
   sudo ufw enable
   ```
@@ -230,7 +240,7 @@ Vorgehen siehe `Raspberry-Pi-Hosting-Anleitung.md` §5. Der Startbefehl im Servi
 | DB-Konsole (Admin) | `sudo mariadb` |
 | DB-Konsole (App) | `mariadb -h 127.0.0.1 -u alarm -p alarmsystem` |
 | Schema einspielen | `sudo mariadb alarmsystem < migrations/schema.sql` |
-| Rechte einspielen | `sed "s/@'[^']*'/@'127.0.0.1'/g" migrations/grants.sql \| sudo mariadb --force alarmsystem` |
+| Rechte einspielen | `sed "s/'alarm'@'[^']*'/'alarm'@'127.0.0.1'/g" migrations/grants.sql \| sudo mariadb --force alarmsystem` |
 | Rechte prüfen | `sudo mariadb -e "SHOW GRANTS FOR 'alarm'@'127.0.0.1';"` |
 | Backend starten | `.venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --env-file .env` |
 | Health-Check | `curl http://127.0.0.1:8000/v1/health` |
