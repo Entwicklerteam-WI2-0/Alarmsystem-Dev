@@ -83,21 +83,25 @@ EXIT;
 sudo mariadb alarmsystem < migrations/schema.sql
 
 # 4b) Least-Privilege-Rechte (append-only, NF-09) vergeben.
-#     grants.sql ist auf 'alarm'@'localhost' verdrahtet; wir mappen den Host beim
-#     Einspielen on-the-fly auf '127.0.0.1' (passt zur TCP-Verbindung) -> migrations/grants.sql
-#     im Repo bleibt UNVERÄNDERT. --force: harmlose REVOKE-Hinweise auf frischem User überspringen.
-sed "s/'alarm'@'localhost'/'alarm'@'127.0.0.1'/g" migrations/grants.sql | sudo mariadb --force alarmsystem
+#     grants.sql vergibt an einen festen Host-Specifier (aktuell 'alarm'@'localhost').
+#     Unser App-User ist 'alarm'@'127.0.0.1' (PyMySQL verbindet per TCP). Wir schreiben
+#     deshalb beim Einspielen JEDEN @'...'-Host auf '127.0.0.1' um -> egal ob grants.sql
+#     'localhost', '%' o.ä. nutzt, die Rechte landen immer beim richtigen User.
+#     migrations/grants.sql im Repo bleibt UNVERÄNDERT.
+#     --force: harmlose REVOKE-Hinweise auf frischem User überspringen.
+sed "s/@'[^']*'/@'127.0.0.1'/g" migrations/grants.sql | sudo mariadb --force alarmsystem
 ```
 
-> ⚠️ **Setzt voraus, dass `grants.sql` `'alarm'@'localhost'` nutzt** (aktueller Stand). Wird die Datei je
-> auf `@'%'` oder direkt `@'127.0.0.1'` umgestellt, greift das `sed`-Mapping **lautlos nicht** — der User
-> bekäme dann ggf. falsche/keine Rechte. Bei Änderung an `grants.sql`: diesen `sed` anpassen **oder** ganz
-> weglassen (`sudo mariadb --force alarmsystem < migrations/grants.sql`) und die Verifikation unten prüfen.
+> ⚠️ **Pflicht-Check direkt danach (nicht überspringen):** Die `SHOW GRANTS`-Verifikation unten beweist
+> sofort, dass `alarm`@`127.0.0.1` die Rechte wirklich bekommen hat. Sie ist der Schutz davor, dass eine
+> Host-Verschiebung in `grants.sql` unbemerkt bleibt und erst später unter Last als `ERROR 1142` auffällt.
+> (Das `@'[^']*'`-Muster oben fängt jede Host-Schreibweise ab — der Check ist trotzdem Pflicht.)
 
-**Verifikation (als Admin):**
+**Verifikation (als Admin) — Pflicht, nicht optional:**
 ```bash
 sudo mariadb -e "SHOW GRANTS FOR 'alarm'@'127.0.0.1';"
 # Muss INSERT/SELECT (+ UPDATE auf alarm) je Tabelle zeigen — KEIN 'ALL PRIVILEGES'.
+# Zeigt es NUR 'USAGE' (= keine Tabellen-Rechte) -> grants.sql kam nicht beim User an -> Schritt 4b prüfen.
 ```
 
 > **Negativ-Test (muss scheitern, beweist append-only):**
@@ -196,6 +200,14 @@ Vorgehen siehe `Raspberry-Pi-Hosting-Anleitung.md` §5. Der Startbefehl im Servi
 ## Sicherheits-Regeln (kurz)
 
 - **DB nur lokal** (`127.0.0.1`) — MariaDB nicht auf `0.0.0.0` öffnen. (NF-07)
+- **API-Port (8000) im unsicheren Netz einschränken.** `--host 0.0.0.0` (Schritt 6) macht die API für **alle**
+  Geräte im Netz sichtbar — gewollt für G3/Tests im vertrauenswürdigen LAN. Läuft der Pi in einem **offenen/
+  fremden** Netz, den Port auf bekannte IPs begrenzen, z. B. nur G3 freigeben:
+  ```bash
+  sudo ufw allow from <G3-IP> to any port 8000 proto tcp
+  sudo ufw enable
+  ```
+  (Alternativ den Pi nur über ein isoliertes/Test-LAN betreiben.) Die DB bleibt davon unberührt lokal (`127.0.0.1`).
 - **Passwörter nie committen.** Echte Werte im Passwort-Manager / in `.env` (gitignored). Vorlage = `.env.example`.
 - **`alarm`** darf nur `alarmsystem` und nur INSERT/SELECT(+UPDATE auf `alarm`) — append-only (NF-09).
 - G1/G3 reden mit der **API**, nie direkt mit der DB (RB-01).
@@ -218,7 +230,7 @@ Vorgehen siehe `Raspberry-Pi-Hosting-Anleitung.md` §5. Der Startbefehl im Servi
 | DB-Konsole (Admin) | `sudo mariadb` |
 | DB-Konsole (App) | `mariadb -h 127.0.0.1 -u alarm -p alarmsystem` |
 | Schema einspielen | `sudo mariadb alarmsystem < migrations/schema.sql` |
-| Rechte einspielen | `sed "s/'alarm'@'localhost'/'alarm'@'127.0.0.1'/g" migrations/grants.sql \| sudo mariadb --force alarmsystem` |
+| Rechte einspielen | `sed "s/@'[^']*'/@'127.0.0.1'/g" migrations/grants.sql \| sudo mariadb --force alarmsystem` |
 | Rechte prüfen | `sudo mariadb -e "SHOW GRANTS FOR 'alarm'@'127.0.0.1';"` |
 | Backend starten | `.venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --env-file .env` |
 | Health-Check | `curl http://127.0.0.1:8000/v1/health` |
