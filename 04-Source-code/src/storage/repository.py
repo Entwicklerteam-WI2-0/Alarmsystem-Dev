@@ -37,6 +37,14 @@ def _validate_get_between_args(
     identische Regeln erzwingen (MEDIUM-Review-Finding DTB-34).
     Fehlermeldungen nutzen die API-Parameternamen 'from'/'to', weil
     ValueError aus dem Repository direkt an den Client weitergegeben wird.
+
+    Hinweis zur Zustaendigkeit (LOW-Review-Finding DTB-34): Auf dem API-Pfad
+    ist die FastAPI-Query-Annotation (`ge=1, le=1000` fuer limit, `ge=0` fuer
+    offset in api/v1.py) der MASSGEBLICHE Guard -> ungueltige Werte werden dort
+    bereits als 422 abgefangen, BEVOR diese Funktion laeuft. Die limit/offset-
+    Pruefungen hier sind bewusste Defense-in-Depth fuer den DIREKTEN Repo-Aufruf
+    (Tests, kuenftige Nicht-HTTP-Nutzer). Bei einer Aenderung der Grenzen ist die
+    FastAPI-Annotation zu pflegen; diese Pruefungen bleiben die untere Schranke.
     """
     if from_dt is not None and from_dt.tzinfo is None:
         raise ValueError("'from' muss zeitzonenbewusst sein (UTC)")

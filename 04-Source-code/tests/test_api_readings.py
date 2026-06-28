@@ -160,6 +160,68 @@ def test_get_readings_from_after_to_returns_400(
     assert body["code"] == "BAD_REQUEST"
 
 
+def test_get_readings_naive_timestamp_returns_400(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    # Naive datetime ohne Timezone-Offset ('Z' fehlt) -> Pydantic parst naive datetime
+    # -> _validate_get_between_args raised ValueError -> 400 (LOW-Review-Finding DTB-34:
+    # Regressionsschutz fuer den naive-Zeitstempel-Pfad).
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings", params={"from": "2026-06-23T10:00:00"})
+
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["code"] == "BAD_REQUEST"
+    assert "from" in body["message"]
+    assert "detail" not in body
+
+
+def test_get_readings_unexpected_mapping_error_returns_503(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    # MEDIUM-Review-Finding DTB-34: Schluege das Domain->Wire-Mapping unerwartet fehl
+    # (Pydantic ValidationError erbt NICHT von ValueError), darf KEIN roher 500 mit
+    # {detail: ...} austreten — der Endpoint faengt es fail-safe als 503 im Contract-
+    # Format ab. Ein Stub liefert ein Objekt, dessen model_dump() das ReadingResponse-
+    # Schema verletzt (leeres dict -> Pflichtfelder fehlen -> ValidationError).
+    def _drifted_repo(*args: object, **kwargs: object) -> list[object]:
+        return [SimpleNamespace(model_dump=lambda: {})]
+
+    reading_repo.get_between = _drifted_repo  # type: ignore[method-assign]
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings")
+
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["code"] == "SERVICE_UNAVAILABLE"
+    assert "detail" not in body
+
+
+def test_get_readings_unexpected_runtime_error_returns_503(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    # Letzter Fail-safe (DTB-34): eine unerwartete Ausnahme, die WEDER ValueError/
+    # ValidationError NOCH RepositoryError ist (hier TypeError aus model_dump), darf
+    # keinen rohen 500 mit {detail: ...} austreten lassen -> 503 im Contract-Format.
+    def _boom_model_dump() -> dict[str, object]:
+        raise TypeError("simulierter unerwarteter Mapping-Crash")
+
+    def _drifted_repo(*args: object, **kwargs: object) -> list[object]:
+        return [SimpleNamespace(model_dump=_boom_model_dump)]
+
+    reading_repo.get_between = _drifted_repo  # type: ignore[method-assign]
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings")
+
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["code"] == "SERVICE_UNAVAILABLE"
+    assert "detail" not in body
+
+
 def test_get_readings_runtime_not_ready_returns_503_contract() -> None:
     def _not_ready() -> object:
         raise RuntimeNotReadyError("test: runtime fehlt")

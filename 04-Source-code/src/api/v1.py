@@ -12,6 +12,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import ValidationError
 
 from src.api.broadcaster import StreamCapacityError, sse_alarm_frames
 from src.api.responses import NO_STORE_HEADERS, service_unavailable
@@ -145,12 +146,20 @@ def read_readings(
             offset=offset,
             order=order,
         )
-        # Mapping bewusst INNERHALB des try/except: In Pydantic v2 erbt ValidationError
-        # NICHT von ValueError. Schluege das Domain->Wire-Mapping bei unerwartetem Drift
-        # (z. B. id=None, Schema-Drift nach Migration) fehl, propagierte sonst ein roher
-        # 500 (`detail: Internal Server Error`) und braeche den `Error {code, message}`-
-        # Contract (NF-01). Hier faengt das except Exception es fail-safe als 503 ab.
-        return [ReadingResponse(**reading.model_dump()) for reading in readings]
+        # Domain->Wire-Mapping bewusst INNERHALB des try: Schluege es bei unerwartetem
+        # Drift fehl (z. B. id=None, Schema-Drift nach Migration, korrupte DB-Zeile in
+        # _row_to_reading), propagierte sonst ein roher 500 und braeche den
+        # `Error {code, message}`-Contract (NF-01).
+        readings_wire = [ReadingResponse(**reading.model_dump()) for reading in readings]
+    except ValidationError:
+        # WICHTIG: In Pydantic v2 (>=2.x) IST ValidationError eine Subklasse von ValueError
+        # -> dieser Handler MUSS vor `except ValueError` stehen, sonst wuerde ein
+        # serverseitiger Mapping-/Persistenz-Drift faelschlich als 400 (Client-Fehler) mit
+        # der ueberlangen Roh-Pydantic-Message ausgegeben (die zudem Error.message > 512
+        # sprengt und einen Folge-500 ausloeste). Drift ist serverseitig -> fail-safe 503,
+        # ohne interne Details preiszugeben (NF-01).
+        logger.exception("Domain->Wire-Mapping der Readings-Historie fehlgeschlagen (Drift?).")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
     except ValueError as exc:
         # Ungueltige Parameter (from nach to, naive Zeitstempel) -> 400.
         return JSONResponse(  # type: ignore[return-value]
@@ -160,11 +169,13 @@ def read_readings(
     except RepositoryError:
         # DB-Ausfall -> 503 (Fail-safe, NF-01-Geist).
         return service_unavailable("G2 momentan nicht lieferfaehig.")
-    except Exception:  # noqa: BLE001 - Fail-safe: jeder unerwartete Mapping-/Laufzeitfehler
-        # Drift im Domain->Wire-Mapping (ValidationError erbt nicht von ValueError) ->
-        # 503 im Contract-Format statt rohem 500. Kein stiller Ausfall (NF-01).
+    except Exception:  # noqa: BLE001 - letzter Fail-safe: JEDER Fehlerpfad liefert
+        # `Error {code, message}` (Contract), nie ein roher 500 mit {detail: ...}.
+        # Die volle Ursache bleibt im Log (logger.exception) erhalten (NF-01).
         logger.exception("Unerwarteter Fehler beim Lesen der Readings-Historie.")
         return service_unavailable("G2 momentan nicht lieferfaehig.")
+
+    return readings_wire
 
 
 # SSE-Antwortheader (DTB-61): no-store (Echtzeit-Sicherheitsnaht, kein Cache eines
