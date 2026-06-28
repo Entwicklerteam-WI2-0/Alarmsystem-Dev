@@ -103,7 +103,7 @@ class Poller:
         url = f"{self.base_url}/current"
 
         # 2. HTTP-Request an G1 senden.
-        # TODO: Wiederverwendeten httpx.Client einfuehren (Effizienz, DTB-??).
+        # TODO (noch kein Jira-Ticket): wiederverwendeten httpx.Client einfuehren (Effizienz).
         # Aktuell bewusst httpx.get, weil ein Client-Wechsel alle Poller-Tests
         # umstellen wuerde; sollte in einem dedizierten Refactoring erfolgen.
         try:

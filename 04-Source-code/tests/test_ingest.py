@@ -237,9 +237,9 @@ def test_poll_http_error_does_not_save(poller: Poller, fake_repo: FakeRepository
 
 
 def test_poll_5xx_error_does_not_save(poller: Poller, fake_repo: FakeRepository, caplog) -> None:
-    with patch("src.ingest.poller.httpx.get", _mock_get_for(current_error=None)) as mock_get:
-        # current_payload=None wuerde einen RuntimeError ausloesen; daher mit
-        # explizitem _error_response fuer /current bauen.
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        # Eigenes side_effect statt _mock_get_for: /current soll 503 liefern (das deckt
+        # _mock_get_for nicht ab) -> direkt mock_get.side_effect setzen.
         def side_effect(url: str, **kwargs) -> Mock:
             if url.endswith("/health"):
                 return _ok_response()
@@ -616,8 +616,9 @@ def test_poll_non_json_response_is_failsafe(
     response.raise_for_status.return_value = None
     response.json.side_effect = json.JSONDecodeError("Expecting value", "", 0)
 
-    with patch("src.ingest.poller.httpx.get", _mock_get_for()) as mock_get:
-
+    with patch("src.ingest.poller.httpx.get") as mock_get:
+        # Eigenes side_effect statt _mock_get_for: /current liefert ein Mock mit kaputtem
+        # json() (JSONDecodeError) -> direkt mock_get.side_effect setzen.
         def side_effect(url: str, **kwargs) -> Mock:
             if url.endswith("/health"):
                 return _ok_response()
@@ -868,8 +869,7 @@ def test_poll_dew_point_none_when_humidity_zero(
     # Das Reading wird trotzdem gespeichert (kein Crash, kein stilles GRUEN downstream).
     snapshot = {**valid_snapshot, "humidity_pct": 0}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -888,8 +888,7 @@ def test_poll_dew_point_none_when_humidity_near_zero(
     # unsinnigen Wert zu speichern, der downstream faelschlich GRUEN ausloesen koennte.
     snapshot = {**valid_snapshot, "humidity_pct": 0.01}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
@@ -950,8 +949,7 @@ def test_poll_bool_required_field_does_not_save(
     # bool ist in Python ein int-Subtyp und wuerde stumm zu 0.0/1.0 -> gefaehrlich.
     snapshot = {**valid_snapshot, field: True}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
@@ -965,8 +963,7 @@ def test_poll_bool_optional_pressure_is_set_to_none(
     # Auch optionale Zahlenfelder duerfen kein bool akzeptieren.
     snapshot = {**valid_snapshot, "pressure_hpa": False}
 
-    with patch("src.ingest.poller.httpx.get") as mock_get:
-        mock_get.return_value = _ok_response(snapshot)
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is not None
