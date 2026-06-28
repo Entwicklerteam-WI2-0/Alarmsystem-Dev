@@ -1,11 +1,26 @@
 # Persönliches Entscheidungslog — Lucas Vöhringer (G2)
-> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-27
+> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-28
 > **Autor:** Lucas Vöhringer (Systemarchitekt) · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 > Persönliches Log (Einzelleistung). Das zentrale Architektur-Logbuch des Teams ist
 > `Entscheidungslog-Lucas-Systemarchitektur.md` (ADR-Format E-xx); je Eintrag steht der Querverweis dorthin.
 
 ---
+
+## 2026-06-28 — DTB-24: `POST /v1/alarms/{id}/ack` — auth-frei (Contract-treu), atomare Quittierung, 422 im Error-Format
+- **Kontext/Task:** P4.1 · DTB-24 (Alarm-Quittierung, FA-10) · NF-09 (append-only/Audit) · RB-01 (kein Aktor) · NF-01/Contract D (Fehler-Envelope). Baut auf eingefrorenem `openapi.yaml` (ack war bereits voll spezifiziert), `migrations/schema.sql` (`acknowledgement`-Tabelle + Grants, DTB-12/54), `Acknowledgement`/`AckRequest`-Schemas. Branch `feat/dtb-24-alarm-ack` → **PR #132**. Auslöser: ausdrücklicher Auftrag „den Endpoint bauen".
+- **Entscheidung:**
+  1. **Auth-frei gebaut** (kein `Authorization`-Zwang). Der eingefrorene Contract sagt für ack wörtlich „M2: kein Auth-Header erforderlich; additiv in M3 ergänzbar ohne Breaking Change". → Implementierung so, dass ein Bearer-Header später additiv ergänzt werden kann (DTB-63), aber **jetzt keiner**.
+  2. **Eigenes `AcknowledgementRepository`** mit `acknowledge(...)`: State-Wechsel `active→acknowledged` + `acknowledgement`-INSERT + `alarm_acknowledged`-Audit **atomar in EINER `transaction()`**, Alarm per `SELECT ... FOR UPDATE` gesperrt (Double-Ack-Race). Fachliche Fehler als Domänen-Exceptions (`AlarmNotFoundError`→404, `AlarmNotAcknowledgeableError`→409).
+  3. **Globaler `RequestValidationError`→422-Handler** liefert `Error{code,message}` (nicht FastAPIs `{detail}`); Pfad-Geschäftsregel `id<1`→**400** im Endpoint (Param ohne `ge`-Constraint, damit `id=0` dort landet statt als 422).
+- **Begründung:** Der eingefrorene Contract ist Source of Truth (CLAUDE.md §2a) und gibt ack auth-frei vor — die Auth-Verdrahtung gehört nach M3 (DTB-63); Auth jetzt zu erzwingen wäre eine Änderung an der eingefrorenen G3-Naht ohne Notwendigkeit. Die Atomarität ist NF-09-Pflicht: drei getrennte Single-Tx-Repos könnten einen Alarm `acknowledged` markieren ohne Quittierungs-/Audit-Beleg (Teil-Schreiben). Der 422-Handler schließt die letzte Lücke im Fehler-Contract (alle /v1-Fehler `{code,message}`); die 400/422-Trennung folgt exakt der openapi-Vorgabe (`id=0`→400, Body→422).
+- **Alternativen (erwogen/verworfen):**
+  - *Bearer-Auth jetzt am ack ergänzen (frühere „Abstimmungs"-Annahme):* verworfen — widerspricht der frozen Contract-Vorgabe „M2 kein Auth"; gehört nach M3 (DTB-63), additiv. Die zuvor in Jira geschriebene Abstimmung war an diesem Punkt falsch.
+  - *Quittierung über drei bestehende Repos (alarm-update + ack-insert + audit-append) komponieren:* verworfen — jedes öffnet eine eigene Transaktion → nicht atomar (NF-09-Lücke bei Teilausfall).
+  - *FastAPI-Default-422 `{detail}` akzeptieren:* verworfen — bricht den Fehler-Contract (`{code,message}`).
+  - *`id` mit `Path(ge=1)` validieren:* verworfen — ergäbe 422 statt des contract-geforderten 400 für `id=0`.
+- **Bewusster Tradeoff:** Der globale 422-Handler ändert das Fehlerformat **API-weit** (alle Validierungsfehler → `{code,message}`); aktuell hat nur der ack-Body validierbaren Input, daher kein Regress an bestehenden Endpoints — und es ist contract-konformer als der Status quo. Die MySQL-Repo-Variante ist ohne echte DB nicht unit-getestet (wie die übrigen MySql-Repos); Atomarität ist by-construction (eine `transaction()`), DB-Integration folgt mit den DB-Fixtures.
+- **Ergebnis/Status:** umgesetzt (`src/storage/acknowledgement_repository.py` neu; Endpoint in `src/api/v1.py`; `error_response`-Helper + 422-Handler in `responses.py`/`main.py`; `ack_repo` im DI-Graph). **17 neue Tests** (Repo + Endpoint 200/400/404/409/422/503); volle Suite **648 passed / 16 skipped, 94 % Coverage**, ruff sauber. **PR #132** offen (auth-frei, Contract-treu). Korrigiert die frühere, irrige Jira-„Abstimmung" (die Bearer-Auth am ack vorsah) — diese ist in Jira noch zurückzusetzen. Zentrales Log: ADR E-xx (auth-frei ack / 422-Envelope) nachzutragen.
 
 ## 2026-06-27 — DTB-20 Flatline-/Defekt-Erkennung: `flatline_timeout_min` bei 15 min belassen (Option 1)
 - **Kontext/Task:** DTB-20 (Defekt-/Flatline-Erkennung) · NF-01 (Fail-safe, nie still GRÜN) · RB-01 · Zielkonflikt **K1** (Fehlalarm ↔ Auslassung). Betrifft `04-Source-code/config/thresholds.json` (`datenqualitaet.flatline_timeout_min`, `flatline_epsilon_c`) und die Fenster-Flatline in `src/ingest/poller.py` + `src/assessment/failsafe.py` (`check_flatline`), Branch `feat/dtb-20-defekt-erkennung` (Autor GanterLuca). Auslöser: Santa-Loop-Review — Runde 2 CRITICAL (Dither-Escape), Runde 3 Slow-Drift-Befund (Prüfer B gegen die echten Config-Werte ε=0,15 / 15 min).

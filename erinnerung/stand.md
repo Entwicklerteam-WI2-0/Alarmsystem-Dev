@@ -418,3 +418,14 @@ PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separ
 - **Branch mit `main` synchronisiert** (Merge-Commit `1aa2485` / Folge-Merge nach PR #107/#99/#112); keine offenen Konflikte.
 - **Entscheidungen:** 3 Einträge im persönlichen `Hartling-Entscheidungslog`.
 - **Offen:** PR #110 Reviewer-Freigabe, Merge durch Lucas.
+
+## Update [28.06., ~03:30] — DTB-24 Alarm-Quittierung gebaut → PR #132 (architekt)
+- **DTB-24 (`POST /v1/alarms/{id}/ack`, FA-10) umgesetzt** auf `feat/dtb-24-alarm-ack` (Commit `0bee9f4`, gepusht; **PR #132** offen):
+  - Neues `AcknowledgementRepository` (rohes PyMySQL): State `active→acknowledged` + `acknowledgement`-INSERT + `alarm_acknowledged`-Audit **atomar in EINER Transaktion** (`SELECT … FOR UPDATE` gegen Double-Ack-Race); InMemory-Double für DB-freie Tests.
+  - Endpoint in `src/api/v1.py`: 200 + `Acknowledgement`; Fehler im Contract-Format `Error{code,message}`: 400 (`id<1`), 404, 409 (Double-Ack/NF-09), 422 (Body), 503.
+  - `error_response`-Helper + **globaler `RequestValidationError`→422-Handler** (422 contract-konform statt `{detail}`); `ack_repo` im Runtime-DI-Graph verdrahtet.
+- **Auth bewusst weggelassen** — frozen `openapi.yaml` gibt für ack „M2: kein Auth-Header" vor (additiv in M3, DTB-63). Damit ist die frühere irrige Jira-„Abstimmung" (Bearer-Auth am ack) **korrigiert**.
+- **Qualität:** 17 neue Tests; volle Suite **648 passed / 16 skipped, 94 % Coverage**, ruff sauber. `src/api/v1.py` + `src/main.py` 100 %.
+- **Hinweis Working-Tree:** GitHub Desktop wechselte den Branch unter der Session weg; gebaut/committet via isoliertem `git worktree` (Hauptarbeitskopie unberührt).
+- **Offen:** PR #132 Review/Merge (Architekten-Einzelfreigabe); MySql-ack-Repo DB-Integrationstest mit DB-Fixtures; ADR E-xx (auth-frei ack) im zentralen Log; **Jira DTB-24**: irrige Beschreibungs-Abstimmung + `blocked by DTB-63`-Link zurücksetzen (offen, Lucas-Entscheidung).
+—architekt
