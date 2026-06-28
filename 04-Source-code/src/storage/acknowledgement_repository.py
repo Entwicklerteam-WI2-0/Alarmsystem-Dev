@@ -185,6 +185,17 @@ class MySqlAcknowledgementRepository(AcknowledgementRepository):
                     raise AlarmNotAcknowledgeableError(alarm_id, state)
 
                 cursor.execute(self._UPDATE_ALARM_SQL, (AlarmState.ACKNOWLEDGED.value, alarm_id))
+                if cursor.rowcount != 1:
+                    # Das SELECT ... FOR UPDATE hat die Zeile gesperrt UND state=active bestaetigt,
+                    # also MUSS dieses UPDATE genau eine Zeile treffen. Tut es das nicht (Logik-/
+                    # SQL-Regression, unerwartete Nebenwirkung), den Vorgang fail-safe verwerfen
+                    # (das raise loest den Rollback aus), statt eine Quittierung + Audit ohne den
+                    # tatsaechlichen State-Wechsel zu bestaetigen (NF-09/NF-01 konsistenter
+                    # Zustand). Symmetrisch zum lastrowid-Guard unten.
+                    raise RepositoryError(
+                        f"Alarm {alarm_id}: State-UPDATE traf {cursor.rowcount} Zeilen "
+                        "(erwartet: 1)"
+                    )
                 cursor.execute(self._INSERT_ACK_SQL, (alarm_id, operator, note, now))
                 ack_id = cursor.lastrowid
                 if not ack_id:

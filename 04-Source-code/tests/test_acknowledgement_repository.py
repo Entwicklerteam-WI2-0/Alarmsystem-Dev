@@ -109,10 +109,12 @@ def test_seed_dict_is_not_mutated():
 
 
 class _FakeCursor:
-    """Minimaler DictCursor-Ersatz: liefert genau die geseedete Zeile aus fetchone()."""
+    """Minimaler DictCursor-Ersatz: liefert die geseedete Zeile aus fetchone(); rowcount
+    steuert, wie viele Zeilen das (gefakte) UPDATE getroffen haben soll."""
 
-    def __init__(self, row: dict[str, object]) -> None:
+    def __init__(self, row: dict[str, object], rowcount: int = 1) -> None:
         self._row = row
+        self.rowcount = rowcount
         self.lastrowid = 1
 
     def __enter__(self) -> "_FakeCursor":
@@ -129,11 +131,12 @@ class _FakeCursor:
 
 
 class _FakeConn:
-    def __init__(self, row: dict[str, object]) -> None:
+    def __init__(self, row: dict[str, object], rowcount: int = 1) -> None:
         self._row = row
+        self._rowcount = rowcount
 
     def cursor(self) -> _FakeCursor:
-        return _FakeCursor(self._row)
+        return _FakeCursor(self._row, self._rowcount)
 
 
 def test_mysql_acknowledge_corrupt_db_state_raises_repository_error(
@@ -146,6 +149,23 @@ def test_mysql_acknowledge_corrupt_db_state_raises_repository_error(
     @contextlib.contextmanager
     def _fake_transaction(_config: object = None):
         yield _FakeConn({"state": "voellig_kaputt"})
+
+    monkeypatch.setattr("src.storage.acknowledgement_repository.transaction", _fake_transaction)
+
+    with pytest.raises(RepositoryError):
+        MySqlAcknowledgementRepository().acknowledge(1, "tower-ops-01", None, _NOW)
+
+
+def test_mysql_acknowledge_update_touches_zero_rows_raises_repository_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # SELECT ... FOR UPDATE bestaetigt state=active, aber das State-UPDATE trifft 0 Zeilen
+    # (hypothetische Logik-/SQL-Regression): den Vorgang fail-safe als RepositoryError verwerfen
+    # (-> Rollback), statt eine Quittierung + Audit ohne tatsaechlichen State-Wechsel zu
+    # bestaetigen (NF-09/NF-01 konsistenter Zustand). Review-Finding #132 LOW (rowcount-Guard).
+    @contextlib.contextmanager
+    def _fake_transaction(_config: object = None):
+        yield _FakeConn({"state": AlarmState.ACTIVE.value}, rowcount=0)
 
     monkeypatch.setattr("src.storage.acknowledgement_repository.transaction", _fake_transaction)
 
