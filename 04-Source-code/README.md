@@ -103,6 +103,27 @@ Einspielen **als `root`**, Reihenfolge `schema.sql` → `grants.sql` (cwd = `04-
 - `GET /v1/thresholds` -> `Thresholds` (DTB-62, NF-05): aktuell aktive Vereisungs-Schwellen (rein lesend, RB-01-neutral).
 - `GET /v1/readings` -> `Reading[]` (DTB-34, FA-03): Messwert-Historie (T1). Query `from`/`to` (ISO-8601 UTC, inklusiv auf `measured_at`), `sensor_id`, `limit` (1..1000, Default 100), `order` (`asc`|`desc`, Default `desc`). Bei mehr Treffern als `limit` wird am älteren Ende abgeschnitten (frischeste `limit` bleiben). `from` nach `to` / `limit` außerhalb [1,1000] / ungültiges `order` -> 400 `Error {code, message}`; DB-Ausfall -> 503 `Error {code, message}`; `Cache-Control: no-store`.
 
+## RB-01-Nachweis: erlaubte API-Endpoints
+
+P4.5 / DTB-42 prueft RB-01 maschinell und im Review: Das Backend bleibt reine
+Entscheidungsunterstuetzung. Es gibt keinen Endpoint, der die Startbahn freigibt,
+sperrt, entsperrt oder ausfuehrt/steuert.
+
+| Endpoint | Methode | RB-01-Begruendung |
+|---|---:|---|
+| `/v1/health` | GET | Readiness/Liveness, kein fachlicher Zustand der Startbahn. |
+| `/v1/assessment/current` | GET | Liefert Bewertung/Status fuer Menschen; keine Steuerwirkung. |
+| `/v1/thresholds` | GET | Liest Bewertungsparameter; rein informativ. |
+| `/v1/thresholds` | POST | Legt versionierte Schwellenparameter mit Auth + Audit an; aendert nur die Bewertungslogik, keinen Runway-Status. |
+| `/v1/readings` | GET | Liest Messwert-Historie; keine Steuerwirkung. |
+| `/v1/alarms` | GET | Zustands-/Resync-Lesepfad fuer Alarme; kein Aktor. |
+| `/v1/alarms/stream` | GET | SSE-Push fuer Alarme; sendet nur Ereignisse an G3. |
+| `/v1/alarms/{id}/ack` | POST | Manuelle Quittierung/Audit eines Alarms; keine Freigabe/Sperrung der Bahn. |
+
+Enforcement: `python tools/check_rb01_no_actor_endpoints.py` scannt FastAPI-Routen
+und `docs/api/v1/openapi.yaml` auf `unlock`, `freigabe`, `sperr`, `execute`.
+Der Check laeuft in `.pre-commit-config.yaml` und in `.github/workflows/lint-config.yml`.
+
 ## Datenfluss
 `G1 (Sensorik)` ──poll `GET /current`──▶ `Ingest/Validierung` ──▶ DB `reading` ──▶ `Bewertung` (4-Stufen)
 ──▶ `assessment` (+ ggf. `alarm`) ──▶ DB ──▶ `API` ──GET (Alarme: SSE-Push)──▶ `G3 (Frontend)`.

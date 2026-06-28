@@ -199,6 +199,24 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 **+ NF-01–11** (Zuverlässigkeit, Latenz, Wartbarkeit, Security, Verfügbarkeit)  
 **+ RB-01:** Harte Randbedingung: Mensch ist letzte Instanz — **keine automatischen Freigaben**.
 
+### RB-01-Nachweis (P4.5 / DTB-42)
+
+Erlaubte G2-Endpoints im eingefrorenen `/v1`-Contract:
+
+| Endpoint | Methode | RB-01-Begründung |
+|---|---:|---|
+| `/v1/health` | GET | Systemzustand lesen, keine Bahnsteuerung. |
+| `/v1/assessment/current` | GET | Vereisungsbewertung anzeigen; Entscheidung bleibt beim Menschen. |
+| `/v1/thresholds` | GET/POST | Schwellen lesen bzw. versioniert/auditiert konfigurieren; kein Runway-Status. |
+| `/v1/readings` | GET | Messwert-Historie lesen. |
+| `/v1/alarms` | GET | Alarmzustand lesen/Resync. |
+| `/v1/alarms/stream` | GET | Alarmereignisse per SSE pushen; kein Aktor. |
+| `/v1/alarms/{id}/ack` | POST | Manuelle Quittierung/Audit; keine Freigabe/Sperrung der Startbahn. |
+
+Enforcement: `04-Source-code/tools/check_rb01_no_actor_endpoints.py` prueft FastAPI-Routen und
+`04-Source-code/docs/api/v1/openapi.yaml` auf Aktor-Keywords (`unlock`, `freigabe`, `sperr`, `execute`).
+Der Check ist in pre-commit und der GitHub-Action `lint-config` verdrahtet.
+
 ### Schwellenwerte & Kalibriervorgaben
 **Datei:** `02-Arbeitsdokumente/Schwellenwerte.md`  
 **Inhalt:**

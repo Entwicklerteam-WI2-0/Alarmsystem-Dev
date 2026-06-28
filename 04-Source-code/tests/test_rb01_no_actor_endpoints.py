@@ -1,0 +1,99 @@
+"""Tests fuer den RB-01-Guard gegen Aktor-Endpoints (P4.5 / DTB-42)."""
+
+from tools.check_rb01_no_actor_endpoints import (
+    finde_verstoesse_in_openapi_text,
+    finde_verstoesse_in_python_text,
+)
+
+
+def test_python_route_mit_unlock_wird_blockiert():
+    code = """
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.post("/runway/unlock")
+def route():
+    return {"ok": True}
+"""
+
+    verstoesse = finde_verstoesse_in_python_text(code, "src/api/v1.py")
+
+    assert len(verstoesse) == 1
+    assert verstoesse[0].keyword == "unlock"
+    assert verstoesse[0].endpoint == "/runway/unlock"
+
+
+def test_python_route_docstring_mit_freigabe_ist_sauber():
+    code = '''
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/v1/assessment/current")
+def route():
+    """RB-01: keine automatische Freigabe."""
+    return {"ok": True}
+'''
+
+    assert finde_verstoesse_in_python_text(code, "src/api/v1.py") == []
+
+
+def test_ack_route_bleibt_erlaubt_weil_keine_bahn_steuerung():
+    code = """
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.post("/alarms/{id}/ack")
+def route():
+    return {"ok": True}
+"""
+
+    assert finde_verstoesse_in_python_text(code, "src/api/v1.py") == []
+
+
+def test_openapi_path_mit_sperr_wird_blockiert():
+    yaml_text = """
+paths:
+  /v1/runway/sperren:
+    post:
+      summary: Verbotener Aktor
+"""
+
+    verstoesse = finde_verstoesse_in_openapi_text(yaml_text, "docs/api/v1/openapi.yaml")
+
+    assert len(verstoesse) == 1
+    assert verstoesse[0].keyword == "sperr"
+    assert verstoesse[0].endpoint == "/v1/runway/sperren"
+
+
+def test_openapi_erlaubte_endpoint_liste_ist_sauber():
+    yaml_text = """
+paths:
+  /v1/health:
+    get:
+      summary: Health
+  /v1/assessment/current:
+    get:
+      summary: Bewertung
+  /v1/thresholds:
+    get:
+      summary: Schwellen lesen
+    post:
+      summary: Schwellen versioniert anlegen
+  /v1/readings:
+    get:
+      summary: Historie
+  /v1/alarms:
+    get:
+      summary: Alarme
+  /v1/alarms/stream:
+    get:
+      summary: Stream
+  /v1/alarms/{id}/ack:
+    post:
+      summary: Quittierung
+"""
+
+    assert finde_verstoesse_in_openapi_text(yaml_text, "docs/api/v1/openapi.yaml") == []
