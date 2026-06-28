@@ -25,6 +25,20 @@ import math
 from src.config.loader import Thresholds
 from src.model.enums import RiskLevel
 
+# Wire-Contract-Grenzen (AssessmentCurrent, API_FROZEN_v1): driving_factor <= 64,
+# explanation <= 512. Pydantic erzwingt sie hart (ValidationError) -> Texte defensiv
+# kappen, damit eine kuenftige laengere Begruendung nie einen 500 ausloest (DTB-66).
+MAX_DRIVING_FACTOR_LEN = 64
+MAX_EXPLANATION_LEN = 512
+
+# Geschlossene Menge der driving_factor-Werte (kein Magic String, eine Quelle der
+# Wahrheit fuer Kaskade UND Fail-safe-Pfade in service.py).
+DRIVING_FACTOR_DEW_POINT = "dew_point"
+DRIVING_FACTOR_SURFACE_TEMP = "surface_temp"
+DRIVING_FACTOR_FORECAST = "forecast"
+DRIVING_FACTOR_STALE = "stale"
+DRIVING_FACTOR_SENSOR_FAULT = "sensor_fault"
+
 
 def assess_ice_risk(
     surface_temp_c: float,
@@ -92,3 +106,95 @@ def assess_ice_risk(
     if dew_point_c is None:
         return RiskLevel.YELLOW
     return RiskLevel.GREEN
+
+
+def derive_explanation(
+    surface_temp_c: float,
+    dew_point_c: float | None,
+    thresholds: Thresholds,
+    forecast_surface_temp_c: float | None,
+    risk_level: RiskLevel,
+    delta_t: float | None,
+) -> tuple[str | None, str | None]:
+    """Leitet driving_factor und explanation aus dem Bewertungsergebnis ab (DTB-66).
+
+    Gibt (driving_factor, explanation) zurueck. Spiegelt die Kaskade aus
+    assess_ice_risk um das bereits bestimmte risk_level herum, ohne sie zu
+    duplizieren. UNKNOWN-Pfade werden NICHT hier behandelt (die kommen aus
+    Fail-safe-Zweigen in service.py, nicht aus der normalen Kaskade).
+
+    Args:
+        surface_temp_c: Endliche Oberflaechentemperatur T_s.
+        dew_point_c: Endlicher Taupunkt T_d oder None (unbestimmbar).
+        thresholds: Schwellenwerte (aus Config, NF-05).
+        forecast_surface_temp_c: Optionale 30-min-T_s-Prognose.
+        risk_level: Bereits durch assess_ice_risk bestimmte Stufe.
+        delta_t: T_s - T_d (vorberechnet); None wenn dew_point_c None ist.
+
+    Returns:
+        (driving_factor, explanation): Felder fuer das Assessment/Wire-Modell.
+        Laengen respektieren die Wire-Contract-Grenzen (max 64 / 512 Zeichen).
+    """
+    v = thresholds.vereisung
+    p = thresholds.prognose
+
+    if risk_level is RiskLevel.RED:
+        dt_str = f"{delta_t:.1f} K" if delta_t is not None else "–"
+        expl = (
+            f"Aktive Eisbildung: Oberfläche {surface_temp_c:.1f} °C "
+            f"≤ {v.t_s_gefrierpunkt_c:.1f} °C, ΔT={dt_str} "
+            f"(Kondensation/Reif)."
+        )
+        return _cap_factor(DRIVING_FACTOR_DEW_POINT), _cap_expl(expl)
+
+    if risk_level is RiskLevel.ORANGE:
+        if dew_point_c is None:
+            expl = (
+                f"Vereisung wahrscheinlich: Oberfläche {surface_temp_c:.1f} °C "
+                f"≤ {v.t_s_gefrierpunkt_c:.1f} °C, Taupunkt unbestimmbar "
+                f"(Fail-safe: Feuchte angenommen)."
+            )
+            return _cap_factor(DRIVING_FACTOR_SURFACE_TEMP), _cap_expl(expl)
+        dt_str = f"{delta_t:.1f} K" if delta_t is not None else "–"
+        expl = (
+            f"Vereisung wahrscheinlich: Oberfläche {surface_temp_c:.1f} °C "
+            f"≤ {v.t_s_gefrierpunkt_c:.1f} °C, ΔT={dt_str} (Feuchte vorhanden)."
+        )
+        return _cap_factor(DRIVING_FACTOR_DEW_POINT), _cap_expl(expl)
+
+    if risk_level is RiskLevel.YELLOW:
+        # Kaskaden-Reihenfolge spiegeln: surface_temp vor forecast vor T_d-Fail-safe.
+        if surface_temp_c <= v.t_s_gelb_auffang_c:
+            expl = (
+                f"Grenzwertiger Bereich: Oberfläche {surface_temp_c:.1f} °C "
+                f"≤ {v.t_s_gelb_auffang_c:.1f} °C (kalt/grenzwertig)."
+            )
+            return _cap_factor(DRIVING_FACTOR_SURFACE_TEMP), _cap_expl(expl)
+        if forecast_surface_temp_c is not None:
+            # Defekte (NaN/inf) Prognose stuft assess_ice_risk konservativ auf GELB
+            # (core.py-Guard) -> hier KEINEN numerischen Wert formatieren, sonst leakt
+            # "nan"/"inf" in den operatorsichtbaren Text (DTB-66 Review).
+            if not math.isfinite(forecast_surface_temp_c):
+                expl = "Prognosedaten defekt, Fail-safe: GELB-Vorwarnung."
+            else:
+                expl = (
+                    f"30-min-Prognose: T_s prognostiziert {forecast_surface_temp_c:.1f} °C "
+                    f"≤ {p.t_s_grenz_c:.1f} °C (Vorwarnung)."
+                )
+            return _cap_factor(DRIVING_FACTOR_FORECAST), _cap_expl(expl)
+        # Fail-safe: T_d unbestimmbar, T_s > GELB-Auffang -> nie GRUEN.
+        expl = "Taupunkt unbestimmbar, Fail-safe: keine GRÜN-Freigabe."
+        return _cap_factor(DRIVING_FACTOR_DEW_POINT), _cap_expl(expl)
+
+    # GREEN oder UNKNOWN: kein driving_factor aus dieser Funktion.
+    return None, None
+
+
+def _cap_expl(text: str) -> str:
+    """Kappt eine explanation defensiv auf die Wire-Contract-Grenze (DTB-66)."""
+    return text[:MAX_EXPLANATION_LEN]
+
+
+def _cap_factor(factor: str) -> str:
+    """Kappt einen driving_factor defensiv auf die Wire-Contract-Grenze (DTB-66)."""
+    return factor[:MAX_DRIVING_FACTOR_LEN]

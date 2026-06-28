@@ -295,3 +295,262 @@ def test_current_none_reading_raises(thresholds):
         build_assessment_current(
             assessment, None, datetime.now(UTC), thresholds.datenqualitaet.stale_timeout_s
         )
+
+
+# ---------------------------------------------------------------------------
+# DTB-66: driving_factor + explanation je Risikostufe (Assess-Zeit)
+# ---------------------------------------------------------------------------
+
+
+def test_rot_setzt_dew_point_als_driving_factor(thresholds):
+    """ROT: Kondensation -> treibender Faktor ist der Taupunkt-Abstand (ΔT ≤ 0)."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+    # T_s=-0.5 ≤ Gefrierpunkt, T_d=1.0 -> ΔT=-1.5 ≤ 0 (Kondensation) -> ROT
+    result = service.assess_reading(_reading(now, surface=-0.5, dew=1.0), now)
+
+    assert result.risk_level is RiskLevel.RED
+    assert result.driving_factor == "dew_point"
+    assert result.explanation is not None
+    assert len(result.explanation) <= 512
+    # Muss auf Eisbildung/Kondensation hinweisen
+    assert "Eisbildung" in result.explanation or "Kondensation" in result.explanation
+
+
+def test_orange_mit_taupunkt_setzt_dew_point_als_driving_factor(thresholds):
+    """ORANGE mit bekanntem T_d: Feuchte vorhanden -> driving_factor dew_point."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+    # T_s=-1.0, T_d=-1.5 -> ΔT=0.5 (≤1.0, Feuchte vorhanden, >0 -> nicht Kondensation) -> ORANGE
+    result = service.assess_reading(_reading(now, surface=-1.0, dew=-1.5), now)
+
+    assert result.risk_level is RiskLevel.ORANGE
+    assert result.driving_factor == "dew_point"
+    assert result.explanation is not None
+    assert len(result.explanation) <= 512
+    assert "Feuchte" in result.explanation or "Vereisung" in result.explanation
+
+
+def test_orange_ohne_taupunkt_setzt_surface_temp_als_driving_factor(thresholds):
+    """ORANGE bei fehlendem T_d: Fail-safe Feuchte=wahr, Faktor ist surface_temp."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+    # T_s=-1.0 ≤ Gefrierpunkt, T_d=None -> Feuchte=konservativ-wahr -> ORANGE
+    result = service.assess_reading(_reading(now, surface=-1.0, dew=None), now)
+
+    assert result.risk_level is RiskLevel.ORANGE
+    assert result.driving_factor == "surface_temp"
+    assert result.explanation is not None
+    assert len(result.explanation) <= 512
+    # Muss auf fehlenden Taupunkt/Fail-safe hinweisen
+    assert "Taupunkt" in result.explanation or "Fail-safe" in result.explanation
+
+
+def test_gelb_durch_oberflaeche_setzt_surface_temp_als_driving_factor(thresholds):
+    """GELB durch Auffang (T_s kalt/grenzwertig): driving_factor = surface_temp."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+    # T_s=0.5 ≤ 1.0 (GELB-Auffang), ΔT=5.5 (trocken, keine Feuchte) -> GELB
+    result = service.assess_reading(_reading(now, surface=0.5, dew=-5.0), now)
+
+    assert result.risk_level is RiskLevel.YELLOW
+    assert result.driving_factor == "surface_temp"
+    assert result.explanation is not None
+    assert len(result.explanation) <= 512
+    assert "grenzwertig" in result.explanation.lower() or "kalt" in result.explanation.lower()
+
+
+def test_gelb_durch_fehlenden_taupunkt_bei_warmer_oberflaeche(thresholds):
+    """GELB Fail-safe: T_s warm (>Auffang), keine Prognose, T_d unbestimmbar -> nie GRUEN."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+    # T_s=2.0 (>1.0 Auffang), dew=None -> Fail-safe nie GRUEN -> GELB; driving_factor dew_point
+    result = service.assess_reading(_reading(now, surface=2.0, dew=None), now)
+
+    assert result.risk_level is RiskLevel.YELLOW
+    assert result.driving_factor == "dew_point"
+    assert result.explanation is not None
+    assert "Taupunkt" in result.explanation
+
+
+def test_gelb_durch_prognose_setzt_forecast_als_driving_factor(thresholds):
+    """GELB durch 30-min-Prognose (nicht durch aktuellen T_s): driving_factor = forecast."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+    # T_s=2.0 (> 1.0, waere GRUEN), Prognose=-1.0 (≤ 0) -> GELB durch Prognose
+    result = service.assess_reading(
+        _reading(now, surface=2.0, dew=0.0), now, forecast_surface_temp_c=-1.0
+    )
+
+    assert result.risk_level is RiskLevel.YELLOW
+    assert result.driving_factor == "forecast"
+    assert result.explanation is not None
+    assert len(result.explanation) <= 512
+    assert "Prognose" in result.explanation or "forecast" in result.explanation.lower()
+
+
+def test_gelb_durch_defekte_prognose_leakt_kein_nan(thresholds):
+    """GELB durch defekte (NaN) Prognose: explanation darf kein 'nan' leaken (DTB-66 Review)."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+    # T_s=2.0 (waere GRUEN), Prognose=NaN -> defektes Forecasting -> konservativ GELB
+    result = service.assess_reading(
+        _reading(now, surface=2.0, dew=0.0), now, forecast_surface_temp_c=float("nan")
+    )
+
+    assert result.risk_level is RiskLevel.YELLOW
+    assert result.driving_factor == "forecast"
+    assert result.explanation is not None
+    assert "nan" not in result.explanation.lower()
+    assert "defekt" in result.explanation.lower() or "Prognosedaten" in result.explanation
+
+
+def test_gruen_hat_keinen_driving_factor(thresholds):
+    """GRUEN: kein Risiko, driving_factor und explanation bleiben None."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+    # T_s=2.0 (>1.0), ΔT=2.0 (trocken) -> GRUEN
+    result = service.assess_reading(_reading(now, surface=2.0, dew=0.0), now)
+
+    assert result.risk_level is RiskLevel.GREEN
+    assert result.driving_factor is None
+    assert result.explanation is None
+
+
+def test_stale_reading_setzt_stale_als_driving_factor(thresholds):
+    """Stale Reading -> unknown; driving_factor='stale'."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+    old = now - timedelta(seconds=thresholds.datenqualitaet.stale_timeout_s + 60)
+
+    result = service.assess_reading(_reading(old, surface=20.0, dew=0.0), now)
+
+    assert result.risk_level is RiskLevel.UNKNOWN
+    assert result.driving_factor == "stale"
+    assert result.explanation is not None
+    assert len(result.explanation) <= 512
+
+
+def test_fault_reading_setzt_sensor_fault_als_driving_factor(thresholds):
+    """Sensor-Fault -> unknown; driving_factor='sensor_fault'."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+
+    result = service.assess_reading(
+        _reading(now, surface=20.0, dew=0.0, status=SensorStatus.FAULT), now
+    )
+
+    assert result.risk_level is RiskLevel.UNKNOWN
+    assert result.driving_factor == "sensor_fault"
+    assert result.explanation is not None
+    assert len(result.explanation) <= 512
+
+
+def test_kein_reading_setzt_stale_als_driving_factor(thresholds):
+    """Kein Reading (None) -> unknown; driving_factor='stale' (keine Daten verfuegbar)."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+
+    result = service.assess_reading(None, now)
+
+    assert result.risk_level is RiskLevel.UNKNOWN
+    assert result.driving_factor == "stale"
+    assert result.explanation is not None
+    assert len(result.explanation) <= 512
+
+
+# ---------------------------------------------------------------------------
+# DTB-66: driving_factor in build_assessment_current (Serve-Zeit)
+# ---------------------------------------------------------------------------
+
+
+def test_build_current_stale_setzt_stale_driving_factor(thresholds):
+    """Serve-Zeit-Stale -> driving_factor='stale'."""
+    now = datetime.now(UTC)
+    old = now - timedelta(seconds=thresholds.datenqualitaet.stale_timeout_s + 60)
+    reading = _reading(old, surface=2.0, dew=0.0)
+    assessment = Assessment(ts=old, risk_level=RiskLevel.GREEN, surface_temp_c=2.0)
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    assert cur.risk_level is RiskLevel.UNKNOWN
+    assert cur.driving_factor == "stale"
+
+
+def test_build_current_fault_setzt_sensor_fault_driving_factor(thresholds):
+    """Serve-Zeit-Fault -> driving_factor='sensor_fault'."""
+    now = datetime.now(UTC)
+    reading = _reading(now, status=SensorStatus.FAULT)
+    assessment = Assessment(ts=now, risk_level=RiskLevel.GREEN, surface_temp_c=2.0)
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    assert cur.risk_level is RiskLevel.UNKNOWN
+    assert cur.driving_factor == "sensor_fault"
+
+
+def test_build_current_stale_und_fault_setzt_sensor_fault_driving_factor(thresholds):
+    """Stale + Fault gleichzeitig -> driving_factor='sensor_fault' (gravierender)."""
+    now = datetime.now(UTC)
+    old = now - timedelta(seconds=thresholds.datenqualitaet.stale_timeout_s + 60)
+    reading = _reading(old, status=SensorStatus.FAULT)
+    assessment = Assessment(ts=old, risk_level=RiskLevel.GREEN, surface_temp_c=2.0)
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    assert cur.risk_level is RiskLevel.UNKNOWN
+    assert cur.driving_factor == "sensor_fault"
+
+
+def test_build_current_ok_reicht_assessment_driving_factor_durch(thresholds):
+    """Frischer/ok Response: driving_factor und explanation aus der gespeicherten Bewertung."""
+    now = datetime.now(UTC)
+    reading = _reading(now, surface=2.0, dew=0.0)
+    assessment = Assessment(
+        ts=now,
+        risk_level=RiskLevel.GREEN,
+        surface_temp_c=2.0,
+        dew_point_c=0.0,
+        delta_t=2.0,
+        humidity_pct=80.0,
+        driving_factor=None,
+        explanation=None,
+    )
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    assert cur.risk_level is RiskLevel.GREEN
+    assert cur.driving_factor is None
+    assert cur.explanation is None
+
+
+def test_driving_factor_laenge_max_64(thresholds):
+    """driving_factor darf maximal 64 Zeichen lang sein (Wire-Contract maxLength)."""
+    service = _make_service(thresholds)
+    now = datetime.now(UTC)
+
+    for surface, dew, forecast in [
+        (-0.5, 1.0, None),  # ROT
+        (-1.0, -1.5, None),  # ORANGE
+        (0.5, -5.0, None),  # GELB surface
+        (2.0, 0.0, -1.0),  # GELB forecast
+    ]:
+        result = service.assess_reading(
+            _reading(now, surface=surface, dew=dew), now, forecast_surface_temp_c=forecast
+        )
+        if result.driving_factor is not None:
+            assert len(result.driving_factor) <= 64, (
+                f"driving_factor '{result.driving_factor}' ueberschreitet 64 Zeichen"
+            )
+        if result.explanation is not None:
+            assert len(result.explanation) <= 512, (
+                f"explanation '{result.explanation}' ueberschreitet 512 Zeichen"
+            )
