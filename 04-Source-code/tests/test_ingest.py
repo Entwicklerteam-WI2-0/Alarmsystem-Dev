@@ -17,6 +17,7 @@ import pytest
 
 from src.config.loader import DatenqualitaetSchwellen, PlausibilitaetSchwellen
 from src.ingest.poller import Poller
+from src.model.enums import SensorStatus, Source
 from src.model.schemas import Reading
 from src.storage.repository import Repository, RepositoryError
 
@@ -770,6 +771,122 @@ def test_poll_unexpected_repository_error_is_not_swallowed(
     with pytest.raises(RuntimeError, match="unerwarteter Bug"):
         with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
             poller.poll()
+
+
+# -----------------------------------------------------------------------------
+# Neustart-Robustheit: Sprung-Baseline aus DB (PR#138 best-of-both mit DTB-20)
+# -----------------------------------------------------------------------------
+def _persisted_reading(measured_at: datetime, surface_temp_c: float) -> Reading:
+    """Baut ein bereits persistiertes Reading (Sprung-Baseline) fuer anr-rwy-01."""
+    return Reading(
+        sensor_id="anr-rwy-01",
+        measured_at=measured_at,
+        surface_temp_c=surface_temp_c,
+        air_temp_c=1.2,
+        humidity_pct=96.0,
+        dew_point_c=0.6,
+        pressure_hpa=1013.0,
+        status=SensorStatus.OK,
+        received_at=measured_at,
+        source=Source.REAL,
+    )
+
+
+def test_poll_after_restart_rejects_jump_against_db_baseline(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Frischer Poller (Neustart) -> _last_reading ist None. In der DB liegt der letzte gute
+    # Wert (5.6 C, eine Minute frueher). valid_snapshot springt auf -0.4 C -> 6.0 C/min >
+    # max_temp_jump (5.0). Ohne DB-Baseline wuerde der erste Poll nach einem Neustart ungeprueft
+    # akzeptiert; mit _load_baseline wird er korrekt verworfen (NF-01).
+    fake_repo.readings.append(_persisted_reading(datetime(2026, 6, 23, 9, 59, 0, tzinfo=UTC), 5.6))
+
+    with caplog.at_level(logging.ERROR, logger="src.ingest.poller"):
+        with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
+            reading = poller.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 1  # nur die Baseline; der Sprung wurde nicht gespeichert
+    assert "verworfen" in caplog.text
+    assert "jump" in caplog.text
+
+
+def test_poll_after_restart_accepts_plausible_against_db_baseline(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Gegenprobe: liegt der DB-Vorwert nahe genug (kein Sprung), wird der erste Poll nach einem
+    # Neustart normal gespeichert.
+    fake_repo.readings.append(_persisted_reading(datetime(2026, 6, 23, 9, 59, 0, tzinfo=UTC), -0.5))
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 2
+
+
+def test_poll_after_restart_without_db_history_saves(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Erststart ohne Historie: _load_baseline findet nichts -> Cold-Start, Reading wird
+    # gespeichert (kein Sprung-Vergleich moeglich, fail-safe unkritisch).
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_baseline_db_read_error_falls_back_to_cold_start(
+    caplog,
+    quality_thresholds: DatenqualitaetSchwellen,
+    plausibility_thresholds: PlausibilitaetSchwellen,
+    valid_snapshot: dict,
+) -> None:
+    # get_latest (Baseline-Read) faellt aus, save funktioniert. Ein transienter Lesefehler darf
+    # KEIN gueltiges Reading verwerfen -> Cold-Start-Fallback (gespeichert) + WARN.
+    class ReadFailingRepository(Repository):
+        def __init__(self) -> None:
+            self.readings: list[Reading] = []
+
+        def save(self, reading: Reading) -> int:
+            self.readings.append(reading)
+            return len(self.readings)
+
+        def get_latest(self, sensor_id: str, limit: int = 1) -> Sequence[Reading]:
+            raise RepositoryError("DB-Read transient gestoert")
+
+        def get_since(
+            self, sensor_id: str, since: datetime, limit: int = 1000
+        ) -> Sequence[Reading]:
+            return ()
+
+        def get_between(
+            self,
+            sensor_id: str,
+            from_dt: datetime | None = None,
+            to_dt: datetime | None = None,
+            limit: int = 100,
+            offset: int = 0,
+            order: Literal["asc", "desc"] = "desc",
+        ) -> Sequence[Reading]:
+            return ()
+
+    repo = ReadFailingRepository()
+    poller = Poller(
+        base_url="http://g1.test",
+        repository=repo,
+        data_quality_thresholds=quality_thresholds,
+        plausibility_thresholds=plausibility_thresholds,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="src.ingest.poller"):
+        with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
+            reading = poller.poll()
+
+    assert reading is not None
+    assert len(repo.readings) == 1
+    assert "Sprung-Baseline aus DB nicht lesbar" in caplog.text
 
 
 # -----------------------------------------------------------------------------

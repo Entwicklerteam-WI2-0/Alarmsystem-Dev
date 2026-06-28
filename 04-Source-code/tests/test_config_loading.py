@@ -637,3 +637,85 @@ def test_t_s_grenz_gleich_gefrierpunkt_ist_erlaubt(tmp_path):
 
     thresholds = load_thresholds(datei)
     assert thresholds.prognose.t_s_grenz_c == daten["vereisung"]["t_s_gefrierpunkt_c"]
+
+
+# -----------------------------------------------------------------------------
+# Vereisungs-Schwellen: Bereichs- und Hierarchie-Validierung (DTB-63 Folgefix,
+# NF-01). Schliesst den Fail-safe-Bypass, ueber den ein authentifizierter Caller
+# der Vereisungslogik durch extreme Schwellen (-273 °C Gefrierpunkt) still GRUEN
+# aufzwingen konnte — vorher hatte VereisungsSchwellen keine _validate_*-Pruefung.
+# -----------------------------------------------------------------------------
+
+
+def _vereisung_config(**overrides: float) -> dict:
+    """Minimale Config mit gezielt ueberschriebenen Vereisungs-Schwellen."""
+    daten = _minimal_config()
+    daten["vereisung"].update(overrides)
+    return daten
+
+
+def _schreibe_config(tmp_path, daten: dict) -> "Path":
+    eigene = tmp_path / "config.json"
+    eigene.write_text(json.dumps(daten), encoding="utf-8")
+    return eigene
+
+
+def test_vereisung_gefrierpunkt_unter_plausibler_grenze_scheitert_laut(tmp_path):
+    # -60 °C liegt unter der realistischen Oberflaechentemperatur-Grenze (-50).
+    # Ein solcher Wert wuerde die ROT/ORANGE-Kaskade praktisch nie ausloesen.
+    daten = _vereisung_config(t_s_gefrierpunkt_c=-60.0)
+    with pytest.raises(ConfigError):
+        load_thresholds(_schreibe_config(tmp_path, daten))
+
+
+def test_vereisung_gefrierpunkt_oberhalb_plausibler_grenze_scheitert_laut(tmp_path):
+    # +60 °C: jenseits realer Oberflaechentemperaturen -> GELB-Auffang nie relevant.
+    daten = _vereisung_config(t_s_gefrierpunkt_c=60.0)
+    with pytest.raises(ConfigError):
+        load_thresholds(_schreibe_config(tmp_path, daten))
+
+
+@pytest.mark.parametrize("wert", [-60.0, 60.0])
+def test_vereisung_gelb_auffang_ausserhalb_bereich_scheitert_laut(tmp_path, wert):
+    # GELB-Auffang muss in realistischem Oberflaechentemp-Bereich liegen.
+    daten = _vereisung_config(t_s_gelb_auffang_c=wert)
+    with pytest.raises(ConfigError):
+        load_thresholds(_schreibe_config(tmp_path, daten))
+
+
+@pytest.mark.parametrize("wert", [-60.0, 60.0])
+def test_vereisung_delta_t_kondensation_ausserhalb_bereich_scheitert_laut(tmp_path, wert):
+    daten = _vereisung_config(delta_t_kondensation_k=wert)
+    with pytest.raises(ConfigError):
+        load_thresholds(_schreibe_config(tmp_path, daten))
+
+
+@pytest.mark.parametrize("wert", [-60.0, 60.0])
+def test_vereisung_delta_t_feucht_ausserhalb_bereich_scheitert_laut(tmp_path, wert):
+    daten = _vereisung_config(delta_t_feucht_k=wert)
+    with pytest.raises(ConfigError):
+        load_thresholds(_schreibe_config(tmp_path, daten))
+
+
+def test_vereisung_feucht_gleich_kondensation_scheitert_laut(tmp_path):
+    # Hierarchie-Invariante (NF-01): feucht muss STRENG groesser als kondensation sein,
+    # sonst ist die Feucht-/Kondensations-Logik invertiert (kondensation feuert nie
+    # eigenstaendig). Gleichheit ist der Grenzfall -> abgelehnt.
+    daten = _vereisung_config(delta_t_kondensation_k=1.0, delta_t_feucht_k=1.0)
+    with pytest.raises(ConfigError):
+        load_thresholds(_schreibe_config(tmp_path, daten))
+
+
+def test_vereisung_feucht_kleiner_als_kondensation_scheitert_laut(tmp_path):
+    # feucht < kondensation kehrt die Hierarchie um -> NF-01-Bruch.
+    daten = _vereisung_config(delta_t_kondensation_k=2.0, delta_t_feucht_k=1.0)
+    with pytest.raises(ConfigError):
+        load_thresholds(_schreibe_config(tmp_path, daten))
+
+
+def test_vereisung_default_kaskade_bleibt_valide():
+    # Regression: die dokumentierten Defaults (Schwellenwerte.md) muessen weiterhin
+    # akzeptiert werden — die Bereichspruefung darf den Normalbetrieb nicht brechen.
+    thresholds = load_thresholds()
+    assert thresholds.vereisung.t_s_gefrierpunkt_c == 0.0
+    assert thresholds.vereisung.delta_t_feucht_k > thresholds.vereisung.delta_t_kondensation_k

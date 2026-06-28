@@ -21,6 +21,11 @@ from src.storage.repository import (
     Repository,
     RepositoryError,
 )
+from src.storage.threshold_set_repository import (
+    InMemoryThresholdSetRepository,
+    MySqlThresholdSetRepository,
+    ThresholdSetRepository,
+)
 
 __all__ = [
     "get_connection",
@@ -36,4 +41,8 @@ __all__ = [
     "AuditRepository",
     "InMemoryAuditRepository",
     "MySqlAuditRepository",
+    # Schwellensatz-Versionierung (DTB-63 / DTB-54):
+    "ThresholdSetRepository",
+    "InMemoryThresholdSetRepository",
+    "MySqlThresholdSetRepository",
 ]
