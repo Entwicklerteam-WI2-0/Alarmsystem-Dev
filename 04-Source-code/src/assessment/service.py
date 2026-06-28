@@ -22,7 +22,13 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from src.assessment.core import assess_ice_risk
+from src.assessment.core import (
+    DRIVING_FACTOR_SENSOR_FAULT,
+    DRIVING_FACTOR_STALE,
+    MAX_EXPLANATION_LEN,
+    assess_ice_risk,
+    derive_explanation,
+)
 from src.assessment.failsafe import build_unknown_assessment, is_stale
 from src.config.loader import Thresholds
 from src.model.enums import AuditEventType, RiskLevel, SensorStatus
@@ -94,19 +100,25 @@ class AssessmentService:
 
         stale_timeout_s = self._thresholds.datenqualitaet.stale_timeout_s
 
+        # Hinweis: pydantic `model_copy(update=...)` validiert NICHT erneut (kein
+        # max_length-Check). Die hier gesetzten driving_factor-Werte sind ausschliesslich
+        # die DRIVING_FACTOR_*-Konstanten aus core.py und liegen garantiert <= 64 Zeichen;
+        # neue Werte muessen diese Grenze ebenfalls einhalten (sonst 500 erst beim Serven).
         if reading is None:
             # Kein Reading -> kein reading_id moeglich (Fail-safe ohne Bezug).
-            assessment = build_unknown_assessment("keine aktuellen Daten", now)
+            assessment = build_unknown_assessment("keine aktuellen Daten", now).model_copy(
+                update={"driving_factor": DRIVING_FACTOR_STALE}
+            )
         elif reading.status is SensorStatus.FAULT:
             # Reading liegt vor (Poller hat persistiert) -> reading_id verknuepfen,
             # damit aus dem Snapshot nachvollziehbar bleibt, welches konkrete Reading
             # den Fail-safe ausgeloest hat (NF-05 / Audit-Traceability).
             assessment = build_unknown_assessment("sensor fault", now).model_copy(
-                update={"reading_id": reading.id}
+                update={"reading_id": reading.id, "driving_factor": DRIVING_FACTOR_SENSOR_FAULT}
             )
         elif is_stale(reading, now, stale_timeout_s):
             assessment = build_unknown_assessment("stale (Messwert veraltet)", now).model_copy(
-                update={"reading_id": reading.id}
+                update={"reading_id": reading.id, "driving_factor": DRIVING_FACTOR_STALE}
             )
         else:
             if reading.id is None:
@@ -129,19 +141,26 @@ class AssessmentService:
                 if reading.dew_point_c is None
                 else reading.surface_temp_c - reading.dew_point_c
             )
+            # DTB-66: driving_factor + explanation aus der Kaskade ableiten.
+            # threshold_set_id bleibt bewusst None: der aktuelle Loader (DTB-15)
+            # traegt keine Schwellensatz-Referenz (nur Sektionen), der geltende
+            # Satz ist strukturell noch nicht belegbar. Die DB-Spalte (FK auf
+            # threshold_set) + INSERT/SELECT sind vorbereitet; die audit-feste
+            # Traceability bei Schwellen-Aenderungen (NF-05) zieht DTB-65 nach.
+            driving_factor, explanation = derive_explanation(
+                reading.surface_temp_c,
+                reading.dew_point_c,
+                self._thresholds,
+                forecast_surface_temp_c,
+                risk,
+                delta_t,
+            )
             assessment = Assessment(
                 ts=now,
                 reading_id=reading.id,
                 risk_level=risk,
-                # threshold_set_id bleibt bewusst None: der aktuelle Loader (DTB-15)
-                # traegt keine Schwellensatz-Referenz (nur Sektionen), der geltende
-                # Satz ist strukturell noch nicht belegbar. Die DB-Spalte (FK auf
-                # threshold_set) + INSERT/SELECT sind vorbereitet; die audit-feste
-                # Traceability bei Schwellen-Aenderungen (NF-05) zieht DTB-65 nach.
-                # driving_factor/explanation: optionale Klartext-Felder; bleiben vorerst
-                # None. Die Befuellung gehoert in die Bewertungs-/Assessment-Domaene
-                # (DTB-38, die Kaskade liefert das "Warum"), NICHT zu DTB-27 (Alarm)
-                # -> Folge-Task DTB-66.
+                driving_factor=driving_factor,
+                explanation=explanation,
                 surface_temp_c=reading.surface_temp_c,
                 dew_point_c=reading.dew_point_c,
                 delta_t=delta_t,
@@ -223,10 +242,13 @@ def build_assessment_current(
         reason = " + ".join(
             label for label, active in (("stale", stale), ("sensor fault", fault)) if active
         )
+        # DTB-66: driving_factor spiegelt den gravierendsten Fail-safe-Grund.
+        # Fault hat Vorrang vor Stale (Sensorfehler ist die Ursache, Stale oft Folge).
+        fail_driving_factor = DRIVING_FACTOR_SENSOR_FAULT if fault else DRIVING_FACTOR_STALE
         return AssessmentCurrent(
             risk_level=RiskLevel.UNKNOWN,
-            driving_factor=None,
-            explanation=f"Fail-safe: {reason}",
+            driving_factor=fail_driving_factor,
+            explanation=f"Fail-safe: {reason}"[:MAX_EXPLANATION_LEN],
             surface_temp_c=None,
             dew_point_c=None,
             delta_t=None,
