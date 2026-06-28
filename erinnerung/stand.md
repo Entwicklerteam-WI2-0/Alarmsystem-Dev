@@ -1,6 +1,21 @@
 # Aktueller Stand
 
-> Stand: 2026-06-27 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+> Stand: 2026-06-28 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+
+## 2026-06-28 — DTB-34 `GET /v1/readings` umgesetzt + Overseer-FREIGABEREIF (lokal/ungepusht)
+**Was:** Messwert-Historie (T1, FA-03) fertig: `Repository.get_readings` (ABC + InMemory + PyMySQL,
+geteilter Validator `_validate_readings_query`, injection-sicher) + Endpoint `GET /v1/readings` gegen die
+**eingefrorene `openapi.yaml`** (`from`/`to`/`sensor_id`/`limit`[1..1000]/`order`[asc,desc]); contract-konform
+400/503 `Error{code,message}` (nie `{detail}`), `Cache-Control: no-store`, RB-01 rein lesend, NF-01 nicht
+berührt. `bad_request()`-Helper in `responses.py` + additives `503` in `openapi.yaml` für `/v1/readings` (T1).
+**Qualität/Review:** TDD (RED→GREEN); volle Suite **669 grün / 27 skip**, ruff check+format clean,
+`api/v1.py`+`responses.py` **100 %** Cov, `openapi.yaml` valide. 3-Reviewer-Subagenten-Loop
+(python/fastapi/security — kein CRITICAL/HIGH, SQL-Injection dreifach ausgeschlossen) + Overseer
+`uni-review-orchestrator` → **FREIGABEREIF**. README + `task-prioritaet-aktuell.md` (B3 ⏳) nachgezogen.
+**Offen (Lucas):** liegt im Working Tree von `feat/db-finalisierung-real-mariadb` (mit der DB-Finalisierung
+vermischt) — vor PR ggf. auf eigenen `feat/dtb-34-*`-Branch trennen → PR/Merge → Jira DTB-34. **Follow-up
+(kein DTB-34-Scope):** seam-weiter `RequestValidationError`-Handler, damit FastAPIs Default-422 `{detail}`
+bei Typ-Fehl-Input (`limit=abc`) ebenfalls als `Error{code,message}` kommt.
 
 ## 2026-06-27 — DB real finalisiert (Branch `feat/db-finalisierung-real-mariadb`, gepusht)
 **Problem:** DTB-53/54/55/56 standen Jira-„Erledigt", aber eine reale MariaDB war nie hochgezogen
