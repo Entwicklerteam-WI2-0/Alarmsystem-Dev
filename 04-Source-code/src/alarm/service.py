@@ -27,16 +27,21 @@ class AuditError(Exception):
 
     EIGENSTAENDIGE Exception (bewusst NICHT von `RepositoryError` abgeleitet): so faengt ein
     `except RepositoryError` in einem kuenftigen Aufrufer (DTB-31, G3-Naht) den AuditError
-    NICHT versehentlich mit und verliert die `alarm_id` — der Aufrufer MUSS ihn explizit
+    NICHT versehentlich mit und verliert den `alarm` — der Aufrufer MUSS ihn explizit
     behandeln (kein Reihenfolge-Footgun). Semantik: Der Alarm ist DB-seitig vorhanden
-    (`alarm_id`) UND die Engine bleibt 'aktiv' (KEIN Re-Arm) — NICHT erneut `beenden()` rufen.
+    (`alarm` mit id) UND die Engine bleibt 'aktiv' (KEIN Re-Arm) — NICHT erneut `beenden()` rufen.
     Ein reiner Persistenz-Fehler ist dagegen ein `RepositoryError` (Alarm NICHT gespeichert,
     Engine bereits neu gearmt).
+
+    Traegt den vollstaendigen persistierten `alarm` (mit id), NICHT nur die id: der Aufrufer
+    (run_scheduler) pusht ihn trotz der Audit-Luecke live an G3 (NF-01 vor NF-09) -> der
+    SSE-Stream bleibt vollstaendig (keine stille Sichtbarkeits-Luecke bis zum Resync).
     """
 
-    def __init__(self, message: str, alarm_id: int) -> None:
+    def __init__(self, message: str, alarm: Alarm) -> None:
         super().__init__(message)
-        self.alarm_id = alarm_id
+        self.alarm = alarm
+        self.alarm_id = alarm.id  # Backward-Compat + Log-Convenience
 
 
 class AlarmGenerator:
@@ -52,11 +57,16 @@ class AlarmGenerator:
         self._alarm_repo = alarm_repo
         self._audit_repo = audit_repo
 
-    def verarbeite(self, risk_level: RiskLevel, assessment_id: int, jetzt: datetime) -> int | None:
+    def verarbeite(
+        self, risk_level: RiskLevel, assessment_id: int, jetzt: datetime
+    ) -> Alarm | None:
         """Verarbeitet eine Bewertung; persistiert + auditiert einen ausgelösten Alarm.
 
         Returns:
-            Die vergebene Alarm-ID, wenn ein Alarm ausgelöst und gespeichert wurde; sonst `None`.
+            Den persistierten `Alarm` (mit vergebener `id`), wenn ein Alarm ausgelöst und
+            gespeichert wurde; sonst `None`. Den vollständigen Alarm (statt nur der id)
+            braucht der Live-Push-Seam (DTB-61): `run_scheduler` reicht ihn an den
+            `AlarmBroadcaster` weiter, der ihn als SSE-Event an G3 streamt.
 
         Raises:
             ValueError: wenn `jetzt` kein zeitzonenbewusstes Datetime ist (Contract §2a D;
@@ -95,6 +105,10 @@ class AlarmGenerator:
         # Hinweis (kein Bug): `severity` ist der PHASEN-PEAK (Safety-Bias, `pending_max`),
         # `risk_level`/`assessment_id` die AUSLÖSENDE Beobachtung — sie können legitim
         # divergieren (ROT-Blip im On-Delay-Fenster, danach ORANGE-Auslösung -> critical@orange).
+        # Persistierten Alarm MIT vergebener id (Push-Seam DTB-61); Original unangetastet
+        # (model_copy). VOR dem Audit berechnet, damit ihn auch der AuditError-Pfad an G3
+        # pushen kann (NF-01 vor NF-09: ein Audit-Fehler darf die Zustellung nicht verhindern).
+        gespeicherter_alarm = alarm.model_copy(update={"id": alarm_id})
         try:
             self._audit_repo.append(
                 AuditLogEntry(
@@ -108,9 +122,9 @@ class AlarmGenerator:
         except Exception as exc:  # noqa: BLE001 - JEDER Audit-Fehler -> AuditError (Contract)
             # Alarm ist bereits persistiert + Engine aktiv -> KEIN Re-Arm. JEDE Audit-Exception
             # (nicht nur RepositoryError; auch ein unerwarteter RuntimeError/TypeError) als
-            # AuditError mit alarm_id signalisieren — sonst bricht der AuditError-Vertrag und der
-            # Scheduler verliert im generischen except-Zweig die alarm_id.
+            # AuditError MIT dem persistierten Alarm signalisieren — sonst bricht der AuditError-
+            # Vertrag und der Scheduler verliert im generischen except-Zweig den Alarm.
             raise AuditError(
-                "Alarm gespeichert, aber Audit-Eintrag fehlgeschlagen", alarm_id=alarm_id
+                "Alarm gespeichert, aber Audit-Eintrag fehlgeschlagen", alarm=gespeicherter_alarm
             ) from exc
-        return alarm_id
+        return gespeicherter_alarm
