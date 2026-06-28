@@ -245,3 +245,29 @@ def test_main_fehler_wenn_ziel_nicht_existiert(tmp_path, capsys):
     assert "verbotene Aktor-Endpoints" not in captured.err
     assert "fail-closed" in captured.err
     assert captured.out == ""
+
+
+def test_main_banner_nennt_scan_fehler_bei_gemischten_funden(tmp_path, capsys):
+    # Echter Aktor-Endpoint UND ein nicht pruefbares (fehlendes) Ziel im selben Lauf:
+    # das FEHLER-Banner muss den Scan-Fehler-Anteil sichtbar machen, statt ihn nur als
+    # eine weitere Zeile aufzulisten (LOW-Finding PR #153).
+    openapi = tmp_path / "openapi.yaml"
+    openapi.write_text(
+        """
+paths:
+    /v1/runway/execute:
+      post:
+        summary: Verbotener Aktor
+""",
+        encoding="utf-8",
+    )
+    fehlend = tmp_path / "nicht_vorhanden.yaml"
+
+    code = main([str(openapi), str(fehlend)])
+    captured = capsys.readouterr()
+
+    assert code == 1
+    assert "verbotene Aktor-Endpoints gefunden (inkl. Scan-Fehler)" in captured.err
+    assert "/v1/runway/execute" in captured.err
+    assert "nicht_vorhanden.yaml" in captured.err
+    assert captured.out == ""

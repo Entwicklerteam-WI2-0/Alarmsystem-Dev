@@ -15,6 +15,22 @@ YAML-Parser: Geprueft werden nur Path-Keys innerhalb des top-level `paths:`-
 Abschnitts. Beschreibungen, Beispiele und Kommentare ausserhalb davon duerfen
 verbotene Muster als Dokumentation nennen.
 
+Bekannte Grenzen (bewusst) - zwei Instanzen, die zweite faengt die erste ab:
+(a) Routing-Form: Der Python-Scan liest nur Decorator-Routen
+    (`@app.get("/runway/unlock")`, `@router.api_route(path=...)`). Programmatische
+    Registrierung ausserhalb eines Decorators wird NICHT erkannt - etwa
+    `app.add_api_route("/runway/unlock", handler)` oder
+    `router.include_router(actor_router, prefix="/v1/runway/execute")`. Auffangnetz:
+    Jeder reale Endpoint MUSS im eingefrorenen Contract `docs/api/v1/openapi.yaml`
+    stehen, wo der OpenAPI-Path-Key-Scan unabhaengig von der Python-Form greift.
+    Bleibt ein Pfad in beiden aussen vor (programmatisch registriert UND nicht in der
+    Spec), faengt ihn das Code-Review (zweite Instanz).
+(b) Keyword-Liste: VERBOTENE_AKTOR_KEYWORDS ist bewusst klein und kuratiert und deckt
+    Synonyme wie `approve`, `enable`, `open`, `activate` oder `close` NICHT ab (anders
+    als beim Schwellen-Guard gibt es hier keinen `# noqa`-Mechanismus). Neue
+    Aktor-Vokabeln werden bei Bedarf ergaenzt; bis dahin bleibt auch das eine
+    Code-Review-Aufgabe.
+
 Aufruf aus `04-Source-code/`:
     python tools/check_rb01_no_actor_endpoints.py
 
@@ -238,7 +254,13 @@ def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:
             file=sys.stderr,
         )
     else:
-        print("FEHLER: RB-01-Guard hat verbotene Aktor-Endpoints gefunden:\n", file=sys.stderr)
+        # Gemischte Liste (echte Funde + fail-closed): den Scan-Fehler-Anteil im Banner
+        # nennen, damit er nicht als bloss eine weitere Endpoint-Zeile untergeht.
+        zusatz = " (inkl. Scan-Fehler)" if any(v.fail_closed for v in verstoesse) else ""
+        print(
+            f"FEHLER: RB-01-Guard hat verbotene Aktor-Endpoints gefunden{zusatz}:\n",
+            file=sys.stderr,
+        )
     for verstoss in verstoesse:
         print(
             f"  {verstoss.datei}:{verstoss.zeile}: {verstoss.endpoint} "
