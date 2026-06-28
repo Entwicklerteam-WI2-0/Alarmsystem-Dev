@@ -188,6 +188,13 @@
 - *Betriebs-Monitoring der Dauer-Sperre (DTB-20 Review M-1):* Ein gesunder Sensor bei echtstabiler Kälte und ein echt eingefrorener Sensor sind am Ingest **nicht unterscheidbar** (beide: Dauer-Flatline, kein Stale/Timeout). Der Poller setzt deshalb nach `_FLATLINE_WARN_AFTER_N` (=10, ≈ 5 min) ununterbrochenen Flatline-Verwerfungen **einmalig** eine WARN-Zeile mit `sensor_id`, damit das Betriebs-Monitoring den Fall „dauerhaft kein Reading, aber kein Stale" gezielt prüfen kann. Reine Beobachtbarkeit, **kein** Verhaltenswechsel (weiter immer verwerfen, NF-01). Schwelle ist Log-Kadenz, keine Bewertungsschwelle → bewusst Code-Konstante statt `config/` (NF-05 betrifft nur entscheidungswirksame Schwellen).
 - *Bezug:* NF-01; NF-05; E-40 (Schicht Plausibilität); E-14 (Schwellen parametrierbar); FA-04; DTB-20; PR #128; `config/thresholds.json` (`_quelle_flatline_epsilon_c`); `Schwellenwerte.md §3`.
 
+**E-43 — Sensorzustands-Transparenz am Serve-Layer (Fault vs. Stale vs. keine Daten): bewusst akzeptiert, Umsetzung nach M3**
+- *Status:* Beschlossen — *accept & defer* (2026-06-28). **Volltext als eigenständiges ADR-Dokument:** [`ADR-E43-Sensorzustand-Transparenz.md`](ADR-E43-Sensorzustand-Transparenz.md) — Befund, Wurzel, Alternativen, Konsequenzen. Empirische Basis: lokaler Live-Verify (G1-Simulator, 6 Szenarien).
+- *Kurz:* Ein defekter Sensor (`status=fault`) ist am Wire nicht von „still/keine Daten" unterscheidbar — beide → `unknown` mit `sensor_status=ok`/`is_stale=false`. Wurzel: der Poller fasst Fault/Stale/Ausfall in ein `None` zusammen (Grund geht verloren), der Serve-Pfad nutzt das letzte gute Reading. **Sicherheit unberührt** (nie GRÜN hält in allen 6 Szenarien); reine **Diagnose-Lücke**.
+- *Entscheidung:* Für M3 keine Code-Änderung (sicheres Verhalten bleibt); Diagnose-Verbesserung als Folge-Task nach M3. **Empfohlene Variante (C):** verlorenen Grund durch `poll()` durchreichen und in `explanation`/`driving_factor` schreiben — ohne Datenmodell-/Baseline-/`/v1/readings`-Eingriff.
+- *Alternativen (verworfen):* (A) sofort vor M3 — Regressionsrisiko am kritischen Pfad, kein Konsument. (B) Fault/Stale-Readings persistieren — teuer (Baseline-Schutz E-42, `test_schicht2a` umkehren, `/v1/readings`-Semantik). (D) nicht dokumentieren.
+- *Bezug:* NF-01; FA-04; R1–R5 (Wartbarkeit/Ausfall); RB-01; E-31; E-36; E-40 (Schichten 1/2/6); E-42; DTB-43/DTB-49/DTB-64.
+
 **E-11 — 4-Stufen-Risikomodell (🟢🟡🟠🔴) mit konkreten Schwellen + Hysterese/Entprellung**
 - *Begründung:* Klare, parametrierbare Kategorien statt eines unscharfen Einzelwerts; Hysterese verhindert Alarm-Flattern (ISA-18.2). Beide Vorfälle werden korrekt aufgelöst.
 

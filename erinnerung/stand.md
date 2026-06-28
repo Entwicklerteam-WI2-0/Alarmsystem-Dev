@@ -520,3 +520,19 @@ MariaDB 11.4.x (`--force`).
 native MariaDB → schema.sql → grants.sql → env → uvicorn; nur `G1_BASE_URL`/`G2_CORS_ORIGINS`/`G2_API_KEY` +
 Scheduler scharf). Integration/Test bis Mi Nacht.
 —architekt
+
+## 2026-06-28 (Abend) — E-43: Fault-vs-Stale-Diagnoselücke dokumentiert (accept & defer) + DB-freier Re-Verify (architekt/Petzold)
+- **DB-freier Live-Verify (Johannes):** Bewertungs-/Fail-safe-Pipeline unabhängig gegen Lucas' G1-Sim (PR #144)
+  scharf gefahren (InMemory-Launcher, Scheduler an, Poll 2 s) — 6 Szenarien grün/rot+Alarm/stale/fault/G1-down/
+  Recovery wie erwartet, **NF-01 zur Laufzeit bestätigt** (nie GRÜN bei stale/fault/down). Bestätigt den
+  17:30-STOA-Real-Test auf Pipeline-Ebene (ohne DB — Persistenz dort schon real geprüft).
+- **E-43 (accept & defer bis nach M3):** Der Minor-Befund „Fault/Down-Label stale" (17:30) **formalisiert** —
+  Fault vs. Stale am Wire nicht unterscheidbar (`sensor_status=ok`/`is_stale=false` bei `unknown`); Wurzel =
+  `poll()` kollabiert alle Fehlergründe in ein `None`. Sicherheit unberührt (reine Diagnose-Lücke). Dokumentiert:
+  zentrales Logbuch (E-43) + `02-Arbeitsdokumente/ADR-E43-Sensorzustand-Transparenz.md` + persönliches Petzold-Log
+  (+ Methoden-Eintrag „DB-freier Verify"). Empfohlene spätere Variante C: Grund via `poll()` → `explanation`/
+  `driving_factor` (kein Datenmodell-/Baseline-/`readings`-Eingriff).
+- **Offen:** Doku-PR `docs/adr-e43-sensorzustand` (nach Johannes' Freigabe; Code/Doku getrennt). Realer DB-E2E
+  über den 17:30-Test bereits abgedeckt; offen bleibt Pi-Deploy/Live-Integration (Mo 29.06.). Scratchpad-
+  Launcher + Sim-Kopie außerhalb des Repos.
+—architekt/Petzold
