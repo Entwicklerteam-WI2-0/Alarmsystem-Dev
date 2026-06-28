@@ -172,7 +172,7 @@ class AckRequest(_Base):
 
 
 class ThresholdUpdateRequest(_Base):
-    """Request-Body fuer PUT /v1/thresholds (DTB-63, NF-07).
+    """Request-Body fuer POST /v1/thresholds (DTB-63, NF-07).
 
     `thresholds` ist die vollstaendige Schwellen-Struktur (wie GET /v1/thresholds sie
     liefert); fachlich validiert wird sie im Endpoint ueber den kanonischen Loader

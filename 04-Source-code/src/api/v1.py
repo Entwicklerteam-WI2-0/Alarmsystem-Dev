@@ -75,12 +75,12 @@ def read_thresholds(
     return thresholds
 
 
-@router.put(
+@router.post(
     "/thresholds",
     status_code=201,
     dependencies=[Depends(require_api_key)],
     response_model=ThresholdSet,
-    summary="Schwellenwerte versioniert aktualisieren (Auth)",
+    summary="Schwellenwerte versioniert anlegen (Auth, nicht-idempotent)",
     tags=["Thresholds"],
     responses={
         401: {"model": Error, "description": "Kein/ungueltiger API-Key (NF-07)."},

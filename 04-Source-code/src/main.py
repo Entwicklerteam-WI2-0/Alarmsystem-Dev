@@ -134,7 +134,7 @@ def build_runtime() -> Runtime:
 def _load_active_thresholds(threshold_set_repo: ThresholdSetRepository) -> Thresholds:
     """Aktive Schwellen = zuletzt gespeicherter `threshold_set`, sonst JSON-Seed.
 
-    Reload-Semantik (DTB-63): ein per PUT /v1/thresholds gespeicherter Satz wird beim
+    Reload-Semantik (DTB-63): ein per POST /v1/thresholds gespeicherter Satz wird beim
     naechsten Start aktiv. Faellt die DB aus oder ist die Tabelle leer, wird die
     JSON-Seed-Config geladen (fail-safe: lieber die committete Basiskalibrierung als
     gar keine Schwellen). Fehler werden laut geloggt (kein stilles Maskieren).

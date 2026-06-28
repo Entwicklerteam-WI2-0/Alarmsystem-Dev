@@ -42,7 +42,7 @@ class Runtime:
     assessment_repo: AssessmentRepository
     audit_repo: AuditRepository
     # Versionierte Schwellensaetze (DTB-63): get_latest beim Start (Reload-Quelle),
-    # append im Auth-geschuetzten PUT /v1/thresholds (threshold_set INSERT + Audit).
+    # append im Auth-geschuetzten POST /v1/thresholds (threshold_set INSERT + Audit).
     threshold_set_repo: ThresholdSetRepository
     poller: Poller
     service: AssessmentService

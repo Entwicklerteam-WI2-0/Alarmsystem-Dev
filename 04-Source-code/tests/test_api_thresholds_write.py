@@ -1,4 +1,4 @@
-"""Tests fuer PUT /v1/thresholds (DTB-63, NF-07): Auth + versioniertes Schreiben + Audit.
+"""Tests fuer POST /v1/thresholds (DTB-63, NF-07): Auth + versioniertes Schreiben + Audit.
 
 Prueft die schreibende Naht gegen den Contract: 401/422/503 im Format
 `Error {code, message}` (nie `{detail}`), versioniertes Persistieren + verknuepfter
@@ -44,10 +44,10 @@ def _override_runtime() -> InMemoryThresholdSetRepository:
     return repo
 
 
-def test_put_without_auth_returns_401_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_post_without_auth_returns_401_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(API_KEY_ENV, _KEY)
     _override_runtime()
-    resp = client.put("/v1/thresholds", json=_valid_body())
+    resp = client.post("/v1/thresholds", json=_valid_body())
     assert resp.status_code == 401
     body = resp.json()
     assert body["code"] == "UNAUTHORIZED"
@@ -55,10 +55,10 @@ def test_put_without_auth_returns_401_contract(monkeypatch: pytest.MonkeyPatch) 
     assert resp.headers["cache-control"] == "no-store"
 
 
-def test_put_valid_persists_version_and_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_post_valid_persists_version_and_audit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(API_KEY_ENV, _KEY)
     repo = _override_runtime()
-    resp = client.put("/v1/thresholds", json=_valid_body(), headers=_AUTH)
+    resp = client.post("/v1/thresholds", json=_valid_body(), headers=_AUTH)
     assert resp.status_code == 201
     # Genau ein versionierter Satz angelegt (Supersession per INSERT).
     assert len(repo.all()) == 1
@@ -71,21 +71,21 @@ def test_put_valid_persists_version_and_audit(monkeypatch: pytest.MonkeyPatch) -
     assert resp.json()["changed_by"] == "operator-anr"
 
 
-def test_put_invalid_thresholds_returns_422_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_post_invalid_thresholds_returns_422_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(API_KEY_ENV, _KEY)
     _override_runtime()
     bad = asdict(load_thresholds())
     bad["betrieb"]["poll_interval_s"] = -5.0  # ungueltig -> ConfigError -> 422
-    resp = client.put("/v1/thresholds", json=_valid_body(thresholds=bad), headers=_AUTH)
+    resp = client.post("/v1/thresholds", json=_valid_body(thresholds=bad), headers=_AUTH)
     assert resp.status_code == 422
     assert resp.json()["code"] == "UNPROCESSABLE_ENTITY"
 
 
-def test_put_missing_changed_by_returns_422_contract(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_post_missing_changed_by_returns_422_contract(monkeypatch: pytest.MonkeyPatch) -> None:
     # Pflichtfeld changed_by fehlt -> RequestValidationError -> contract-konform 422.
     monkeypatch.setenv(API_KEY_ENV, _KEY)
     _override_runtime()
-    resp = client.put(
+    resp = client.post(
         "/v1/thresholds", json={"thresholds": asdict(load_thresholds())}, headers=_AUTH
     )
     assert resp.status_code == 422
@@ -93,11 +93,11 @@ def test_put_missing_changed_by_returns_422_contract(monkeypatch: pytest.MonkeyP
     assert "detail" not in resp.json()
 
 
-def test_put_non_ascii_key_returns_401_not_500(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_post_non_ascii_key_returns_401_not_500(monkeypatch: pytest.MonkeyPatch) -> None:
     # Regression (#116): Nicht-ASCII-Token (U+00FC, latin-1-sendbar) -> 401, KEIN 500.
     monkeypatch.setenv(API_KEY_ENV, _KEY)
     _override_runtime()
-    resp = client.put(
+    resp = client.post(
         "/v1/thresholds",
         json=_valid_body(),
         headers={"Authorization": b"Bearer schl\xfcssel"},  # noqa: E501
@@ -106,15 +106,15 @@ def test_put_non_ascii_key_returns_401_not_500(monkeypatch: pytest.MonkeyPatch) 
     assert resp.json()["code"] == "UNAUTHORIZED"
 
 
-def test_put_key_not_configured_returns_503(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_post_key_not_configured_returns_503(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(API_KEY_ENV, raising=False)
     _override_runtime()
-    resp = client.put("/v1/thresholds", json=_valid_body(), headers=_AUTH)
+    resp = client.post("/v1/thresholds", json=_valid_body(), headers=_AUTH)
     assert resp.status_code == 503
     assert resp.json()["code"] == "SERVICE_UNAVAILABLE"
 
 
-def test_put_repo_failure_returns_503(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_post_repo_failure_returns_503(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(API_KEY_ENV, _KEY)
 
     class _FailingRepo:
@@ -124,6 +124,6 @@ def test_put_repo_failure_returns_503(monkeypatch: pytest.MonkeyPatch) -> None:
     app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(
         threshold_set_repo=_FailingRepo()
     )
-    resp = client.put("/v1/thresholds", json=_valid_body(), headers=_AUTH)
+    resp = client.post("/v1/thresholds", json=_valid_body(), headers=_AUTH)
     assert resp.status_code == 503
     assert resp.json()["code"] == "SERVICE_UNAVAILABLE"

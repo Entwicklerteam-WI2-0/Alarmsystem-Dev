@@ -145,10 +145,10 @@ paths:
               example:
                 code: SERVICE_UNAVAILABLE
                 message: "G2 momentan nicht lieferfaehig."
-    put:
+    post:
       tags: [Thresholds]
-      operationId: updateThresholds
-      summary: Schwellenwerte versioniert aktualisieren (Auth, DTB-63)
+      operationId: createThresholdVersion
+      summary: Schwellenwerte versioniert anlegen (Auth, DTB-63)
       security:
         - BearerApiKey: []
       description: |
@@ -535,7 +535,7 @@ components:
       scheme: bearer
       description: |
         API-Key als Bearer-Token im `Authorization`-Header (NF-07, DTB-63). Nur fuer
-        schreibende, G2-eigene Endpoints (derzeit `PUT /v1/thresholds`). Der erwartete
+        schreibende, G2-eigene Endpoints (derzeit `POST /v1/thresholds`). Der erwartete
         Schluessel kommt serverseitig aus der Umgebung (`G2_API_KEY`), nie aus dem Code.
 
   schemas:
@@ -669,7 +669,7 @@ components:
     ThresholdUpdateRequest:
       type: object
       description: |
-        Request-Body fuer PUT /v1/thresholds. `thresholds` ist die vollstaendige
+        Request-Body fuer POST /v1/thresholds. `thresholds` ist die vollstaendige
         Schwellen-Struktur (wie `GET /v1/thresholds` sie liefert); sie wird
         serverseitig ueber den kanonischen Loader validiert (ungueltig -> 422).
         `changed_by` ist der selbstdeklarierte Operator fuer den Audit-Trail
@@ -693,7 +693,7 @@ components:
     ThresholdSet:
       type: object
       description: |
-        Angelegter, versionierter Schwellensatz (Antwort auf PUT /v1/thresholds).
+        Angelegter, versionierter Schwellensatz (Antwort auf POST /v1/thresholds).
         Append-only (Supersession per `valid_from`, DTB-54).
       required: [id, name, params, valid_from, changed_by]
       properties:
