@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.alarm.hysterese import AlarmHysterese
@@ -43,6 +44,7 @@ from src.api.runtime import Runtime, get_runtime
 from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
 from src.config.loader import load_thresholds
+from src.forecast.bridge import compute_forecast_for_cycle
 from src.ingest.poller import Poller
 from src.model.schemas import AssessmentCurrent, Error, Health, Reading
 from src.storage import (
@@ -68,6 +70,16 @@ _DEFAULT_G1_BASE_URL = "http://g1-sensorik.local"
 # zu fixieren — das get_latest()-Assessment ist ohnehin noch global (nicht pro Sensor),
 # daher ist die ID hier nur die Reading-Auswahl fuer den Aktualitaets-/Status-Check.
 _SENSOR_ID = "anr-rwy-01"
+
+# CORS (C1, Vorbereitung G3-Browser-Integration / DTB-23): G3 ist ein Browser-Frontend
+# von ANDERER Origin (eigener Host/Port). Ohne CORS-Header blockt der Browser per
+# Same-Origin-Policy JEDEN Call von G3 -> Server-zu-Server und die pytest-Suite sind davon
+# unberuehrt, die echte UI aber nicht. Bewusster Default "*" fuer den abgeschlossenen
+# Prototyp/Intranet (analog zum http-Default von G1): pro Umgebung per Env einschraenken,
+# z. B. G2_CORS_ORIGINS="http://devpi.local:3000" (dokumentiert in .env.example).
+# allow_credentials bleibt False -> mit "*" kompatibel und ausreichend, da Auth (DTB-63)
+# ueber den Authorization-Header laeuft, nicht ueber Cookies.
+_DEFAULT_CORS_ORIGINS = "*"
 
 
 def build_runtime() -> Runtime:
@@ -105,6 +117,7 @@ def run_assessment_cycle(
     alarm_generator: AlarmGenerator,
     reading: Reading | None,
     now: datetime,
+    forecast_surface_temp_c: float | None = None,
 ) -> None:
     """Ein vollständiger Zyklus: Bewertung (DTB-64) -> Alarm-Generierung (DTB-27).
 
@@ -113,10 +126,19 @@ def run_assessment_cycle(
     Bei `unknown` löst der Generator keinen Alarm aus und die On-Delay-Hysterese friert ein —
     die in DTB-27 dokumentierte Vorbedingung (Stale -> UNKNOWN, nicht GELB) erfüllt DTB-64 hier.
 
+    `forecast_surface_temp_c` ist die optionale 30-min-T_s-Prognose (DTB-33/FA-06); sie wird
+    an die Bewertung durchgereicht und speist die GELB-Vorwarnung. None (Default) = keine
+    Prognose verfügbar (Fail-safe) -> Bewertung allein aus dem aktuellen Reading.
+
     Bewusst KEIN eigenes try/except: Persistenz-/Audit-Fehler propagieren in die Fail-safe-
     Schleife des Schedulers (NF-01: ein Zyklus-Fehler beendet den Betrieb nicht).
     """
-    assessment = service.assess_reading(reading, now)
+    # Keyword fuer forecast_surface_temp_c: `now` und der Prognosewert stehen beide
+    # float|None-nah nebeneinander -> benannt halten, damit eine Signaturreihenfolgen-
+    # aenderung nicht still die Argumente vertauscht.
+    assessment = service.assess_reading(
+        reading, now, forecast_surface_temp_c=forecast_surface_temp_c
+    )
     if assessment.id is None:  # pragma: no cover - defensiver Invarianten-Guard
         # assess_reading garantiert eine persistierte id; fehlt sie, ist die Invariante
         # verletzt -> laut scheitern (kein assert, -O-fest), statt stumm einen Alarm ohne
@@ -130,8 +152,10 @@ def run_assessment_cycle(
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
     """Periodische Poll-/Bewertungs-Schleife (Scheduler-Kern der T0-Slice, DTB-64).
 
-    Fail-safe: ein Fehler in einem Zyklus beendet die Schleife NICHT; der naechste
-    Zyklus versucht es erneut. Serve-Zeit-NF-01 (build_assessment_current) faengt
+    Poller holt Snapshot von G1, Prognose-Producer liest die T_s-Historie
+    (DTB-33/FA-06), AssessmentService bewertet + persistiert. Fail-safe: ein
+    Fehler in einem Zyklus beendet die Schleife NICHT; der naechste Zyklus
+    versucht es erneut. Serve-Zeit-NF-01 (build_assessment_current) faengt
     derweil veraltete Daten ab (nie GRUEN).
     """
     logger.info("DTB-64: Scheduler gestartet (Intervall %.0fs).", interval_s)
@@ -140,12 +164,15 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
         try:
             # poller.poll() ist blockierend (httpx.get) -> in einen Thread auslagern,
             # damit der Event-Loop frei bleibt.
-            reading = await asyncio.to_thread(runtime.poller.poll)
+            # now VOR dem Poll: haelt assessed_at nahe an measured_at (Audit-Konsistenz)
+            # und definiert das 30-min-Prognosefenster ab Zyklusbeginn.
             now = datetime.now(UTC)
+            reading = await asyncio.to_thread(runtime.poller.poll)
             # Monotonie erzwingen (Hysterese-Vorbedingung): eine NTP-Rueckwaertskorrektur der
             # Wall-Clock darf die On-Delay-Akkumulation nicht zuruecksetzen (sonst einmaliger
             # Under-Alarm). Nicht-fallende Zeit an die Engines weiterreichen; Clock-Skew fuer
             # Ops sichtbar machen (anhaltender Rueckwaerts-Offset friert die Zeit kurz ein).
+            # Das geklemmte `now` ist auch die gemeinsame Zeitbasis fuer Prognose UND Bewertung.
             if last_now is not None and now < last_now:
                 logger.warning(
                     "Wall-Clock-Rueckwaertssprung (%.1fs) - Zeit geklemmt (Clock-Skew?).",
@@ -153,12 +180,44 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                 )
                 now = last_now
             last_now = now
+            # DTB-33 (FA-06): 30-min-T_s-Prognose aus der Historie -> GELB-Vorwarnung.
+            # Bruecke liest die Zeitreihe; Fail-safe: None bei fehlendem Reading/DB-Fehler.
+            # Clock-Skew-Implikation: `now` wird VOR dem Poll gesetzt. Laeuft die G1-Uhr G2 vor,
+            # liegt das soeben gepollte measured_at > now und faellt aus dem Trendfenster
+            # (trend.py verwirft `> now`). Das ist fail-safe (None senkt nie ab), kann aber bei
+            # duenner Datenlage die Prognose still degradieren. Bewusst NICHT `now = max(now,
+            # measured_at)`: das braeche die oben erzwungene Monotonie-Invariante der Hysterese.
+            # Prognose-Isolation (NF-01): die 30-min-Vorwarnung ist eine NICHT-kritische
+            # Hilfsfunktion. compute_forecast_for_cycle ist bereits fail-safe (None bei
+            # RepositoryError/fehlendem Reading), aber ein hier nicht erwarteter Fehler
+            # (kuenftige Regression im Producer, ungefangener DB-Edge-Case) wuerde sonst ins
+            # aeussere except propagieren und run_assessment_cycle in DIESEM Tick auslassen —
+            # eine Hilfsfunktion duerfte dann den sicherheitskritischen Bewertungspfad
+            # blockieren. Darum eigen kapseln: loggen (sichtbar, kein stilles Schlucken) ->
+            # forecast=None -> Bewertung laeuft unbedingt weiter (allein auf dem Ist-Reading).
+            try:
+                forecast = await asyncio.to_thread(
+                    compute_forecast_for_cycle,
+                    reading,
+                    runtime.reading_repo,
+                    runtime.thresholds.prognose,
+                    now,
+                )
+            except Exception:  # noqa: BLE001 - Prognose-Fehler darf Bewertung nie blockieren (NF-01)
+                # Fängt auch den ValueError aus bridge.py (naives `now`) ab, der
+                # laut Docstring sichtbar werden soll. Durch logger.exception bleibt
+                # er sichtbar; die Bewertung läuft unbedingt weiter (NF-01).
+                logger.exception("Prognose fehlgeschlagen (fail-safe, forecast=None).")
+                forecast = None
             await asyncio.to_thread(
                 run_assessment_cycle,
                 runtime.service,
                 runtime.alarm_generator,
                 reading,
                 now,
+                # Keyword (nicht 5. Positionsarg): konsistent zum inneren assess_reading-Aufruf,
+                # damit eine Signaturreihenfolgen-Aenderung die Argumente nicht still vertauscht.
+                forecast_surface_temp_c=forecast,
             )
         except AuditError as exc:
             # Alarm IST gespeichert + Engine aktiv (KEIN Re-Arm), aber OHNE Audit-Trail -> ERROR
@@ -191,6 +250,28 @@ def _scheduler_enabled() -> bool:
     return os.environ.get("G2_ENABLE_SCHEDULER", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _cors_origins() -> list[str]:
+    """Erlaubte CORS-Origins aus Env (komma-separiert); Default/leer/"*" -> ["*"].
+
+    Prototyp/Intranet. Hinweis (Deployment): wird einmalig beim App-Start (Modulimport,
+    add_middleware) gelesen -> Aenderung von G2_CORS_ORIGINS wirkt erst nach App-Neustart,
+    nicht per systemd-Reload.
+    """
+    raw = os.environ.get("G2_CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).strip()
+    # Leerer String (z. B. `G2_CORS_ORIGINS=` in der .env) zaehlt wie "nicht gesetzt":
+    # auf den offenen Default zurueckfallen, statt CORS still komplett zu sperren
+    # (ein versehentlich leerer Wert ist wahrscheinlicher als bewusstes Block-all).
+    if not raw:
+        return ["*"]
+    origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+    # "*" dominiert: taucht der Wildcard irgendwo in der Liste auf (auch Mischform wie
+    # "*,http://x"), gilt er allein -> ["*"]. Vermeidet eine ueberraschende gemischte
+    # allow_origins-Liste.
+    if "*" in origins:
+        return ["*"]
+    return origins
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Startet/stoppt den Hintergrund-Scheduler und haengt den Runtime-Graph an app.state."""
@@ -219,6 +300,20 @@ app = FastAPI(
     title="Alarmsystem-Backend G2 — Vereisungserkennung ANR",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+# CORS (C1): erlaubt G3s Browser-Frontend (andere Origin) den Zugriff. Methoden bewusst
+# auf die Contract-Verben begrenzt (GET = lesen/SSE, POST = /v1/alarms/{id}/ack).
+# Origins/Default siehe _cors_origins / _DEFAULT_CORS_ORIGINS oben.
+# expose_headers bleibt Default (leer): G3 liest nur CORS-safelisted Response-Header (u. a.
+# Cache-Control) — fuer den aktuellen Contract ausreichend. Muss G3 spaeter einen Custom-Header
+# lesen (z. B. X-Request-Id), hier expose_headers=[...] ergaenzen.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
 )
 
 # Versionierte /v1-Endpoints (Serving zu G3), z. B. GET /v1/thresholds (DTB-62).

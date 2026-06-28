@@ -95,6 +95,17 @@ def test_is_stale_with_naive_now_raises(fresh_reading: Reading) -> None:
         is_stale(fresh_reading, naive_now, timeout_s=120)
 
 
+def test_is_stale_with_naive_measured_at_raises(fresh_reading: Reading) -> None:
+    # Auch ein Reading mit naivem measured_at muss erkannt werden, bevor die
+    # Zeitdifferenz-Bildung einen TypeError wirft (DTB-93 LOW).
+    naive_reading = fresh_reading.model_copy(
+        update={"measured_at": datetime(2026, 6, 23, 10, 0, 0)}
+    )
+    now = datetime.now(UTC)
+    with pytest.raises(ValueError, match="reading.measured_at muss zeitzonenbewusst sein"):
+        is_stale(naive_reading, now, timeout_s=120)
+
+
 def test_is_stale_with_none_reading_and_naive_now_raises() -> None:
     # now wird VOR dem reading-None-Check validiert: ein naiver now-Wert faellt auch
     # dann auf, wenn (noch) kein Reading vorliegt -> in einer Multi-Sensor-Schleife

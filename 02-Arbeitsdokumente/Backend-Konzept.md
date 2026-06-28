@@ -205,7 +205,7 @@ G1 stellt eine **einzelne Sensor-API** bereit. G2 pollt sie im selbst gewählten
 - `200 OK` → G1 erreichbar.
 - `503 Service Unavailable` → G1 nicht betriebsbereit / Fehlerzustand.
 
-> **Verhandlungsposition gegenüber G1:** `measured_at` und `/health` sind **nicht verhandelbar**. Feldnamen, Einheiten und optionale Felder können synchronisiert werden (Seam-Sync), solange die Pflicht-Trias erhalten bleibt.
+> **Verhandlungsposition gegenüber G1:** `measured_at` und `/health` sind **nicht verhandelbar**. Feldnamen, Einheiten und optionale Felder können synchronisiert werden (Team-Sync), solange die Pflicht-Trias erhalten bleibt.
 
 ### 9.2 zu G3 (Frontend) — G2 ist Server, G3 konsumiert per `GET`
 

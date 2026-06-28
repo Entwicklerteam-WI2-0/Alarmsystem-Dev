@@ -9,7 +9,7 @@
 ## Aktuelle Lage auf einen Blick
 
 - **M1 (Setup & Fundament): faktisch durch.** Stack, Repo-Struktur, `GET /health`, CI/CD-Gate, pytest, Config-Loader, Branch/PR-Konventionen sind alle ✅. **Nur Status-Hygiene offen:** Epic **DTB-1** steht in Jira noch auf „Zu erledigen", obwohl alle Kinder erledigt sind.
-- **M2-Naht: ERLEDIGT.** 🎉 **API-Contract v1.0 ist eingefroren** (DTB-35 ✅, beidseitiges Sign-off G1/Nils + G3-Lead). OpenAPI v1 (DTB-19 ✅) und Seam-Sync (DTB-26 ✅) liegen auf `main`. **Rest rein mechanisch:** Git-Tag `api-v1.0` setzen + Versandkopie an G3 raus.
+- **M2-Naht: ERLEDIGT.** 🎉 **API-Contract v1.0 ist eingefroren** (DTB-35 ✅, beidseitiges Sign-off G1/Nils + G3-Lead). OpenAPI v1 (DTB-19 ✅) und Team-Sync (DTB-26 ✅) liegen auf `main`. **Rest rein mechanisch:** Git-Tag `api-v1.0` setzen + Versandkopie an G3 raus.
 - **M2 verbleibend = der T0-Vertical-Slice.** Genau hier liegt jetzt der **kritische Pfad**: DB-Persistenz (in Review) → **Bewertungsmodul DTB-38 (noch NICHT begonnen, `assessment/` ist leer)** → `GET /assessment/current`. Das ist deine eigentliche Baustelle ab heute.
 - **⚠️ PR-Stau: 9 offene PRs.** Davon 7 grün/mergebar, **2 mit Konflikt/Dublette zum Schließen** (#62 DTB-19-Dublette, #63 Connection-Helper-Fork ohne Tests). Außerdem **3 Branches für denselben PyMySQL-Connection-Helper** (#58/#61/#63) → Konsolidierung nötig. **PR-Triage ist Aufgabe #1 heute** (siehe eigener Abschnitt unten).
 - **Lucas’ Rollen:** Systemarchitekt, DRI Datenmodell/Contract, Bewertungslogik, PM/Koordination. DB-Setup ist **delegiert** (Leon H / Andi / Ganter) — nur noch überwachen + mergen.
@@ -102,7 +102,7 @@
 |---|---|---|---|---|
 | DTB-12 | P1.1 Datenmodell-Schema festzurren | ✅ Erledigt | Lucas | 6 Pydantic-Modelle + schema.sql |
 | DTB-19 | P1.2 OpenAPI-Spez v1 | ✅ Erledigt | Ganter | #48 gemergt |
-| DTB-26 | P1.3 Seam-Sync G1+G3 | ✅ Erledigt | Ganter | beidseitiges Sign-off |
+| DTB-26 | P1.3 Team-Sync G1+G3 | ✅ Erledigt | Ganter | beidseitiges Sign-off |
 | DTB-35 | P1.4 Contract v1 einfrieren + kommunizieren | ✅ Erledigt | Lucas | **v1.0 EINGEFROREN** — Rest: Tag + G3-Versand |
 
 ### DTB-8 — E-03 T0 Vertical Slice *(M2)* — **🔴 KRITISCHER PFAD**
