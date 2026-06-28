@@ -17,6 +17,15 @@ testpaths = ["tests"]
 markers = [
     "real_clock: Test laeuft gegen die echte Uhr (ohne die frozen_now-Fixture)",
 ]
+# .env automatisch laden, damit die DB-Integrationstests ohne manuelles `set -a && . ./.env`
+# mitlaufen (footgun-Bug: sonst skippen sie still, weil die App os.environ liest und der
+# Default `DB_PASSWORD=changeme` nicht zur echten DB passt). CI-sicher: `override=False`
+# laeset eine bereits gesetzte Prozess-Env (z. B. CI-Secrets) UNVERAENDERT, .env fuellt
+# nur Luecken. In CI ohne .env laeuft die Suite weiter (DB-Tests skippen dann bewusst).
+# WICHTIG: pytest-dotenv loest env_files relativ zum CWD auf, nicht zu dieser Datei — pytest
+# MUSS aus 04-Source-code/ aufgerufen werden, sonst findet es keine .env (s. docs/agent-live-test-manual.md §6).
+env_files = [".env"]
+env_override = false
 
 [tool.ruff]
 line-length = 100
