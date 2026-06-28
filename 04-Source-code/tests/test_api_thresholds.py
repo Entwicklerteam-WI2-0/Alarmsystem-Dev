@@ -50,7 +50,8 @@ def test_get_thresholds_reflects_runtime_not_hardcoded():
     # Arrange: eine bekannte, vom Default abweichende Sektion in den Runtime-Graph injizieren.
     # Aus dem realen Loader abgeleitet (replace) -> Cross-Section-Invarianten (__post_init__)
     # bleiben gewahrt, und der Test bricht nicht, wenn neue Schwellen-Sektionen hinzukommen.
-    fake = replace(load_thresholds(), vereisung=VereisungsSchwellen(1.0, 2.0, 3.0, 4.0))
+    # gefrierpunkt <= prognose.t_s_grenz_c (Default 0.0) wahrt die Cross-Section-Invariante.
+    fake = replace(load_thresholds(), vereisung=VereisungsSchwellen(-1.0, 2.0, 3.0, 4.0))
     app.dependency_overrides[get_thresholds] = lambda: fake
     # Act
     resp = client.get("/v1/thresholds")

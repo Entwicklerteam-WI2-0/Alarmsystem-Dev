@@ -1,6 +1,6 @@
 # Aktueller Stand
 
-> Stand: 2026-06-25 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+> Stand: 2026-06-27 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
 
 ## Woran wir gerade arbeiten
 - **DTB-13 (Plausibilität + Stale-Erkennung, Andreas/Petzold):** Umgesetzt auf
@@ -29,7 +29,7 @@
 1. **DTB-13 abschließen:** PR erstellen (nach Genehmigung durch Lucas), Jira-Link DTB-43 dependsOn DTB-13 setzen.
 2. **DTB-28 Persistenz:** PyMySQL-Repository implementieren (`save`, `get_latest`); damit wird DTB-13 operational.
 3. **DTB-38 Bewertungslogik:** Kaskade aus Schwellenwerte.md §2 + Fail-safe-Integration DTB-13 (≥80 % Coverage).
-4. **M2 (Ende Woche 2):** API + Datenmodell final; G1/G3-Seam-Sync.
+4. **M2 (Ende Woche 2):** API + Datenmodell final; G1/G3-Team-Sync.
 
 ## Offene Punkte / Blocker
 - **MySQL-Vorgabe vollständig eingearbeitet (22.06.):** Backend-Konzept §6/§6a, README, Entscheidungslog
@@ -64,7 +64,7 @@
   + neues `Umstellung-Pull-3Faktor-Faktenblatt.md`. **PR #32 gemergt** (455d71f), main aktuell.
 - **40%-Klarstellung** (nur Prüfungs-Notengewicht, KEINE Arbeits-/Architekturregel) in CLAUDE.md/AGENTS.md + global.
 - **Branch-Cleanup erledigt:** 5 abgearbeitete Branches gelöscht, **`feat/ci-base` (#18) unberührt**, Remote geprunet.
-- **Neu offen:** (1) 40%-Klarstellung in `Devteam-vibecodes`-Skill-Sources nachziehen. (2) **G1-Seam-Sync final**
+- **Neu offen:** (1) 40%-Klarstellung in `Devteam-vibecodes`-Skill-Sources nachziehen. (2) **G1-Team-Sync final**
   (`humidity_pct` = Luftfeuchte; Feldnamen + `measured_at` bestätigen; Contract **P1.4** einfrieren).
   (3) E-ID-Kollision E-29/E-30 (Altbestand, DRI Lucas).
 
@@ -110,7 +110,7 @@
   neue G2→G3-Serving-Sektion).
 - **Offen/weiter:** **Backend-Konzept §6/§7** echte E-35-Prosa (noch SQLAlchemy/Docker) + `docker-compose.yml`
   entfernen + `Projektplan-Jira-Backlog-G2.md` (SQLite) nachziehen. CI-DB-Bereitstellung (DTB-11) mit Johannes.
-  Jira-Link 10011 (Altbestand) manuell löschen. G1-Seam-Sync (P1.4) → dann DTB-19 OpenAPI + DTB-28 Persistenz.
+  Jira-Link 10011 (Altbestand) manuell löschen. G1-Team-Sync (P1.4) → dann DTB-19 OpenAPI + DTB-28 Persistenz.
 
 ## Update [23.06., ~14:15] — API-Contract verankert + Backlog-Übersicht (architekt)
 - **G1→G2 API-Vertrag final dokumentiert:** `Backend-Konzept.md` §9 enthält jetzt den verbindlichen
@@ -152,7 +152,7 @@
   (3 MEDIUM-Fixes eingearbeitet).
 - **Operationszahl** „≥ 15" (alte DoD) durch Architekten-Vorlage (DRI) **überholt** → Lean-Set ~6+2 maßgeblich
   (im Datei-Header dokumentiert).
-- **Neu offen:** (1) Branch pushen + PR (DTB-19). (2) **DTB-26 G3-Sign-off** (`seam-sync-confirmed`)
+- **Neu offen:** (1) Branch pushen + PR (DTB-19). (2) **DTB-26 G3-Sign-off** (`team-sync-confirmed`)
   einsammeln — **G1-Seite: Lucas**. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves
   (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
 
@@ -161,7 +161,7 @@
   `POST /v1/alarms/{id}/ack` → `409` bei Double-Ack (NF-09, nicht idempotent); `AckRequest.operator`
   → `minLength: 1`; g1-`status` → Sync-Hinweis auf `SensorStatus`. Validator erneut grün; doppelter 503
   (Web-Fix 865de56 + Fix) konsolidiert. DTB-19 damit fertig & review-fest.
-- **Neu offen:** (1) **PR #48 mergen** (Reviewer/Lucas). (2) **DTB-26 G3-Sign-off** (`seam-sync-confirmed`)
+- **Neu offen:** (1) **PR #48 mergen** (Reviewer/Lucas). (2) **DTB-26 G3-Sign-off** (`team-sync-confirmed`)
   — G1-Seite: Lucas. (3) Tag `api-v1.0` erst nach G1/G3-Bestätigung. (4) LOW-Nice-to-haves offen
   (Health-`enum`, SSE-`$ref`, ack-State, `driving_factor`-enum).
 
@@ -380,3 +380,24 @@ PR #99 (`/v1/thresholds`) = Contract-Erweiterung außerhalb des Freeze → separ
 - **Doku-PR offen:** `docs/dtb-27-entscheidungslog` (persönl. Entscheidungslog inkl. NF-09-Abwägung +
   Backend-Konzept §4/§7). Operator-Hinweis (beenden-60s-Fenster) als `.txt` an G3/Nick weiterzuleiten.
 —architekt/Petzold
+
+## Update [27.06. — DTB-33 30-min-T_s-Prognose-Producer fertig (Leon H.)
+- **DTB-33 (FA-06) umgesetzt** auf `feat/dtb-33-forecast-producer`:
+  - `src/forecast/trend.py`: reine Funktion `forecast_surface_temp()` — lineare Regression auf relative Minuten,
+    Projektion `horizon_min` voraus, fail-safe `None` bei zu wenig Punkten/Null-Varianz/nicht-endlichen Werten.
+  - `src/forecast/bridge.py`: `compute_forecast_for_cycle()` liest Historie via `get_since` und ruft den Producer;
+    `None` bei fehlendem Reading oder `RepositoryError` (NF-01).
+  - Config-Erweiterung `PrognoseSchwellen`: `trend_window_min`, `horizon_min`, `min_points`,
+    `max_readings_limit` (DB-Lastbegrenzung); voll validiert (Ganzzahl, Grenzen, `max >= min`).
+  - Verdrahtung in `AssessmentService.assess_reading()` und `main.py`-Scheduler.
+  - `forecast_surface_temp_c` wird im `Assessment`-Snapshot persistiert (FA-05/NF-09), ohne den G2→G3-Wire
+    (`AssessmentCurrent`) zu berühren.
+  - Schema-Migration `migrations/schema.sql` idempotent mit `ADD COLUMN IF NOT EXISTS` + Kompatibilitätshinweis
+    (MariaDB/MySQL ≥ 8.0.21).
+- **Review-Runden eingearbeitet:** `now` vor dem Poll gesetzt (Audit-Konsistenz), `min_points`-Obergrenze,
+    explizites `limit` bei `get_since`, Testlücke "Reading vorhanden, History leer", Docstring-Update.
+- **Qualität:** 392 passed / 14 skipped, `ruff` sauber, `tools/check_hardcoded_thresholds.py` OK,
+    Coverage assessment/forecast/config **99 %**.
+- **Branch mit `main` synchronisiert** (Merge-Commit `1aa2485` / Folge-Merge nach PR #107/#99/#112); keine offenen Konflikte.
+- **Entscheidungen:** 3 Einträge im persönlichen `Hartling-Entscheidungslog`.
+- **Offen:** PR #110 Reviewer-Freigabe, Merge durch Lucas.

@@ -58,7 +58,12 @@ class AssessmentService:
         self._assessment_repo = assessment_repo
         self._audit_repo = audit_repo
 
-    def assess_reading(self, reading: Reading | None, now: datetime) -> Assessment:
+    def assess_reading(
+        self,
+        reading: Reading | None,
+        now: datetime,
+        forecast_surface_temp_c: float | None = None,
+    ) -> Assessment:
         """Bewertet ein (frisch gepolltes) Reading, persistiert + auditiert das Ergebnis.
 
         NF-01-Enforcement (Reihenfolge bewusst, Fail-safe vor Bewertung):
@@ -69,6 +74,9 @@ class AssessmentService:
             reading: Das zuletzt gepollte Reading (vom Poller). `None`, wenn der
                 Poll fehlschlug (G1 nicht erreichbar / verworfen) -> Fail-safe.
             now: Bewertungszeitpunkt (UTC, zeitzonenbewusst).
+            forecast_surface_temp_c: Optionale 30-min-T_s-Prognose (DTB-33/FA-06)
+                fuer die GELB-Vorwarnung. `None` = keine Prognose -> ohne Einfluss
+                auf die Bewertung. Nur im Gutfall (nicht stale/fault) wirksam.
 
         Returns:
             Das persistierte Assessment (mit vergebener `id`).
@@ -114,6 +122,7 @@ class AssessmentService:
                 reading.surface_temp_c,
                 reading.dew_point_c,
                 self._thresholds,
+                forecast_surface_temp_c=forecast_surface_temp_c,
             )
             delta_t = (
                 None
@@ -137,6 +146,7 @@ class AssessmentService:
                 dew_point_c=reading.dew_point_c,
                 delta_t=delta_t,
                 humidity_pct=reading.humidity_pct,
+                forecast_surface_temp_c=forecast_surface_temp_c,
             )
 
         assessment_id = self._assessment_repo.save(assessment)
