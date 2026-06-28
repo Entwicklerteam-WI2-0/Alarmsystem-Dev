@@ -19,10 +19,23 @@ Schichten (ADR E-40):
   Schicht 6 Serve-Zeit     — gespeichertes GRUEN altert bis stale_timeout ablaeuft
                              -> build_assessment_current -> unknown, nie GRUEN
 
+Schicht 2 hat zwei Tests:
+  Schicht 2  (Defense-in-Depth) — fault-Reading direkt am Service -> unknown.
+  Schicht 2a (REALER Pfad)      — G1 meldet status=fault -> Poller poll() = None
+                                  (HTTP gemockt) -> Service -> unknown. Belegt den
+                                  tatsaechlichen Produktionsfluss (im realen Fluss
+                                  erreicht ein fault-Reading den Service-fault-Zweig
+                                  nie, weil der Poller es vorher verwirft).
+
 Mehrwert:
   - Alle sechs E-40-Schichten sind explizit benannt und maschinell geprueft.
+  - Schicht 2a belegt den ECHTEN Fault-Pfad (Poller -> None), nicht nur die
+    Defense-in-Depth-Linie im Service (toter Service-Zweig im aktuellen Fluss).
   - Schicht 3 testet den Poller-Validierungspfad (_build_reading ohne HTTP-Layer).
-  - Schicht 4 ist ein neuer Fall: DB-Ausfall -> 503 (bisher kein dedizierter Test).
+    Achtung: check_plausibility (Sprung/Flatline) ist NICHT verdrahtet (toter Code)
+    -> braucht bei Verdrahtung einen eigenen Test (Doc am Test).
+  - Schicht 4 ist ein neuer Fall: DB-Ausfall -> 503; parametrisiert ueber BEIDE
+    DB-Lesepfade (assessment_repo UND reading_repo).
   - Schicht 6 testet build_assessment_current direkt (nicht via HTTP-Endpoint),
     ergaenzend zu test_e2e_failsafe_api.py (dort via TestClient + monkeypatch).
 
@@ -38,6 +51,7 @@ Referenzen: NF-01, RB-01, E-34, E-36, E-40, DTB-13, DTB-43, DTB-49, DTB-64.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import Mock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -51,6 +65,12 @@ from src.model.schemas import Assessment, Reading
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.repository import InMemoryReadingRepository, RepositoryError
 
+# Modul-weiter TestClient: aktuell existiert genau EIN API-Test in dieser Datei
+# (Schicht 4). Kommt ein weiterer API-Test hinzu, MUSS er — wie Schicht 4 — den
+# Runtime via app.dependency_overrides[get_runtime] setzen; ohne Override liefe die
+# echte lifespan (build_runtime -> DB/G1) und der Test wuerde mit 503 fehlschlagen.
+# Die autouse-Fixture _cleanup_app_state raeumt overrides + app.state nach jedem Test,
+# damit kein Runtime in den naechsten Test leckt (Test-Isolation).
 _CLIENT = TestClient(app)
 
 
@@ -69,6 +89,50 @@ class _AssessmentRepoDBFehler(InMemoryAssessmentRepository):
 
     def get_latest(self) -> Assessment | None:  # type: ignore[override]
         raise RepositoryError("Test-Stub: DB ausgefallen (Schicht 4, E-40)")
+
+
+class _ReadingRepoDBFehler(InMemoryReadingRepository):
+    """In-Memory-Stub, dessen get_latest immer RepositoryError wirft.
+
+    Gegenstueck zu _AssessmentRepoDBFehler fuer den ZWEITEN DB-Lesepfad im
+    Endpoint (reading_repo.get_latest, main.py ~Z. 420). Belegt, dass derselbe
+    except-Block auch hier fail-safe auf 503 abbildet (E-40 Schicht 4).
+    """
+
+    def get_latest(self, sensor_id: str, limit: int = 1):  # type: ignore[override]
+        raise RepositoryError("Test-Stub: DB ausgefallen beim Reading-Read (Schicht 4, E-40)")
+
+
+def _ok_health_response() -> Mock:
+    """Mock fuer eine erfolgreiche GET /health-Antwort (200, raise_for_status no-op)."""
+    response = Mock()
+    response.raise_for_status.return_value = None
+    return response
+
+
+def _fault_current_response(payload: dict) -> Mock:
+    """Mock fuer eine GET /current-Antwort mit dem uebergebenen JSON-Payload (200)."""
+    response = Mock()
+    response.json.return_value = payload
+    response.raise_for_status.return_value = None
+    return response
+
+
+def _mock_g1_get(current_payload: dict) -> Mock:
+    """Baut einen httpx.get-Ersatz, der /health (200) und /current (payload) beantwortet.
+
+    Spiegelt das Mock-Muster aus test_ingest.py (_mock_get_for): der Poller fragt
+    erst /health (muss 200 sein, sonst kein /current) und dann /current ab.
+    """
+
+    def side_effect(url: str, **_kwargs: object) -> Mock:
+        if url.endswith("/health"):
+            return _ok_health_response()
+        if url.endswith("/current"):
+            return _fault_current_response(current_payload)
+        raise ValueError(f"Unerwartete URL im Poller-Mock: {url}")
+
+    return Mock(side_effect=side_effect)
 
 
 # ---------------------------------------------------------------------------
@@ -192,11 +256,23 @@ def test_schicht2_sensor_fault_nie_gruen(
     thresholds: Thresholds,
     sensor_id: str,
 ) -> None:
-    """E-40 Schicht 2: reading.status=fault -> AssessmentService -> unknown, nie GRUEN (NF-01).
+    """E-40 Schicht 2 (Defense-in-Depth): reading.status=fault am Service -> unknown, nie GRUEN.
 
-    Belegt: der Sensor-Fault-Pfad in AssessmentService (service.py) greift VOR
-    der regulaeren Kaskade. Messwerte koennen GRUEN anzeigen — fault ueberstimmt
-    sie (NF-01). Das ausloesende Reading wird verknuepft (NF-05).
+    WICHTIG — dies testet einen Defense-in-Depth-Pfad, NICHT den realen Fluss:
+    Im Produktionsfluss verwirft bereits der Poller ein fault-Reading
+    (poller._build_reading Z. ~181-183 -> poll() gibt None zurueck), sodass der
+    Service in der Praxis `None` (nicht ein fault-Reading) erhaelt. Der
+    `elif reading.status is FAULT`-Zweig in service.py (~Z. 100) ist daher im
+    aktuellen Single-Poller-Fluss nicht direkt erreichbar — er bleibt aber als
+    zweite Verteidigungslinie wichtig (kuenftige Aufrufer/Sensor-Quellen, die ein
+    fault-Reading direkt durchreichen). Dieser Test sichert genau diese Linie ab.
+
+    Den REALEN Fault-Pfad (Poller -> None -> Service -> unknown) belegt
+    `test_schicht2a_fault_realer_poller_pfad_liefert_none` unten.
+
+    Belegt hier: der Sensor-Fault-Zweig in AssessmentService greift VOR der
+    regulaeren Kaskade. Messwerte koennen GRUEN anzeigen — fault ueberstimmt sie
+    (NF-01). Das ausloesende Reading wird verknuepft (NF-05).
     """
     now = datetime.now(UTC)
     # Frisches Reading mit GRUEN-Werten, aber Sensor meldet fault.
@@ -210,6 +286,55 @@ def test_schicht2_sensor_fault_nie_gruen(
     # E-40 Schicht 2: fault -> unknown, nie GRUEN (NF-01)
     assert result.risk_level is RiskLevel.UNKNOWN
     assert result.reading_id == reading_mit_id.id  # ausloesendes Reading verknuepft
+    persisted = assessment_repo.get_latest()
+    assert persisted is not None
+    assert persisted.risk_level is RiskLevel.UNKNOWN
+
+
+def test_schicht2a_fault_realer_poller_pfad_liefert_none(
+    poller: Poller,
+    reading_repo: InMemoryReadingRepository,
+    assessment_repo: InMemoryAssessmentRepository,
+    assessment_service: AssessmentService,
+) -> None:
+    """E-40 Schicht 2 (REALER Pfad): G1 meldet status=fault -> Poller None -> Service unknown.
+
+    Belegt den TATSAECHLICHEN Produktionsfluss (im Gegensatz zum Defense-in-Depth-
+    Test oben): G1 liefert via GET /current ein Snapshot mit `status=fault` ->
+    poller._build_reading verwirft es fail-safe -> poll() gibt None zurueck (kein
+    Reading wird persistiert) -> AssessmentService.assess_reading(None) -> unknown,
+    nie GRUEN (NF-01). Damit ist die E-40-Schicht-2-Bedingung Ende-zu-Ende belegt.
+
+    Die HTTP-Schicht (G1 ist external) wird ueber das Mock-Muster aus test_ingest.py
+    gestellt: /health 200, /current liefert den fault-Payload. Die Plausibilitaets-/
+    Stale-Schwellen kommen aus der echten Config (poller-Fixture, NF-05).
+    """
+    now = datetime.now(UTC)
+    # G1-Snapshot mit GRUEN-Werten, aber status=fault. measured_at frisch (kein Stale),
+    # damit AUSSCHLIESSLICH die fault-Bedingung den Verwurf ausloest.
+    fault_payload = {
+        "sensor_id": "anr-rwy-01",
+        "measured_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "surface_temp_c": 5.0,
+        "air_temp_c": 6.0,
+        "humidity_pct": 50.0,
+        "status": "fault",
+    }
+
+    # Schicht 2a (real): Poller pollt G1 -> fault -> None (kein Reading persistiert)
+    with patch("src.ingest.poller.httpx.get", _mock_g1_get(fault_payload)):
+        reading = poller.poll()
+
+    assert reading is None, (
+        "Poller muss ein G1-Snapshot mit status=fault verwerfen (E-40 Schicht 2, realer Pfad)"
+    )
+    # reading_repo (mit poller geteilt) darf kein fault-Reading gespeichert haben.
+    assert reading_repo.get_latest("anr-rwy-01", limit=1) == ()
+
+    # Schicht 2a (real, Forts.): Service bewertet None -> unknown, nie GRUEN (NF-01)
+    result = assessment_service.assess_reading(reading, now)
+    assert result.risk_level is RiskLevel.UNKNOWN
+    assert result.reading_id is None  # kein Reading-Bezug moeglich (poll() lieferte None)
     persisted = assessment_repo.get_latest()
     assert persisted is not None
     assert persisted.risk_level is RiskLevel.UNKNOWN
@@ -263,6 +388,16 @@ def test_schicht3_plausibilitaet_ausserhalb_grenzen_nie_gruen(
     a) Poller._build_reading verwirft surface_temp_c > plausibilitaet.max_temp_c -> None.
     b) AssessmentService.assess_reading(reading=None) -> unknown (NF-01).
     Die Plausibilitaetsgrenzen kommen aus config/thresholds.json (NF-05, kein Hardcode).
+
+    SCOPE-HINWEIS (wichtig): E-40 §3 nennt als Auslöser auch "Sprung / Flatline /
+    Zeitstempelfehler" -> `check_plausibility` (src/assessment/failsafe.py). Diese
+    Sprung-/Flatline-Funktion ist zwar implementiert und unit-getestet (test_failsafe.py),
+    aber AKTUELL in KEINEM Produktionscode verdrahtet (weder Poller noch Service rufen
+    sie auf — verifiziert per grep). Dieser Test deckt daher AUSSCHLIESSLICH die real
+    aktive Schicht-3-Stufe ab: die Bereichs-/Range-Validierung im Poller (_build_reading).
+    Sobald `check_plausibility` in den Produktionsfluss eingebunden wird (separater Task,
+    NICHT Teil von DTB-49), MUSS ein eigener Integrationstest fuer den Sprung-/Flatline-
+    Pfad ergaenzt werden (G1 liefert zwei Snapshots mit unplausiblem Sprung -> unknown).
     """
     now = datetime.now(UTC)
     max_temp = thresholds.plausibilitaet.max_temp_c
@@ -296,18 +431,33 @@ def test_schicht3_plausibilitaet_ausserhalb_grenzen_nie_gruen(
 # ---------------------------------------------------------------------------
 
 
-def test_schicht4_db_ausfall_liefert_503(runtime: Runtime) -> None:
-    """E-40 Schicht 4: RepositoryError bei assessment_repo.get_latest -> HTTP 503, nie GRUEN.
+@pytest.mark.parametrize(
+    "broken_repo",
+    ["assessment_repo", "reading_repo"],
+    ids=["assessment_repo_db_fehler", "reading_repo_db_fehler"],
+)
+def test_schicht4_db_ausfall_liefert_503(runtime: Runtime, broken_repo: str) -> None:
+    """E-40 Schicht 4: RepositoryError bei einem der DB-Reads -> HTTP 503, nie GRUEN.
 
-    Beweist: GET /v1/assessment/current faengt RepositoryError contract-konform ab
-    und antwortet mit 503 Error{code, message} — kein 500, kein {detail}-Feld,
-    und niemals risk_level=green im Body (NF-01, E-40 Schicht 4, Contract-Format D).
+    Beweist fuer BEIDE DB-Lesepfade im Endpoint (assessment_repo.get_latest UND
+    reading_repo.get_latest, main.py ~Z. 419-420, gemeinsamer except-Block):
+    GET /v1/assessment/current faengt RepositoryError contract-konform ab und
+    antwortet mit 503 Error{code, message} — kein 500, kein {detail}-Feld, und
+    niemals risk_level=green im Body (NF-01, E-40 Schicht 4, Contract-Format D).
     """
+    # Genau das parametrisierte Repo durch einen Stub ersetzen, der RepositoryError
+    # wirft; das jeweils andere bleibt das echte In-Memory-Double (Leerstand -> None,
+    # was im Endpoint VOR dem Throw des gebrochenen Repos kein Problem ist).
+    broken_assessment_repo = (
+        _AssessmentRepoDBFehler() if broken_repo == "assessment_repo" else runtime.assessment_repo
+    )
+    broken_reading_repo = (
+        _ReadingRepoDBFehler() if broken_repo == "reading_repo" else runtime.reading_repo
+    )
     broken_runtime = Runtime(
         thresholds=runtime.thresholds,
-        reading_repo=runtime.reading_repo,
-        # Nur assessment_repo wird gebrochen — erster get_latest-Aufruf im Endpoint.
-        assessment_repo=_AssessmentRepoDBFehler(),
+        reading_repo=broken_reading_repo,
+        assessment_repo=broken_assessment_repo,
         audit_repo=runtime.audit_repo,
         poller=runtime.poller,
         service=runtime.service,
