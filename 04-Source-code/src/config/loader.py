@@ -272,6 +272,10 @@ def load_thresholds(path: Path | str | None = None) -> Thresholds:
         raise ConfigError(
             f"Konfigurationsdatei ist kein gültiges JSON: {config_path} ({exc})"
         ) from exc
+    # Datei-spezifische Pruefung mit `config_path` in der Meldung: parse_thresholds prueft
+    # `dict` zwar selbst nochmal (generische Meldung), aber hier kennen wir den Pfad und
+    # koennen ihn nennen -> deutlich nuetzlichere Diagnose. Die Doppelpruefung ist daher
+    # bewusst (kein Refactoring-Rest), nicht redundanter Toter Code.
     if not isinstance(raw, dict):
         raise ConfigError(f"Konfiguration muss ein JSON-Objekt sein: {config_path}")
 

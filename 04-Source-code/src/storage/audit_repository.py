@@ -50,6 +50,33 @@ def _serialize_detail(detail: object | None) -> str | None:
         raise RepositoryError(f"Audit-Detail ist nicht JSON-serialisierbar: {exc}") from exc
 
 
+def write_audit_entry(cursor: Cursor, entry: AuditLogEntry) -> int | None:
+    """Schreibt EINEN Audit-Eintrag ueber den uebergebenen Cursor; gibt die vergebene
+    AUTO_INCREMENT-ID zurueck (oder None, falls keine vergeben wurde).
+
+    Bewusst eine **Modul-Funktion** (kein Klassen-/`self`-Bezug): andere Schreibpfade im
+    storage-Paket -- z. B. threshold_set_repository, das den Audit-Eintrag in DERSELBEN
+    Transaktion wie den Schwellensatz schreibt (NF-09-Atomaritaet) -- importieren genau
+    diese Funktion, OHNE an die konkrete Repository-Klasse zu koppeln. Cursor-basiert,
+    damit der Aufrufer Transaktion + Commit in einer Hand behaelt. Die kanonische
+    INSERT-Form (_INSERT_SQL) lebt nur hier -- keine Duplikat-SQL in anderen Modulen.
+    JSON-`detail` wird ueber _serialize_detail fail-safe serialisiert (nicht-serialisierbar
+    -> RepositoryError, bevor das execute laeuft).
+    """
+    cursor.execute(
+        _INSERT_SQL,
+        (
+            entry.ts,
+            entry.event_type.value,
+            entry.entity_type,
+            entry.entity_id,
+            entry.actor,
+            _serialize_detail(entry.detail),
+        ),
+    )
+    return cursor.lastrowid
+
+
 class AuditRepository(ABC):
     """Abstrakte append-only Persistenz fuer Audit-Log-Eintraege.
 
@@ -111,35 +138,10 @@ class MySqlAuditRepository(AuditRepository):
         # Optionale Config (sonst aus Env via database.py); erleichtert Tests.
         self._config = config
 
-    @staticmethod
-    def _write_entry(cursor: Cursor, entry: AuditLogEntry) -> int | None:
-        """Schreibt EINEN Audit-Eintrag ueber den uebergebenen Cursor und gibt die
-        vergebene AUTO_INCREMENT-ID zurueck (oder None, falls keine vergeben wurde).
-
-        Bewusst cursor-basiert (kein eigener Verbindungs-/Transaktions-Aufbau): so kann
-        ein Aufrufer den Audit-Eintrag in DERSELBEN Transaktion wie eine andere
-        Schreiboperation halten (NF-09-Atomaritaet, z. B. threshold_set + threshold_changed).
-        Die kanonische INSERT-Form (_INSERT_SQL) lebt nur hier -- keine Duplikat-SQL in
-        anderen Modulen. JSON-`detail` wird ueber _serialize_detail fail-safe serialisiert
-        (nicht-serialisierbar -> RepositoryError, bevor das execute laeuft).
-        """
-        cursor.execute(
-            _INSERT_SQL,
-            (
-                entry.ts,
-                entry.event_type.value,
-                entry.entity_type,
-                entry.entity_id,
-                entry.actor,
-                _serialize_detail(entry.detail),
-            ),
-        )
-        return cursor.lastrowid
-
     def append(self, entry: AuditLogEntry) -> int:
         try:
             with transaction(self._config) as conn, conn.cursor() as cursor:
-                row_id = self._write_entry(cursor, entry)
+                row_id = write_audit_entry(cursor, entry)
         except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
             # Verbindungs-, Config- UND Query-Fehler (z. B. CHECK-Constraint-Verletzung
             # bei ungueltigem event_type, Broken-Pipe mitten in der Query) auf die

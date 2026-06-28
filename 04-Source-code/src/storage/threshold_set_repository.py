@@ -29,7 +29,7 @@ from typing import Any
 import pymysql
 
 from src.model.schemas import AuditLogEntry, ThresholdSet
-from src.storage.audit_repository import MySqlAuditRepository
+from src.storage.audit_repository import write_audit_entry
 from src.storage.database import (
     DatabaseConfig,
     DatabaseConfigError,
@@ -159,11 +159,10 @@ class MySqlThresholdSetRepository(ThresholdSetRepository):
                         "(AUTO_INCREMENT auf 'threshold_set' pruefen)"
                     )
                 # Audit-Eintrag in DERSELBEN Transaktion ueber die kanonische Audit-Schreibform
-                # (kein dupliziertes SQL, Schemaaenderung an audit_log nur an einer Stelle):
-                # an die gerade vergebene Satz-ID binden (NF-09-Atomaritaet).
-                MySqlAuditRepository._write_entry(
-                    cursor, audit_entry.model_copy(update={"entity_id": new_id})
-                )
+                # (kein dupliziertes SQL, Schemaaenderung an audit_log nur an einer Stelle;
+                # Modul-Funktion statt Klassen-Kopplung): an die gerade vergebene Satz-ID
+                # binden (NF-09-Atomaritaet).
+                write_audit_entry(cursor, audit_entry.model_copy(update={"entity_id": new_id}))
         except RepositoryError:
             # Bereits eine Domaenen-Exception (z. B. fehlende ID, nicht serialisierbares
             # Audit-Detail) -> unveraendert weiter.

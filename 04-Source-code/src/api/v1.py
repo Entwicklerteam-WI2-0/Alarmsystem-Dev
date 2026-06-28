@@ -112,6 +112,13 @@ def create_threshold_version(
 
     RB-01-neutral: aendert nur die Entscheidungs-Parameter, kein Aktor/keine Freigabe.
     """
+    # Fehler-Muster bewusst lokal (nicht ueber app.exception_handler): beide Fehlerquellen
+    # dieses Endpoints werden hier auf je EINE Contract-Antwort abgebildet — ConfigError ->
+    # 422 (Client), RepositoryError -> 503 (Server) — und bleiben so co-lokal sichtbar. Ein
+    # globaler Handler fuer die endpoint-spezifische 422-Meldung waere Indirektion ohne
+    # Nutzen; RepositoryError wird zudem auch anderswo (assessment/current in main.py) lokal
+    # pro Endpoint abgebildet -> ein globaler Handler wuerde dort Verhalten aendern.
+    #
     # Volle fachliche Validierung ueber den kanonischen Loader — identische Regeln wie
     # die Datei-Config (Pflicht-Sektionen, endliche Zahlen, Cross-Section-Invarianten).
     # Ungueltiger Body -> 422 (Client-Fehler, der Body ist schuld).
