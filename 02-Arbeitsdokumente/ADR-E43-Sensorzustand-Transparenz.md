@@ -88,3 +88,12 @@ als Folge-Task **nach M3** umgesetzt, mit der unten empfohlenen, eingriffsarmen 
 - **E-31** (`/health` getrennt von Datenaktualität) · **E-36** (Wire-Contract, `unknown`+`is_stale`) ·
   **E-40** (Multi-Layer-Fail-safe, Schichten 1/2/6) · **E-42** (Sprung-/Flatline-Basis, Vergiftungsschutz).
 - Tasks: **DTB-43** (Serve-Pfad), **DTB-49** (Fail-safe-Integrationstests, `test_schicht2a`), **DTB-64** (Verdrahtung).
+
+## Nachtrag (2026-06-28) — G3-Abstimmung (DTB-67) geklärt
+
+G3 (Nick, via Lucas) hat die offene Frage zu `explanation`/`driving_factor` auf `unknown`-Antworten beantwortet:
+- **`explanation` wird von G3 NICHT ausgelesen** (`unknown` = graue Ampel + „Unbekannt", kein Erklärungstext). Falls künftig genutzt: Präferenz **deutsche Prosa** (die Contract-Beispiele passen).
+- **`driving_factor = null` auf `unknown` ist akzeptiert** (entspricht dem G3-Mock); strukturierte Strings (`stale`/`sensor_fault`) wären ein **nicht-blockierender** Bonus zum späteren Stylen.
+- **Kein Breaking-Change** — G3 behandelt beide Felder bereits als `string | null`.
+
+**Folge für diese Entscheidung:** Variante C wird von „empfohlen post-M3" auf **konditional** herabgestuft — Umsetzung **nur, falls ein G3-Render-Pfad `driving_factor`/`explanation` tatsächlich konsumiert** (YAGNI). Begründung: kein aktueller Abnehmer, und die Fault-vs-Stale-Unterscheidung steht für den Betrieb **bereits** in den **Server-Logs** (Poller loggt `status=fault`) und im **Audit-Log** (`AuditEventType.sensor_fault`) zur Verfügung — das Wire-Feld wäre Redundanz. Für M3 ist **keine** Änderung nötig. Bezug: **DTB-67** (G3-Abstimmung, geklärt + erledigt).
