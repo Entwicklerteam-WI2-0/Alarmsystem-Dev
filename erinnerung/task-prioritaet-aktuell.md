@@ -110,6 +110,18 @@
 
 ---
 
+### Hinweis: G1-Sensor-Simulator (PR #144 `feat/g1-sim-tool`)
+
+Das Test-Tool unter `04-Source-code/tools/g1_sim/` validiert seit Review-Runde 5 die
+State-Eingaben konsistent: nicht-bool `health_down`, nicht-numerische Pflicht-Trias,
+negatives `age_s` und **`status: null`/fehlend** werden jeweils auf `stderr` gewarnt,
+aber **nicht geklemmt** — bewusst, damit gezielte Contract-Verstöße als Negativtest
+möglich bleiben (G2 reagiert fail-safe mit `unknown`). `pressure_hpa: null` erscheint
+absichtlich als `null` (Feld wird nicht weggelassen), damit G2s Null-Handling testbar
+bleibt; wer das Feld weglassen will, lässt es im State-JSON weg. Details: `tools/g1_sim/README.md`.
+
+---
+
 *Quelle: Reale Bestandsaufnahme vom 2026-06-27 gegen `origin/main` (HEAD `a55c075`).*
 *Worktree: `C:/Users/luceb/.worktrees/Alarmsystem-Dev-stand-docs`.*
 *Letzte Prüfung: 794 Tests grün, 94,55 % Coverage, ruff clean, 0 offene PRs.*

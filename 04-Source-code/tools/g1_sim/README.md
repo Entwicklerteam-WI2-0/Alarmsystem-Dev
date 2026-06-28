@@ -43,15 +43,19 @@ State-Datei (`g1_state.json`, Vorlage: `g1_state.example.json`) bearbeiten — d
 |---|---|---|
 | `surface_temp_c`/`air_temp_c`/`humidity_pct` | float | Messwerte (treiben die Ampel) |
 | `pressure_hpa` | float\|null | Kontext (optional) |
-| `status` | `ok`\|`fault` | `fault` → G2 verwirft Reading → `unknown` |
+| `status` | `ok`\|`fault`\|null | `fault` → G2 verwirft Reading → `unknown`. **`null`/fehlend → warnen wir, reichen aber durch** (Contract-Pflicht) |
 | `age_s` | int ≥ 0 | Sekunden, die `measured_at` zurückdatiert wird (Stale-Test). Negativ würde `measured_at` in die Zukunft setzen — nicht verwenden. |
 | `health_down` | bool | `true` → `/health` 503 → G2 pollt nicht → `unknown` |
 
 > Hand-Editierfehler sind tolerant — **kein Crash**: fehlendes/unlesbares/invalides JSON → Grün-Default;
 > unbekannte Keys (Tippfehler) und nicht-numerisches/negatives `age_s` werden ignoriert/geklemmt; alles
-> wird auf `stderr` gewarnt. Ein ungültiger `status` wird **bewusst durchgereicht** (nicht auf `ok`
-> geklemmt), damit ihr gezielte Contract-Verstöße als Negativtest schicken könnt — G2 reagiert darauf
-> fail-safe mit `unknown`, statt dass ein Tippfehler still zum sicheren `ok` wird.
+> wird auf `stderr` gewarnt. Ein ungültiger oder `null`/fehlender `status` wird **bewusst durchgereicht**
+> (nicht auf `ok` geklemmt), damit ihr gezielte Contract-Verstöße als Negativtest schicken könnt — G2
+> reagiert darauf fail-safe mit `unknown`, statt dass ein Tippfehler still zum sicheren `ok` wird.
+>
+> **`pressure_hpa: null`** erscheint absichtlich als `null` in der `/current`-Antwort (das Feld wird
+> **nicht** weggelassen). So könnt ihr G2s Null-Handling gezielt testen. Wer das Feld komplett weglassen
+> will, lässt es im State-JSON einfach weg.
 
 Erwartete G2-Reaktion (gegen aktuelle `config/thresholds.json`):
 
