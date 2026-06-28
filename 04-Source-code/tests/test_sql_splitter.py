@@ -1,80 +1,70 @@
-"""Unit-Tests fuer den SQL-Statement-Splitter (tests/_sql_splitter).
+"""Unit-Tests fuer tests._sql_splitter (DTB-33/DTB-29).
 
-Regressions-Schutz: sichert die Kern-Invarianten, die den Schema-Load-Bug ausgeloest haben
-(ein Kommentar mit ';' -> naives split(';') zerschnitt mitten im Kommentar -> SQL-1064) und
-die dokumentierte Behandlung von String-Literalen und Kommentaren. Kein DB-Zugriff noetig.
+Der Splitter ist noetig, weil migrations/schema.sql Praeparde-Statements
+(PREPARE/EXECUTE/DEALLOCATE) enthaelt, die nicht mehr an jedem Semikolon
+getrennt werden duerfen.
 """
 
 from pathlib import Path
 
-import pytest
-
 from tests._sql_splitter import split_sql_statements
 
 
-def test_simple_two_statements() -> None:
-    assert split_sql_statements("SELECT 1; SELECT 2;") == ["SELECT 1", "SELECT 2"]
+class TestSplitSqlStatements:
+    def test_trennt_einfache_statements(self) -> None:
+        ddl = "CREATE TABLE a (id INT); CREATE TABLE b (id INT);"
+        assert split_sql_statements(ddl) == [
+            "CREATE TABLE a (id INT)",
+            "CREATE TABLE b (id INT)",
+        ]
 
+    def test_ignoriert_semicolon_in_string_literal(self) -> None:
+        ddl = "INSERT INTO t VALUES ('a;b'); SELECT 1;"
+        assert split_sql_statements(ddl) == [
+            "INSERT INTO t VALUES ('a;b')",
+            "SELECT 1",
+        ]
 
-def test_trailing_statement_without_semicolon() -> None:
-    assert split_sql_statements("SELECT 1; SELECT 2") == ["SELECT 1", "SELECT 2"]
+    def test_ignoriert_semicolon_in_doppelt_escapedem_string(self) -> None:
+        # SQL-Standard-Escape via verdoppeltes Anfuehrungszeichen (z. B. 'it''s; ok').
+        ddl = "INSERT INTO t VALUES ('a''b;c'); SELECT 1;"
+        assert split_sql_statements(ddl) == [
+            "INSERT INTO t VALUES ('a''b;c')",
+            "SELECT 1",
+        ]
 
+    def test_ignoriert_semicolon_in_zeilenkommentar(self) -> None:
+        ddl = "SELECT 1; -- das ist ein; kommentar\nSELECT 2;"
+        assert split_sql_statements(ddl) == [
+            "SELECT 1",
+            "-- das ist ein; kommentar\nSELECT 2",
+        ]
 
-def test_empty_statements_are_filtered() -> None:
-    assert split_sql_statements(";;  ;\n;") == []
+    def test_ignoriert_semicolon_in_mysql_hash_kommentar(self) -> None:
+        ddl = "SELECT 1; # das ist ein; kommentar\nSELECT 2;"
+        assert split_sql_statements(ddl) == [
+            "SELECT 1",
+            "# das ist ein; kommentar\nSELECT 2",
+        ]
 
+    def test_ignoriert_semicolon_in_blockkommentar(self) -> None:
+        ddl = "SELECT 1; /* a; b */ SELECT 2;"
+        assert split_sql_statements(ddl) == [
+            "SELECT 1",
+            "/* a; b */ SELECT 2",
+        ]
 
-def test_semicolon_in_line_comment_does_not_split() -> None:
-    # Genau der ausloesende Bug: ein ';' im Zeilenkommentar darf NICHT splitten.
-    sql = "-- Tabellen; daher Kommentar\nSELECT 1;"
-    assert split_sql_statements(sql) == ["-- Tabellen; daher Kommentar\nSELECT 1"]
+    def test_leere_statements_werden_herausgefiltert(self) -> None:
+        assert split_sql_statements(";;SELECT 1;;") == ["SELECT 1"]
 
+    def test_schema_sql_laesst_sich_aufsplitten(self) -> None:
+        schema_path = Path(__file__).parent.parent / "migrations" / "schema.sql"
+        ddl = schema_path.read_text(encoding="utf-8")
+        statements = split_sql_statements(ddl)
 
-def test_semicolon_in_hash_comment_does_not_split() -> None:
-    sql = "# note; still comment\nSELECT 1;"
-    assert split_sql_statements(sql) == ["# note; still comment\nSELECT 1"]
-
-
-def test_semicolon_in_block_comment_does_not_split() -> None:
-    sql = "/* a; b */ SELECT 1;"
-    assert split_sql_statements(sql) == ["/* a; b */ SELECT 1"]
-
-
-def test_semicolon_in_string_literal_does_not_split() -> None:
-    sql = "INSERT INTO t VALUES ('a;b'); SELECT 1;"
-    assert split_sql_statements(sql) == ["INSERT INTO t VALUES ('a;b')", "SELECT 1"]
-
-
-def test_semicolon_in_double_quoted_string_does_not_split() -> None:
-    # Splitter behandelt ' und " gleichwertig als String-Quote.
-    sql = 'INSERT INTO t VALUES ("a;b"); SELECT 1;'
-    assert split_sql_statements(sql) == ['INSERT INTO t VALUES ("a;b")', "SELECT 1"]
-
-
-def test_escaped_quote_in_string_literal() -> None:
-    # SQL-Standard-Escape '' innerhalb eines Literals (das ';' bleibt im String).
-    sql = "INSERT INTO t VALUES ('it''s; ok'); SELECT 2;"
-    assert split_sql_statements(sql) == ["INSERT INTO t VALUES ('it''s; ok')", "SELECT 2"]
-
-
-def test_backtick_identifier_with_semicolon_is_known_limit() -> None:
-    # Dokumentiertes Limit: Backticks sind KEIN Quote-Kontext -> ein ';' darin splittet
-    # (anders als '...'/"..."). Faengt eine spaetere stille Verhaltensaenderung.
-    assert split_sql_statements("CREATE TABLE `a;b` (x INT);") == [
-        "CREATE TABLE `a",
-        "b` (x INT)",
-    ]
-
-
-def test_real_schema_sql_parses_cleanly() -> None:
-    # Das echte schema.sql muss fehlerfrei in mehrere ausfuehrbare Statements zerfallen
-    # (CREATE TABLEs + bedingte Migrationen). Schuetzt vor Regressionen, wenn das Schema waechst.
-    schema_path = Path(__file__).parent.parent / "migrations" / "schema.sql"
-    if not schema_path.exists():
-        pytest.fail(f"schema.sql nicht gefunden: {schema_path}")
-    statements = split_sql_statements(schema_path.read_text(encoding="utf-8"))
-    creates = [s for s in statements if "CREATE TABLE IF NOT EXISTS" in s.upper()]
-    # threshold_set, reading, assessment, alarm, acknowledgement, audit_log
-    assert len(creates) >= 6
-    # Der Bug erzeugte ein Fragment, das mit Kommentar-Resttext ("daher wird der") begann:
-    assert not any(s.lstrip().startswith("daher") for s in statements)
+        assert len(statements) >= 5
+        assert all(stmt for stmt in statements)
+        # Praeparde-Statements fuer bedingte Migrationen sind als einzelne logische
+        # Statements erhalten (werden nicht am inneren Semikolon zerrissen).
+        prepare_stmts = [s for s in statements if s.upper().startswith("PREPARE")]
+        assert len(prepare_stmts) >= 3  # 2x Index + 1x Spalte

@@ -1,4 +1,4 @@
-*Seam-Sync-Anfrage G1 → G2 (Versand-Vorlage). Sign-off von G1-Lead erhalten am 2026-06-23 → Naht G1-seitig eingefroren (siehe `Team-Sync-Entscheidungen.md`, DTB-26).*
+*Team-Sync-Anfrage G1 → G2 (Versand-Vorlage). Sign-off von G1-Lead erhalten am 2026-06-23 → Naht G1-seitig eingefroren (siehe `Team-Sync-Entscheidungen.md`, DTB-26).*
 
 ---
 
@@ -42,4 +42,4 @@ Mit dieser Bestaetigung ist die G1->G2 Naht auf unserer Seite eingefroren.
 Bestaetigt von G1:
 Name:       [Nils / G1-Lead]
 Datum:      2026-06-23
-Status:     seam-sync-confirmed G1->G2 v1
+Status:     team-sync-confirmed G1->G2 v1

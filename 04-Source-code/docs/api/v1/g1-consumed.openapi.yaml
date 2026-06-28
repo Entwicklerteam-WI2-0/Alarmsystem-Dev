@@ -14,9 +14,9 @@
 #   Poll-Intervall 30 s · Stale-Timeout 120 s (measured_at aelter -> unknown).
 #
 # Verhandlungsposition ggue. G1: measured_at und /health sind NICHT verhandelbar;
-# Feldnamen/Einheiten/optionale Felder per Seam-Sync (DTB-26) abstimmbar, solange
+# Feldnamen/Einheiten/optionale Felder per Team-Sync (DTB-26) abstimmbar, solange
 # die Pflicht-Trias (surface_temp_c, air_temp_c, humidity_pct) erhalten bleibt.
-# Status: FINAL — G1-Lead-Sign-off 2026-06-23 (Label seam-sync-confirmed); Teil von API-Contract v1.0.
+# Status: FINAL — G1-Lead-Sign-off 2026-06-23 (Label team-sync-confirmed); Teil von API-Contract v1.0.
 # =============================================================================
 
 openapi: 3.0.3
@@ -31,7 +31,7 @@ info:
 
 servers:
   - url: http://g1-sensorik.local
-    description: G1-Sensor-API (Adresse per Seam-Sync final, DTB-26)
+    description: G1-Sensor-API (Adresse per Team-Sync final, DTB-26)
 
 tags:
   - name: G1-Pull

@@ -25,6 +25,11 @@ def test_default_config_laedt_kaskaden_schwellen_aus_schwellenwerte_md():
     assert thresholds.vereisung.delta_t_kondensation_k == 0.0
     assert thresholds.vereisung.delta_t_feucht_k == 1.0
     assert thresholds.prognose.t_s_grenz_c == 0.0
+    # DTB-33 (FA-06): Trendfenster + Horizont + Mindest-Stuetzstellen parametrierbar.
+    assert thresholds.prognose.trend_window_min == 30.0
+    assert thresholds.prognose.horizon_min == 30.0
+    assert thresholds.prognose.min_points == 3
+    assert thresholds.prognose.max_readings_limit == 1000
     assert thresholds.datenqualitaet.stale_timeout_s == 120.0
     assert thresholds.datenqualitaet.max_temp_jump_c_per_min == 5.0
     assert thresholds.datenqualitaet.flatline_timeout_min == 15.0
@@ -254,6 +259,20 @@ def test_max_gap_kleiner_als_stale_timeout_scheitert_laut(tmp_path):
         load_thresholds(datei)
 
 
+def test_horizon_groesser_als_trendfenster_scheitert_laut(tmp_path):
+    # Cross-Section (FA-06/NF-01): horizon_min darf nicht groesser als trend_window_min sein.
+    # Eine Extrapolation weit ausserhalb des Datenfensters liefert unbelastbare Prognosen
+    # und wuerde die 30-min-Vorwarnung praktisch entwerten (stiller Under-Alarm moeglich).
+    daten = _minimal_config()
+    daten["prognose"]["trend_window_min"] = 10.0
+    daten["prognose"]["horizon_min"] = 60.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
 @pytest.mark.parametrize("ungueltig", [True, float("nan"), float("inf"), 0.0, -1.0, 86_401.0])
 def test_betrieb_parameter_direktkonstruktion_validiert(ungueltig):
     # Direktkonstruktion (greift unabhängig vom Loader-Loop): bool/NaN/inf/<=0/zu-groß
@@ -315,6 +334,19 @@ def test_integer_schwellwert_wird_akzeptiert(tmp_path):
     thresholds = load_thresholds(datei)
 
     assert thresholds.prognose.t_s_grenz_c == 0
+
+
+def test_prognose_min_points_als_float_scheitert_laut(tmp_path):
+    # min_points zaehlt Stuetzstellen -> ein JSON-Float (3.0) ist Fehlkonfig und wird
+    # direkt im allgemeinen Typ-Gate als Ganzzahl-Feld abgelehnt (DTB-33 Review LOW),
+    # nicht erst im Sektions-Validator.
+    daten = _minimal_config()
+    daten["prognose"]["min_points"] = 3.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="Ganzzahl erwartet"):
+        load_thresholds(datei)
 
 
 def test_eigener_pfad_ist_parametrierbar(tmp_path):
@@ -408,6 +440,17 @@ def test_boolescher_schwellwert_scheitert_laut(tmp_path):
     # Arrange — bool ist in Python ein int-Subtyp, aber keine gültige Schwelle
     daten = _minimal_config()
     daten["vereisung"]["t_s_gefrierpunkt_c"] = True
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_unbekannter_schluessel_scheitert_laut(tmp_path):
+    # Arrange — Tippfehler/ueberzaehliger Key bliebe sonst still wirkungslos (NF-05)
+    daten = _minimal_config()
+    daten["prognose"]["min_poitns"] = 3  # Tippfehler statt min_points
     datei = tmp_path / "thresholds.json"
     datei.write_text(json.dumps(daten), encoding="utf-8")
 
@@ -509,7 +552,13 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "delta_t_kondensation_k": 0.0,
             "delta_t_feucht_k": 1.0,
         },
-        "prognose": {"t_s_grenz_c": 0.0},
+        "prognose": {
+            "t_s_grenz_c": 0.0,
+            "trend_window_min": 30.0,
+            "horizon_min": 30.0,
+            "min_points": 3,
+            "max_readings_limit": 1000,
+        },
         "hysterese": {
             "on_delay_s": 60.0,
             "max_continuity_gap_s": 120.0,
@@ -534,3 +583,57 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
         },
         "betrieb": {"poll_interval_s": 30.0},
     }
+
+
+@pytest.mark.parametrize(
+    "feld, wert",
+    [
+        ("trend_window_min", 0.0),  # Fenster muss positiv sein
+        ("trend_window_min", -5.0),
+        ("horizon_min", 0.0),  # Horizont muss positiv sein
+        ("horizon_min", -1.0),
+        ("min_points", 1),  # mind. 2 Stuetzstellen fuer eine Gerade
+        ("min_points", 0),
+        ("min_points", 3.0),  # keine Ganzzahl -> Fehlkonfiguration (NF-05)
+        ("min_points", 101),  # Obergrenze -> Prognose wuerde still abschalten (NF-01)
+        ("max_readings_limit", 2),  # kleiner als min_points -> stiller Ausfall (NF-01)
+        ("max_readings_limit", 10001),  # zu viele Readings -> DB-Last
+        ("max_readings_limit", 1000.0),  # keine Ganzzahl
+        ("t_s_grenz_c", -100.0),  # ausserhalb plausibler Oberflaechentemp -> Vorwarnung tot
+        ("t_s_grenz_c", 100.0),  # ausserhalb plausibler Oberflaechentemp -> Vorwarnung tot
+    ],
+)
+def test_prognose_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str, wert: float):
+    # Arrange — DTB-33: unplausible Prognose-Parameter wuerden den Trend abschalten (NF-01).
+    daten = _minimal_config()
+    daten["prognose"][feld] = wert
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_t_s_grenz_unter_gefrierpunkt_scheitert_laut(tmp_path):
+    # Cross-Section (FA-06/NF-01): die Prognose-Vorwarnung feuert bei forecast <= t_s_grenz_c.
+    # Liegt t_s_grenz_c UNTER dem Gefrierpunkt, warnt die 30-min-Prognose erst, wenn die
+    # Oberflaeche ohnehin schon gefriert -> die Vorwarnung ist still neutralisiert.
+    daten = _minimal_config()
+    daten["prognose"]["t_s_grenz_c"] = daten["vereisung"]["t_s_gefrierpunkt_c"] - 0.5
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_t_s_grenz_gleich_gefrierpunkt_ist_erlaubt(tmp_path):
+    # Grenzfall: t_s_grenz_c == t_s_gefrierpunkt_c ist gueltig (Default-Config) — die
+    # Vorwarnung greift spaetestens am Gefrierpunkt.
+    daten = _minimal_config()
+    daten["prognose"]["t_s_grenz_c"] = daten["vereisung"]["t_s_gefrierpunkt_c"]
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    thresholds = load_thresholds(datei)
+    assert thresholds.prognose.t_s_grenz_c == daten["vereisung"]["t_s_gefrierpunkt_c"]

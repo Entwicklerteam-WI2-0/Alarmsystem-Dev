@@ -14,7 +14,11 @@ import pytest
 
 from src.model.enums import SensorStatus, Source
 from src.model.schemas import Reading
-from src.storage.repository import ReadingRepository, RepositoryError
+from src.storage.repository import (
+    InMemoryReadingRepository,
+    ReadingRepository,
+    RepositoryError,
+)
 from tests._db_helpers import conn_params
 
 
@@ -180,7 +184,10 @@ def test_get_since_returns_only_matching_readings(repository: ReadingRepository)
     assert result[1].measured_at == datetime(2026, 6, 23, 10, 5, 0, tzinfo=UTC)
 
 
-def test_get_since_respects_limit(repository: ReadingRepository) -> None:
+def test_get_since_respects_limit_keeps_freshest(repository: ReadingRepository) -> None:
+    # Bei LIMIT-Ueberschreitung behaelt get_since die FRISCHESTEN Readings (Minute 1 und 2),
+    # nicht die aeltesten — die juengsten sind fuer die Trend-Extrapolation relevant (DTB-33
+    # Review MEDIUM). Rueckgabe bleibt aufsteigend nach measured_at.
     sensor_id = "anr-rwy-04"
     for minute in range(3):
         ts = datetime(2026, 6, 23, 10, minute, 0, tzinfo=UTC)
@@ -201,8 +208,33 @@ def test_get_since_respects_limit(repository: ReadingRepository) -> None:
     result = repository.get_since(sensor_id=sensor_id, since=since, limit=2)
 
     assert len(result) == 2
-    assert result[0].surface_temp_c == pytest.approx(0.0)
-    assert result[1].surface_temp_c == pytest.approx(1.0)
+    assert result[0].surface_temp_c == pytest.approx(1.0)
+    assert result[1].surface_temp_c == pytest.approx(2.0)
+
+
+def test_inmemory_get_since_limit_keeps_freshest() -> None:
+    # Das In-Memory-Double spiegelt die DB-Semantik (laeuft ohne DB): bei LIMIT-
+    # Ueberschreitung die FRISCHESTEN Readings behalten, aufsteigend zurueckgeben.
+    repo = InMemoryReadingRepository()
+    for minute in range(4):
+        ts = datetime(2026, 6, 23, 10, minute, 0, tzinfo=UTC)
+        repo.save(
+            Reading(
+                sensor_id="anr-rwy-09",
+                measured_at=ts,
+                received_at=ts,
+                surface_temp_c=float(minute),
+                air_temp_c=1.0,
+                humidity_pct=80.0,
+                source=Source.REAL,
+                status=SensorStatus.OK,
+            )
+        )
+
+    since = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    result = repo.get_since(sensor_id="anr-rwy-09", since=since, limit=2)
+
+    assert [r.surface_temp_c for r in result] == [pytest.approx(2.0), pytest.approx(3.0)]
 
 
 def test_get_latest_wraps_row_to_reading_value_error_as_repository_error(

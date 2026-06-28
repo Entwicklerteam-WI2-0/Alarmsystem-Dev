@@ -2,10 +2,10 @@
 
 Beruecksichtigt einfache SQL-String-Literale (', ") sowie Zeilenkommentare
 (-- und MySQL-spezifisch #) und Blockkommentare (/* */).
-Backtick-quotierte Identifier (`name`) werden NICHT als Quote-Kontext erkannt.
+Backtick-quotierte Identifier (`name`) werden NICHT als Quote-Kontext erkannt;
+enthält ein solcher Identifier ein Semikolon (z. B. `` `my;col` ``), versagt der
+Splitter und manuelles Splitting ist nötig.
 DELIMITER-Aenderungen werden NICHT unterstuetzt.
-'--' startet hier IMMER einen Zeilenkommentar; MySQL verlangt streng genommen ein
-Folge-Whitespace ('-- '). Fuer schema.sql (durchgaengig '-- ') unkritisch.
 
 Notwendig, seit schema.sql Praeparde-Statements (PREPARE/EXECUTE/DEALLOCATE) enthaelt,
 die mehrere Semikolons pro logischem Statement haben (MySQL-kompatible bedingte

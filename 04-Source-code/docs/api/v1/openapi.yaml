@@ -18,7 +18,7 @@
 #        G2-Nichtverfuegbarkeit.
 #
 # Status: EINGEFROREN (v1.0, 2026-06-24) — G1- und G3-Lead haben bestaetigt
-#        (DTB-26, seam-sync-confirmed). Git-Tag api-v1.0 ausstehend (Freigabe Lucas).
+#        (DTB-26, team-sync-confirmed). Git-Tag api-v1.0 ausstehend (Freigabe Lucas).
 # OPERATIONSZAHL: Die urspruengliche DTB-19-DoD nannte ">= 15 Operationen". Diese
 #        ist durch die verbindliche Architekten-Vorlage (Jira DTB-19, Kommentar
 #        23.06., Lucas Voehringer/DRI) UEBERHOLT: massgeblich ist das Lean-Set von
@@ -120,6 +120,10 @@ paths:
                   delta_t_feucht_k: 1.0
                 prognose:
                   t_s_grenz_c: 0.0
+                  trend_window_min: 30.0
+                  horizon_min: 30.0
+                  min_points: 3
+                  max_readings_limit: 1000
                 datenqualitaet:
                   stale_timeout_s: 120
                   max_temp_jump_c_per_min: 5.0
@@ -539,11 +543,25 @@ components:
               description: ΔT-Schwelle "Feuchte vorhanden" (K).
         prognose:
           type: object
-          required: [t_s_grenz_c]
+          required: [t_s_grenz_c, trend_window_min, horizon_min, min_points, max_readings_limit]
           properties:
             t_s_grenz_c:
               type: number
               description: T_s-Grenze fuer die GELB-Prognoseschwelle (°C).
+            trend_window_min:
+              type: number
+              description: Laenge des Trendfensters der 30-min-T_s-Extrapolation (min, DTB-33/FA-06).
+            horizon_min:
+              type: number
+              description: Prognosehorizont der T_s-Extrapolation (min, FA-06 = 30).
+            min_points:
+              type: integer
+              description: Mindestanzahl Stuetzstellen fuer die lineare Regression (>= 2).
+            max_readings_limit:
+              type: integer
+              description: |
+                Obergrenze gelesener Historien-Readings je Zyklus. Interner DB-Last-Cap
+                (kein Kalibrierwert fuer das G3-Menue) — Spiegel der internen Config.
         datenqualitaet:
           type: object
           required:

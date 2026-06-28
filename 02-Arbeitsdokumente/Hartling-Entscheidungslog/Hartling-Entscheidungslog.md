@@ -1,5 +1,5 @@
 # Persönliches Entscheidungslog — Leon Hartling (G2, Database-Engineer)
-> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-25
+> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-26
 > **Autor:** Leon Hartling · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
@@ -77,3 +77,40 @@
   (SQLAlchemy/Alembic repo-weit entfernt), Connection-Schema in `.env.example`
   (Host/Port/DB/User + Timeout/Charset/Autocommit), Connection-Helper `src/storage/database.py`
   (DTB-55, #63 gemerged). Damit ist die DTB-56-DoD inkl. sync-vs-async-Begründung vollständig.
+
+## 2026-06-26 — DTB-33: Prognoseverfahren lineare Regression vs. Zwei-Punkt-Trend
+- **Kontext/Task:** DTB-33 · FA-06 (30-min-Vorlaufzeit)
+- **Entscheidung:** Für die 30-min-T_s-Prognose wird eine **lineare Regression über alle Punkte im
+  Trendfenster** verwendet, nicht ein einfacher Zwei-Punkt-Trend aus dem neuesten und ältesten Wert.
+- **Begründung:** Die Regression nutzt alle verfügbaren Stützstellen, reduziert Rauschen und liefert eine
+  stabilere Steigung. Ein Zwei-Punkt-Trend wäre anfälliger für Ausreißer und würde die Information der
+  Zwischenpunkte ignorieren (NF-01: konservativ, NF-05: parametrierbar).
+- **Alternativen:**
+  - **Zwei-Punkt-Trend** — verworfen wegen geringerer Robustheit und ungenutzter Zwischenpunkte.
+  - **Gleitender Durchschnitt** — verworfen, weil er keine Steigung liefert und damit keine Prognose.
+- **Ergebnis/Status:** umgesetzt in `src/forecast/trend.py`.
+
+## 2026-06-26 — DTB-33: Prognose-Scope auf T_s beschränkt (Contract)
+- **Kontext/Task:** DTB-33 · FA-06 · G1→G2-Contract
+- **Entscheidung:** Der 30-min-Prognose-Producer berechnet ausschließlich `surface_temp_c`.
+  T_d/Druck-Prognosen werden nicht in den Wire-Contract aufgenommen.
+- **Begründung:** Der eingefrorene G1→G2-Contract (`Backend-Konzept.md` §9) sieht nur die Pflicht-Trias
+  `surface_temp_c`, `air_temp_c`, `humidity_pct` vor. Eine Erweiterung um Prognosefelder für T_d/Druck hätte
+  den Contract geändert und die Integration mit G1/G3 verzögert. FA-06 wird durch die T_s-Prognose erfüllt.
+- **Alternativen:**
+  - **Multi-Feature-Prognose (T_s, T_d, Drucktendenz)** — verworfen wegen Contract-Berührung.
+  - **Aufnahme in `AssessmentCurrent`** — verworfen, damit der G2→G3-Wire stabil bleibt.
+- **Ergebnis/Status:** umgesetzt; `AssessmentCurrent` unverändert.
+
+## 2026-06-26 — DTB-33: Prognosewert im Assessment-Snapshot persistieren
+- **Kontext/Task:** DTB-33 · FA-05 (Nachvollziehbarkeit) · NF-09 (Audit)
+- **Entscheidung:** `forecast_surface_temp_c` wird als nullable Spalte in `assessment` persistiert,
+  nicht nur transient an den Wire weitergegeben.
+- **Begründung:** Ohne Persistenz wäre später nicht nachvollziehbar, warum eine GELB-Vorwarnung ausgelöst
+  wurde (FA-05). Der Snapshot bleibt audit-fest, auch wenn das Quell-Reading gelöscht wird. Der
+  Wire-Contract bleibt unberührt.
+- **Alternativen:**
+  - **Nur in `AssessmentCurrent` ausliefern** — verworfen wegen fehlender Audit-Traceability.
+  - **Gar nicht speichern** — verworfen.
+- **Ergebnis/Status:** umgesetzt in `src/model/schemas.py`, `migrations/schema.sql`,
+  `src/storage/assessment_repository.py`.
