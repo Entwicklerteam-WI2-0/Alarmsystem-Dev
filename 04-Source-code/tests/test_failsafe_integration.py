@@ -67,13 +67,18 @@ from src.model.schemas import Assessment, Reading
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.repository import InMemoryReadingRepository, RepositoryError
 
-# Modul-weiter TestClient: aktuell existiert genau EIN API-Test in dieser Datei
-# (Schicht 4). Kommt ein weiterer API-Test hinzu, MUSS er — wie Schicht 4 — den
-# Runtime via app.dependency_overrides[get_runtime] setzen; ohne Override liefe die
-# echte lifespan (build_runtime -> DB/G1) und der Test wuerde mit 503 fehlschlagen.
-# Die autouse-Fixture _cleanup_app_state raeumt overrides + app.state nach jedem Test,
-# damit kein Runtime in den naechsten Test leckt (Test-Isolation).
-_CLIENT = TestClient(app)
+
+@pytest.fixture
+def client() -> TestClient:
+    """TestClient gegen die echte ASGI-App fuer die API-Tests (Schicht 4).
+
+    Bewusst als Fixture (nicht modul-global), damit kein geteilter Client-State zwischen
+    Tests leckt. Jeder API-Test MUSS den Runtime via app.dependency_overrides[get_runtime]
+    setzen; ohne Override liefe die echte lifespan (build_runtime -> DB/G1) und der Test
+    schluege mit 503 fehl. Die autouse-Fixture _cleanup_app_state raeumt overrides +
+    app.state nach jedem Test (Test-Isolation).
+    """
+    return TestClient(app)
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +145,15 @@ def _mock_g1_get(current_payload: dict) -> Mock:
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen
 # ---------------------------------------------------------------------------
+
+
+def _g1_iso(moment: datetime) -> str:
+    """Formatiert einen UTC-Zeitpunkt als G1-Wire-Zeitstempel (ISO-8601, Z-Suffix).
+
+    Eine Quelle fuer das Format, das G1 in GET /current liefert (sekundengenau, UTC) —
+    statt das Strftime-Muster je Payload zu wiederholen.
+    """
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _save_and_get_reading(
@@ -317,7 +331,7 @@ def test_schicht2a_fault_realer_poller_pfad_liefert_none(
     # damit AUSSCHLIESSLICH die fault-Bedingung den Verwurf ausloest.
     fault_payload = {
         "sensor_id": sensor_id,
-        "measured_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "measured_at": _g1_iso(now),
         "surface_temp_c": 5.0,
         "air_temp_c": 6.0,
         "humidity_pct": 50.0,
@@ -408,7 +422,7 @@ def test_schicht3_plausibilitaet_ausserhalb_grenzen_nie_gruen(
     # G1-Payload mit surface_temp_c klar ausserhalb der Obergrenze.
     payload: dict = {
         "sensor_id": sensor_id,
-        "measured_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "measured_at": _g1_iso(now),
         "surface_temp_c": max_temp + 10.0,  # klar jenseits der Plausibilitaetsgrenze
         "air_temp_c": 5.0,
         "humidity_pct": 80.0,
@@ -443,7 +457,9 @@ def test_schicht3_plausibilitaet_ausserhalb_grenzen_nie_gruen(
     ["assessment_repo", "reading_repo"],
     ids=["assessment_repo_db_fehler", "reading_repo_db_fehler"],
 )
-def test_schicht4_db_ausfall_liefert_503(runtime: Runtime, broken_repo: str) -> None:
+def test_schicht4_db_ausfall_liefert_503(
+    runtime: Runtime, broken_repo: str, client: TestClient
+) -> None:
     """E-40 Schicht 4: RepositoryError bei einem der DB-Reads -> HTTP 503, nie GRUEN.
 
     Beweist fuer BEIDE DB-Lesepfade im Endpoint (assessment_repo.get_latest UND
@@ -452,15 +468,20 @@ def test_schicht4_db_ausfall_liefert_503(runtime: Runtime, broken_repo: str) -> 
     antwortet mit 503 Error{code, message} — kein 500, kein {detail}-Feld, und
     niemals risk_level=green im Body (NF-01, E-40 Schicht 4, Contract-Format D).
     """
-    # Genau das parametrisierte Repo durch einen Stub ersetzen, der RepositoryError
-    # wirft; das jeweils andere bleibt das echte In-Memory-Double (Leerstand -> None,
-    # was im Endpoint VOR dem Throw des gebrochenen Repos kein Problem ist).
+    # Genau das parametrisierte Repo durch einen Stub ersetzen, der RepositoryError wirft;
+    # das jeweils andere bleibt das echte In-Memory-Double.
     broken_assessment_repo = (
         _AssessmentRepoDBFehler() if broken_repo == "assessment_repo" else runtime.assessment_repo
     )
     broken_reading_repo = (
         _ReadingRepoDBFehler() if broken_repo == "reading_repo" else runtime.reading_repo
     )
+    if broken_repo == "reading_repo":
+        # Defensive Isolierung des reading_repo-Pfads: eine gueltige Bewertung seeden, sodass
+        # assessment_repo.get_latest() non-None liefert. So trifft dieser Fall eindeutig den
+        # reading_repo-Fehlerzweig — auch falls main.py je einen frueheren assessment-None-Check
+        # einzieht (sonst koennte der Fall still ueber den "keine Daten"-503 davonkommen).
+        broken_assessment_repo.save(Assessment(ts=datetime.now(UTC), risk_level=RiskLevel.GREEN))
     # dataclasses.replace kopiert ALLE Felder des echten Runtime und ueberschreibt nur die
     # zwei gebrochenen Repos. Bewusst KEIN vollstaendiges Runtime(...) nachbauen: das wuerde
     # bei jedem neuen Runtime-Pflichtfeld (z. B. threshold_set_repo/alarm_repo) brechen,
@@ -472,7 +493,7 @@ def test_schicht4_db_ausfall_liefert_503(runtime: Runtime, broken_repo: str) -> 
     )
     app.dependency_overrides[get_runtime] = lambda: broken_runtime
 
-    response = _CLIENT.get("/v1/assessment/current")
+    response = client.get("/v1/assessment/current")
 
     # E-40 Schicht 4: DB-Ausfall -> 503 (nie GRUEN, nie 500, nie {detail})
     assert response.status_code == 503
