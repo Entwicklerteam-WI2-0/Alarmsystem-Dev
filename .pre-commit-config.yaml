@@ -1,6 +1,6 @@
-# DTB-22 — optionaler lokaler No-Hardcode-Guard (Enabler, NF-05).
-# Das zuverlaessige Gate ist die GitHub-Action "lint-config"; dieser pre-commit-Hook
-# gibt dasselbe Feedback bereits vor dem Commit. Aktivieren (einmalig, aus Repo-Root):
+# Lokale Sicherheits-/Qualitaetsguards. Das zuverlaessige Gate ist die
+# GitHub-Action "lint-config"; dieser pre-commit-Hook gibt dasselbe Feedback
+# bereits vor dem Commit. Aktivieren (einmalig, aus Repo-Root):
 #   pip install pre-commit && pre-commit install
 #
 # Kein Drift-Risiko: Der Hook ruft das Tool OHNE Pfad-Argumente auf -> es nutzt
@@ -18,3 +18,10 @@ repos:
         # Nur bei Python-Aenderungen laufen (Hardcodes koennen nur in .py entstehen) —
         # spart Laeufe bei reinen Docs-/Config-Commits; scannt via SCAN_DIRS (pass_filenames: false).
         types: [python]
+      - id: rb01-no-actor-endpoints
+        name: RB-01: keine Freigabe-/Sperr-/Aktor-Endpoints
+        entry: python 04-Source-code/tools/check_rb01_no_actor_endpoints.py
+        language: system
+        pass_filenames: false
+        # Scannt echte FastAPI-Routen + OpenAPI-Path-Keys, nicht beliebige RB-01-Doku.
+        files: ^04-Source-code/(src|docs/api/v1)/.*\.(py|ya?ml)$

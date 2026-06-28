@@ -210,6 +210,13 @@
 
 **E-15 — RB-01 architektonisch erzwungen: System hat keinen Freigabe-/Aktor-Endpoint**
 - *Begründung:* Harte Randbedingung — der Mensch ist letzte Instanz. Nicht nur Policy, sondern in der API-Struktur verankert (per Design unmöglich).
+- *Nachweis/Enforcement (P4.5 / DTB-42, 2026-06-28):* Der eingefrorene `/v1`-Contract erlaubt nur
+  `GET /v1/health`, `GET /v1/assessment/current`, `GET|POST /v1/thresholds`, `GET /v1/readings`,
+  `GET /v1/alarms`, `GET /v1/alarms/stream` und `POST /v1/alarms/{id}/ack`. Alle Pfade sind Lesen,
+  Parametrierung oder manuelle Quittierung/Audit — kein Runway-Status wird freigegeben, gesperrt oder
+  gesteuert. Der Guard `04-Source-code/tools/check_rb01_no_actor_endpoints.py` scannt FastAPI-Routen
+  und `04-Source-code/docs/api/v1/openapi.yaml` auf `unlock`, `freigabe`, `sperr`, `execute` und ist in
+  pre-commit sowie der GitHub-Action `lint-config` verdrahtet.
 
 ## D. Anforderungs-Engineering
 

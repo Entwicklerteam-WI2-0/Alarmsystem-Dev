@@ -1,11 +1,12 @@
 # DTB-22 — No-Hardcode-Guard fuer Schwellenwerte (Enabler, NF-05).
+# P4.5/DTB-42 — RB-01-Guard gegen Freigabe-/Sperr-/Aktor-Endpoints.
 # Stellt sicher, dass Vereisungs-/Prognose-Schwellen aus config/ geladen werden
 # (DTB-15 loader.py) und nicht als Literal im Code stehen — sonst lassen sich die
 # ausstehenden G1-Finalwerte nicht ohne Code-Aenderung austauschen.
 #
 # Backend-Root liegt unter 04-Source-code/ (PR #29) -> run-Schritte laufen dort.
-# Reiner Stdlib-Check (kein pip install noetig). Default-Scan: src/assessment +
-# src/forecast (erweiterbar in tools/check_hardcoded_thresholds.py SCAN_DIRS).
+# Reine Stdlib-Checks (kein pip install noetig). Die Guards laufen gegen die
+# fachlichen Schwellen-Module sowie gegen echte FastAPI-Routen + OpenAPI-Path-Keys.
 #
 # Aufgabentrennung: Dieser Workflow ist das GATE (Guard gegen src/). Die UNIT-TESTS des
 # Guards (tests/test_no_hardcoded_thresholds.py) laufen im test.yml-Workflow mit
@@ -40,3 +41,6 @@ jobs:
 
       - name: Schwellen-Guard ausfuehren
         run: python tools/check_hardcoded_thresholds.py
+
+      - name: RB-01-Guard ausfuehren
+        run: python tools/check_rb01_no_actor_endpoints.py
