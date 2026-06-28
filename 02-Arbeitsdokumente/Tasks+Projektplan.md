@@ -31,7 +31,7 @@
 ### P1 — Contract: API + Datenmodell (kritisch)
 - **P1.1** Datenmodell-Schema festzurren (reading/assessment/alarm/ack/threshold/audit) — `[Architektur&API]` Systemarchitekt · Schnittstelle · DoD: Schema dokumentiert + reviewed · **M**
 - **P1.2** API-Spezifikation v1 (Endpoints, Request/Response, Envelope) — `[Architektur&API]` Systemarchitekt · DoD: API-Spec-Doc, OpenAPI-fähig · **M**
-- **P1.3** Seam-Sync: `GET /current`-Payload + `GET /health` mit G1 abstimmen (G2 = Client) + GET-Serving-Formate mit G3 — `[Anforderungen&Stakeholder]` Systemarchitekt+PL · DoD: G1 & G3 bestätigen den Contract · **M**
+- **P1.3** Team-Sync: `GET /current`-Payload + `GET /health` mit G1 abstimmen (G2 = Client) + GET-Serving-Formate mit G3 — `[Anforderungen&Stakeholder]` Systemarchitekt+PL · DoD: G1 & G3 bestätigen den Contract · **M**
 - **P1.4** Contract v1 **einfrieren** + kommunizieren — `[Architektur&API]` Systemarchitekt · DoD: v1 getaggt/an alle kommuniziert · **S**
 
 ### P2 — T0 Vertical Slice

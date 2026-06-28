@@ -7,7 +7,7 @@ ist `SensorStatus` sogar dreifach kopiert:
   2. docs/api/v1/openapi.yaml               -> components.schemas.<Name>.enum
   3. docs/api/v1/g1-consumed.openapi.yaml   -> components.schemas.G1Current.properties.status.enum
 
-Dieser Guard bricht, sobald eine Stelle driftet (z. B. Seam-Sync DTB-26 ergaenzt einen
+Dieser Guard bricht, sobald eine Stelle driftet (z. B. Team-Sync DTB-26 ergaenzt einen
 Status wie `degraded` nur in einer Datei). So bleibt die ungesicherte Hand-Kopie
 maschinell abgesichert, ohne Codegen einzufuehren.
 """
