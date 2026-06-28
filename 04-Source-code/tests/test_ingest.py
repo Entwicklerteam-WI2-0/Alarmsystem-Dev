@@ -1273,3 +1273,53 @@ def test_poll_baseline_after_sustained_jump_triggers_flatline(
     assert last is None
     assert "flatline" in caplog.text.lower()
     assert len(fake_repo.readings) == 1  # nur die Baseline
+
+
+def test_poll_flatline_cleared_by_poller_restart(
+    fake_repo: FakeRepository,
+    valid_snapshot: dict,
+    quality_thresholds: DatenqualitaetSchwellen,
+    plausibility_thresholds: PlausibilitaetSchwellen,
+) -> None:
+    # E-42 / K1: Ein gesunder Sensor bei echtstabiler Kaelte wird nach >= 15 min dauerhaft als
+    # Flatline gesperrt. Der EINZIGE manuelle Entsperr-Pfad ohne Temperaturbewegung ist ein
+    # Poller-Neustart (neues Objekt -> frisches Fenster). Dieser Test sichert, dass dieser
+    # dokumentierte Recovery-Pfad real funktioniert (ein automatischer Reset ist NF-01-widrig).
+    def _new_poller() -> Poller:
+        return Poller(
+            base_url="http://g1.test",
+            repository=fake_repo,
+            data_quality_thresholds=quality_thresholds,
+            plausibility_thresholds=plausibility_thresholds,
+        )
+
+    base = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    poller_a = _new_poller()
+    for k in range(32):  # 16 min konstant -> Flatline-Sperre ab Minute 15
+        _poll_snapshot(poller_a, valid_snapshot, base + timedelta(seconds=30 * k), -0.4)
+    # poller_a ist jetzt gesperrt: derselbe stabile Wert wird verworfen.
+    assert _poll_snapshot(poller_a, valid_snapshot, base + timedelta(minutes=16), -0.4) is None
+
+    # "Neustart": frisches Poller-Objekt -> frisches Fenster -> derselbe Wert wird wieder
+    # akzeptiert (die 15-min-Uhr beginnt von vorn).
+    poller_b = _new_poller()
+    recovered = _poll_snapshot(
+        poller_b, valid_snapshot, base + timedelta(minutes=16, seconds=30), -0.4
+    )
+    assert recovered is not None
+
+
+def test_flatline_span_including_is_never_negative(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Precondition von check_flatline: _flatline_span_including liefert per Konstruktion
+    # (max - min) IMMER >= 0. Ein negativer Span wuerde in check_flatline faelschlich Flatline
+    # triggern. Hier formell festgenagelt (zuvor nur per Docstring/Implementierung garantiert).
+    base = datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
+    _poll_snapshot(poller, valid_snapshot, base, -0.4)
+    # Zweiter Wert im Band -> Fenster offen (min=-0.5, max=-0.4).
+    _poll_snapshot(poller, valid_snapshot, base + timedelta(seconds=30), -0.5)
+    sample = fake_repo.readings[-1]
+    for temp in (-0.5, -0.4, -10.0, 5.0, 0.0):
+        reading = sample.model_copy(update={"surface_temp_c": temp})
+        assert poller._flatline_span_including(reading) >= 0.0

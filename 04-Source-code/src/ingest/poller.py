@@ -192,7 +192,18 @@ class Poller:
         return reading.model_copy(update={"id": reading_id})
 
     def _reset_flatline_window(self) -> None:
-        """Setzt das Flatline-Konstanz-Fenster zurueck (z. B. bei Sensorwechsel)."""
+        """Setzt das Flatline-Konstanz-Fenster zurueck (z. B. bei Sensorwechsel).
+
+        Recovery-Hinweis (E-42 / K1): Ein gesunder Sensor bei echtstabiler Kaelte (Span
+        <= flatline_epsilon_c ueber >= flatline_timeout_min) wird dauerhaft als Flatline
+        gesperrt — alle Folge-Readings werden verworfen, bis die Temperatur das Band real
+        verlaesst. Der einzige MANUELLE Entsperr-Pfad ohne Temperaturbewegung ist ein
+        Poller-Neustart (neues Poller-Objekt -> __init__ -> frisches Fenster). Ein
+        automatischer Reset bei Flatline-Erkennung ist bewusst NICHT implementiert: er wuerde
+        einen echt eingefrorenen Sensor periodisch wieder als gueltig akzeptieren
+        (NF-01-Unteralarm). Ein tieferer Fix (Hysterese / Entsperr-Endpoint) ist eine offene
+        Architektenentscheidung.
+        """
         # 0.0 ist nur ein Dummy: _flatline_temp_min/max sind ausschliesslich gueltig, wenn
         # _flatline_window_start gesetzt ist. Beide Konsumenten (_flatline_span_including,
         # _update_flatline_window) guarden auf window_start is None und lesen die 0.0 nie.
