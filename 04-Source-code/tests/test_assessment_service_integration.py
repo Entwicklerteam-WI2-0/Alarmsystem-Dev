@@ -14,6 +14,8 @@ Fail-safe (None/fault/stale -> unknown, nie GRUEN) wird ueber denselben Pfad bel
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from src.assessment.service import AssessmentService
 from src.config.loader import Thresholds
 from src.model.enums import AuditEventType, RiskLevel, SensorStatus
@@ -104,6 +106,68 @@ def test_fault_reading_persists_unknown_linked_to_reading(
     assert result.risk_level == RiskLevel.UNKNOWN
     assert result.reading_id == persisted.id  # ausloesendes Reading verknuepft (Traceability)
     assert assessment_repo.get_latest().risk_level == RiskLevel.UNKNOWN
+
+
+def test_vorfall_1_fehlalarm_vermieden_im_service_pfad(
+    reading_repo: InMemoryReadingRepository,
+    assessment_repo: InMemoryAssessmentRepository,
+    audit_repo: InMemoryAuditRepository,
+    assessment_service: AssessmentService,
+) -> None:
+    """Vorfall 1 (Quelle): Luft -2,1 °C, Oberflaeche trocken -> KEIN ROT/Alarm.
+
+    Fruehere reine Lufttemperatur-/RH-Logik haette fälschlich ROT/Alarm ausgeloest.
+    Hier wird ueber den vollstaendigen Service-Pfad (Persistenz + Audit) belegt,
+    dass die Bewertung auf GELB faellt (kalt, aber nicht feucht) und KEIN Audit-
+    Ereignis vom Typ alarm_raised entsteht. Das ist der Fehlalarm-Verhinderungs-
+    Beweis durch T_s + DeltaT statt Lufttemperatur (E-34).
+    """
+    now = datetime.now(UTC)
+    persisted = _persist(reading_repo, _make_reading(now, surface=-2.1, dew=-10.0))
+
+    result = assessment_service.assess_reading(persisted, now)
+
+    assert result.risk_level == RiskLevel.YELLOW
+    assert result.reading_id == persisted.id
+    latest = assessment_repo.get_latest()
+    assert latest is not None and latest.risk_level == RiskLevel.YELLOW
+    assert latest.delta_t == pytest.approx(7.9)
+    events = audit_repo.all()
+    assert len(events) == 1
+    assert events[0].event_type == AuditEventType.ASSESSMENT_MADE
+    # Der AssessmentService schreibt nur ASSESSMENT_MADE; alarm_raised kommt vom
+    # separaten AlarmGenerator (Test hier bewusst nur auf Service-Ebene). Der
+    # Fehlalarm-Beweis ist das risk_level=YELLOW (kein ROT), nicht die Abwesenheit
+    # eines Alarm-Events.
+
+
+def test_vorfall_2_vereisung_erkannt_im_service_pfad(
+    reading_repo: InMemoryReadingRepository,
+    assessment_repo: InMemoryAssessmentRepository,
+    audit_repo: InMemoryAuditRepository,
+    assessment_service: AssessmentService,
+) -> None:
+    """Vorfall 2 (Quelle): Luft +1,2 °C, aber Oberflaeche gefroren + Reif -> ROT.
+
+    Fruehere Logik, die auf Lufttemperatur > 0 °C vertraute, hat diese Eisbildung
+    uebersehen. Hier wird ueber den vollstaendigen Service-Pfad belegt, dass die
+    Bewertung korrekt auf ROT faellt (Oberflaeche <= Gefrierpunkt UND DeltaT <= 0)
+    und die Explanation DeltaT erwaehnt — der Wert, der die beiden Vorfälle
+    unterscheidet und Fehlalarme verhindert (E-34, NF-01).
+    """
+    now = datetime.now(UTC)
+    persisted = _persist(reading_repo, _make_reading(now, surface=-1.0, dew=-0.5))
+
+    result = assessment_service.assess_reading(persisted, now)
+
+    assert result.risk_level == RiskLevel.RED
+    assert result.reading_id == persisted.id
+    latest = assessment_repo.get_latest()
+    assert latest is not None and latest.risk_level == RiskLevel.RED
+    assert latest.delta_t == pytest.approx(-0.5)
+    # DeltaT muss im operatorlesbaren Explanation-Text stehen (Fehlalarm-Verhinderungs-Feature).
+    assert latest.explanation is not None and "ΔT" in latest.explanation
+    assert any(e.event_type == AuditEventType.ASSESSMENT_MADE for e in audit_repo.all())
 
 
 def test_stale_reading_persists_unknown_linked_to_reading(

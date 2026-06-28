@@ -12,3 +12,6 @@ venv/
 .ruff_cache/
 .coverage
 htmlcov/
+# Lokaler Runtime-State des G1-Simulators (jeder Entwickler erzeugt ihn selbst,
+# z. B. tools/g1_sim/g1_state.json aus g1_state.example.json kopiert).
+tools/g1_sim/g1_state.json
