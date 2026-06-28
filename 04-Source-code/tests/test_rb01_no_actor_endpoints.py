@@ -43,6 +43,71 @@ async def route():
     assert verstoesse[0].endpoint == "/runway/execute"
 
 
+def test_python_route_path_keyword_argument_wird_blockiert():
+    code = """
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.post(path="/runway/unlock")
+def route():
+    return {"ok": True}
+"""
+
+    verstoesse = finde_verstoesse_in_python_text(code, "src/api/v1.py")
+
+    assert len(verstoesse) == 1
+    assert verstoesse[0].keyword == "unlock"
+    assert verstoesse[0].endpoint == "/runway/unlock"
+
+
+def test_python_route_mit_freigabe_wird_blockiert():
+    code = """
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.post("/runway/freigabe")
+def route():
+    return {"ok": True}
+"""
+
+    verstoesse = finde_verstoesse_in_python_text(code, "src/api/v1.py")
+
+    assert len(verstoesse) == 1
+    assert verstoesse[0].keyword == "freigabe"
+    assert verstoesse[0].endpoint == "/runway/freigabe"
+
+
+def test_python_route_mit_sperr_wird_blockiert():
+    code = """
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.post("/runway/sperren")
+def route():
+    return {"ok": True}
+"""
+
+    verstoesse = finde_verstoesse_in_python_text(code, "src/api/v1.py")
+
+    assert len(verstoesse) == 1
+    assert verstoesse[0].keyword == "sperr"
+    assert verstoesse[0].endpoint == "/runway/sperren"
+
+
+def test_python_syntaxfehler_ist_fail_closed():
+    verstoesse = finde_verstoesse_in_python_text(
+        "@router.post('/v1/health')\ndef kaputt(:\n",
+        "src/api/v1.py",
+    )
+
+    assert len(verstoesse) == 1
+    assert verstoesse[0].fail_closed is True
+    assert "parsebar" in verstoesse[0].grund
+
+
 def test_python_route_docstring_mit_freigabe_ist_sauber():
     code = '''
 from fastapi import APIRouter
@@ -176,5 +241,7 @@ def test_main_fehler_wenn_ziel_nicht_existiert(tmp_path, capsys):
     captured = capsys.readouterr()
 
     assert code == 1
+    assert "Scan-Fehler" in captured.err
+    assert "verbotene Aktor-Endpoints" not in captured.err
     assert "fail-closed" in captured.err
     assert captured.out == ""

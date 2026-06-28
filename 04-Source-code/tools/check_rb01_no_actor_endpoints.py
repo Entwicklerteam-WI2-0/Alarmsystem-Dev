@@ -232,7 +232,13 @@ def pruefe_ziele(ziele: Iterable[str | Path]) -> list[Verstoss]:
 
 
 def _melde_verstoesse(verstoesse: list[Verstoss]) -> None:
-    print("FEHLER: RB-01-Guard hat verbotene Aktor-Endpoints gefunden:\n", file=sys.stderr)
+    if all(verstoss.fail_closed for verstoss in verstoesse):
+        print(
+            "Scan-Fehler: RB-01-Guard konnte Scan-Ziele nicht pruefen (fail-closed):\n",
+            file=sys.stderr,
+        )
+    else:
+        print("FEHLER: RB-01-Guard hat verbotene Aktor-Endpoints gefunden:\n", file=sys.stderr)
     for verstoss in verstoesse:
         print(
             f"  {verstoss.datei}:{verstoss.zeile}: {verstoss.endpoint} "
