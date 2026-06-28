@@ -132,6 +132,7 @@ gegen echte MariaDB 11.4.7; 785 Tests grün (siehe Journal/Save-Session 28.06.).
 > Nach der Merge-Welle sind **alle Kern-Backend-Tickets** auf `main` + Jira „Erledigt"
 > (DTB-20/24/31/33/34/59/63/64/66/68). Was bleibt: M3-Arbeit (Integration vor Ort + menschliche
 > Doku/Reflexion) + ein paar additive Follow-ups.
+> **Hinweis DTB-54:** Pi-MariaDB-Init DoD-Nachweis war am 27.06. noch explizit offen; Code-seitig ✅ (DTB-53–56, #129). Pi-Verifikation vor Ort (Tabellen/Grants/Idempotenz) → Status prüfen und ggf. unter „🔴 Integration" schließen oder fortführen.
 
 **🔴 Integration / vor Ort (Mo 29.06., Pi):**
 - **DTB-17** — E2E-Integration mit **G1** (echte/sim Sensordaten) — Brücke: G1-Sim `tools/g1_sim/`
@@ -150,13 +151,13 @@ gegen echte MariaDB 11.4.7; 785 Tests grün (siehe Journal/Save-Session 28.06.).
 **🟣 Menschlich / M3-Abgabe (NICHT KI):**
 - **DTB-30** — Testprotokoll (Abnahme-Checkliste)
 - **DTB-36** — Gruppen-Entscheidungslogbuch finalisieren
-- **DTB-42** — RB-01-Nachweis (kein Aktor) — Audit bestätigt sauber, nur Nachweis-Doku
+- **DTB-42** — RB-01-Nachweis (kein Aktor) — Audit bestätigt sauber, nur Nachweis-Doku (Code ✅, Nachweis-Doku ausstehend)
 - **DTB-44** — Abschlusspräsentation + Demo-Skript
 - **DTB-45** — Individuelle Entscheidungsreflexion je Person
 - **DTB-47** — Reflexion: Methodenvergleich Wasserfall vs. Scrum
 
 **⚪ Borderline — faktisch erledigt, Jira-Status prüfen/schließen:**
-- **DTB-21** — pytest-Konfiguration + Fixtures (existiert, 785 Tests laufen)
+- **DTB-21** — pytest-Konfiguration + Fixtures (existiert, 794 Tests laufen)
 - **DTB-46** — Unit-Tests Bewertung ≥ 80 % Coverage (assessment ~100 %, erfüllt)
 
 *Quelle: Jira-Board (Projekt DTB) reconciled gegen `origin/main` am 2026-06-28; 10 gemergte Tickets auf „Erledigt" gesetzt.*
