@@ -484,3 +484,23 @@ Plan→TDD→Impl→Quality-Gate→**Selbst-Review (Subagent)**→Fix→Push→P
   E-40 §3 nennt Sprung/Flatline als Teil von Schicht 3, greift im Live-Fluss aber nicht. **Empfehlung: Ticket „check_plausibility im Poller verdrahten".**
 - **Offen:** Reviewer-Freigabe + Merge für #134/#135/#136 (+#128/#130/#132) durch Mensch (WP6). Bericht: `~/Desktop/Nachtschicht-Bericht-2026-06-28.md`.
 —backenddev
+
+## Update [28.06., ~14:20] — DTB-61 Live-Alarm-Stream gemergt + DTB-27 Re-Arm-Entscheidung + Entscheidungslog (architekt/Petzold)
+- **DTB-61 (SSE `GET /v1/alarms/stream`, E-37) abgeschlossen + gemergt:** In-Process-Broadcaster (Pub/Sub)
+  `src/api/broadcaster.py` + Endpoint `v1.py` — kein Replay (Resync-Backstop `GET /v1/alarms`), Drop-oldest,
+  Connection-Cap mit **503-vor-200**, Last-Event-ID-Sanitisierung + Injection-Warning, Thread-Safety-Guard.
+  ~10 PR-Review-Runden + santa-loop; `broadcaster`/`v1` je **100 %** Cov. **Option b (NF-01 vor NF-09):**
+  `AuditError` trägt jetzt den Alarm → der Scheduler pusht auch bei Audit-Fehler live (SSE bleibt vollständig;
+  `GET /v1/alarms` bleibt reiner Reconnect-Resync, kein Entdeckungs-Poll).
+- **DTB-27 Re-Arm-Entscheidung (G3-Naht-Rückfrage):** Beenden bleibt **voller Reset** (Quittieren ≠ Beenden;
+  Eskalation über ≥ 2 30-s-Polls bestätigt statt sofort; Live-Ampel = keine Blindheit; K1). Benannter
+  Regressions-/Entscheidungstest auf eigenem Branch `test/dtb-27-rearm-semantik` (von `main`, ohne DTB-61)
+  **gemergt**. Antwort an G3 formuliert (inkl. 2 G3-UI-Annahmen: quittieren-statt-beenden + prominente Live-Ampel).
+- **Entscheidungslog:** 3 Einträge (DTB-61 Push-Seam · NF-01-vor-NF-09 · Re-Arm/Beenden) im
+  `Petzold-Entscheidungslog` auf `docs/dtb-27-61-entscheidungslog` (**PR offen**); Personennamen aus Test-Code entfernt.
+- **Offen:** (1) Entscheidungslog-PR (Johannes prüft Wortlaut/Ich-Form) + mergen; (2) **Jira DTB-61 → Erledigt**;
+  (3) 2 Doc-Zitate „Lucas-Entscheidungslog" (`main.py:301`, `test_assessment_current_endpoint.py:16`) genericisieren
+  = Personennamen aus Code (Mini-Cleanup nach Merge); (4) **`ack`-Endpoint DTB-24** (Bedien-Quittierung, kein
+  Re-Arm); (5) **Governance:** `claude-review` als Required-Check konvergiert an überdefensiven Modulen nicht
+  (endlose Mikro-LOWs) → mit Lucas auf **advisory** stellen, `test` bleibt das Gate.
+—architekt/Petzold
