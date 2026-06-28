@@ -239,6 +239,23 @@ _SECTIONS: dict[str, type[Any]] = {
 }
 
 
+def parse_thresholds(raw: dict[str, Any]) -> Thresholds:
+    """Validiert ein rohes Schwellen-dict und baut das `Thresholds`-Objekt.
+
+    Gemeinsamer Kern fuer beide Quellen: die JSON-Config-Datei (`load_thresholds`)
+    UND der in der DB gespeicherte `threshold_set.params` (Reload, DTB-63). Scheitert
+    *laut* mit `ConfigError`, wenn ein Pflicht-Abschnitt/-Schluessel fehlt, ein Wert
+    keine endliche Zahl ist oder eine Cross-Section-Invariante (Thresholds.__post_init__)
+    verletzt wird — bewusst kein stiller Default (NF-01-Geist).
+    """
+    if not isinstance(raw, dict):
+        raise ConfigError(
+            f"Schwellen-Konfiguration muss ein JSON-Objekt sein, ist {type(raw).__name__}"
+        )
+    sektionen = {name: _baue_sektion(name, cls, raw) for name, cls in _SECTIONS.items()}
+    return Thresholds(**sektionen)
+
+
 def load_thresholds(path: Path | str | None = None) -> Thresholds:
     """Lädt die Schwellenwerte aus der JSON-Config (Default oder eigener Pfad).
 
@@ -255,11 +272,14 @@ def load_thresholds(path: Path | str | None = None) -> Thresholds:
         raise ConfigError(
             f"Konfigurationsdatei ist kein gültiges JSON: {config_path} ({exc})"
         ) from exc
+    # Datei-spezifische Pruefung mit `config_path` in der Meldung: parse_thresholds prueft
+    # `dict` zwar selbst nochmal (generische Meldung), aber hier kennen wir den Pfad und
+    # koennen ihn nennen -> deutlich nuetzlichere Diagnose. Die Doppelpruefung ist daher
+    # bewusst (kein Refactoring-Rest), nicht redundanter Toter Code.
     if not isinstance(raw, dict):
         raise ConfigError(f"Konfiguration muss ein JSON-Objekt sein: {config_path}")
 
-    sektionen = {name: _baue_sektion(name, cls, raw) for name, cls in _SECTIONS.items()}
-    return Thresholds(**sektionen)
+    return parse_thresholds(raw)
 
 
 def _baue_sektion[T](name: str, cls: type[T], raw: dict[str, Any]) -> T:
@@ -322,8 +342,57 @@ def _baue_sektion[T](name: str, cls: type[T], raw: dict[str, Any]) -> T:
         _validate_plausibilitaet(obj)
     elif cls is PrognoseSchwellen:
         _validate_prognose(obj)
+    elif cls is VereisungsSchwellen:
+        _validate_vereisung(obj)
 
     return obj
+
+
+def _validate_vereisung(schwellen: VereisungsSchwellen) -> None:
+    """Prueft die Vereisungs-Kaskadenschwellen auf plausible Bereiche (DTB-63 Folgefix, NF-01).
+
+    Ohne diese Pruefung koennte ein authentifizierter Caller (POST /v1/thresholds) oder
+    eine kompromittierte Config-Datei Schwellen persistieren, die die ROT/ORANGE/GELB-
+    Kaskade praktisch stilllegen — z. B. ``t_s_gefrierpunkt_c = -273`` (kein realer
+    Messwert liegt darunter -> nie ROT/ORANGE) oder ``delta_t_feucht_k = 1e9`` (Kondensation
+    nie erreicht). Das waere ein Fail-safe-Bypass (NF-01) bzw. RB-01-adjacent. Hier
+    wird das durch plausible physikalische Bereiche + Hierarchie-Invarianten geschlossen.
+
+    Bereiche (orientiert an Schwellenwerte.md, Deckung mit den Surface-Temp-Grenzen aus
+    Plausibilitaet/Prognose):
+      - ``t_s_gefrierpunkt_c``, ``t_s_gelb_auffang_c`` in [-50, 50] °C
+        (deckungsgleich mit Plausibilitaet.min/max_temp_c und _MIN/_MAX_PLAUSIBLE_SURFACE_TEMP_C).
+      - ``delta_t_kondensation_k``, ``delta_t_feucht_k`` in [0, 50] K
+        (oberhalb der Kondensations-/Feucht-Bedeutung; jenseits waere die Schwelle
+        praktisch nie erreicht -> Kaskade stillgelegt).
+
+    Hierarchie-Invariante (NF-01): ``delta_t_feucht_k`` muss STRENG groesser sein als
+    ``delta_t_kondensation_k``, sonst ist die Feucht-/Kondensations-Logik invertiert
+    (Kondensation wuerde nie eigenstaendig ausloesen). Gleichheit ist der abgelehnte
+    Grenzfall.
+    """
+    for feld in ("t_s_gefrierpunkt_c", "t_s_gelb_auffang_c"):
+        wert = getattr(schwellen, feld)
+        if not _MIN_PLAUSIBLE_SURFACE_TEMP_C <= wert <= _MAX_PLAUSIBLE_SURFACE_TEMP_C:
+            raise ConfigError(
+                f"vereisung.{feld} muss zwischen {_MIN_PLAUSIBLE_SURFACE_TEMP_C} und "
+                f"{_MAX_PLAUSIBLE_SURFACE_TEMP_C} °C liegen, ist aber {wert!r} "
+                "(extreme Werte legen die Vereisungskaskade still -> NF-01)"
+            )
+    for feld in ("delta_t_kondensation_k", "delta_t_feucht_k"):
+        wert = getattr(schwellen, feld)
+        if not 0.0 <= wert <= _MAX_PLAUSIBLE_SURFACE_TEMP_C:
+            raise ConfigError(
+                f"vereisung.{feld} muss zwischen 0.0 und {_MAX_PLAUSIBLE_SURFACE_TEMP_C} K liegen, "
+                f"ist aber {wert!r} (Werte jenseits erreichen nie die Kaskade -> NF-01)"
+            )
+    if schwellen.delta_t_feucht_k <= schwellen.delta_t_kondensation_k:
+        raise ConfigError(
+            "vereisung.delta_t_feucht_k muss strikt groesser sein als "
+            f"vereisung.delta_t_kondensation_k "
+            f"(ist {schwellen.delta_t_feucht_k!r} <= {schwellen.delta_t_kondensation_k!r}), "
+            "sonst ist die Feucht-/Kondensations-Hierarchie invertiert (NF-01)"
+        )
 
 
 def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
