@@ -94,13 +94,20 @@ def database(db_available: bool) -> str:
     if not db_available:
         pytest.skip("MariaDB-Test-DB nicht erreichbar (DB_HOST/DB_PORT/DB_USER/DB_PASSWORD).")
     name = test_db_name()
+    # CREATE DATABASE IF NOT EXISTS ist NICHT idempotent auf Spaltenebene: aendert sich schema.sql
+    # (neue Spalten/Enums), existiert die Test-DB schon -> das geaenderte Schema wird nicht neu
+    # eingespielt und die Suite laeuft still gegen ein veraltetes Schema. DB_FORCE_RECREATE=1 droppt
+    # die Test-DB vorab und baut sie frisch auf (PR#129-Review MEDIUM; vgl. docs/dev-db-setup.md).
+    force_recreate = os.environ.get("DB_FORCE_RECREATE", "").strip().lower() in {"1", "true", "yes"}
     root = pymysql.connect(**conn_params(autocommit=True))
-    # try/finally: wirft CREATE DATABASE (z. B. fehlende Rechte), wuerde root.close() sonst
+    # try/finally: wirft CREATE/DROP DATABASE (z. B. fehlende Rechte), wuerde root.close() sonst
     # uebersprungen -> Connection-Leak ueber die session-scoped Fixture (gleiche Bug-Klasse
     # wie der db_available-Leak, DTB-21-Review).
     try:
         with root.cursor() as cursor:
-            if os.environ.get("DB_TEST_FORCE_RECREATE", "").strip() == "1":
+            if force_recreate:
+                # name ist via DB_NAME_RE.fullmatch auf [A-Za-z0-9_] weissgelistet (test_db_name) ->
+                # DROP-Interpolation genauso sicher wie das CREATE unten.
                 cursor.execute(f"DROP DATABASE IF EXISTS {name}")
             cursor.execute(
                 f"CREATE DATABASE IF NOT EXISTS {name} "

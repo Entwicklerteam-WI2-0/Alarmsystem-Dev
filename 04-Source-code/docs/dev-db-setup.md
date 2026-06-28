@@ -14,6 +14,10 @@
 - Diese Umgebungsvariablen (siehe `.env.example`):
   `DB_HOST`, `DB_PORT` (3306), `DB_NAME` (z. B. `alarmsystem`), `DB_USER`, `DB_PASSWORD`.
   Optional: `DB_NAME_TEST` überschreibt den Namen der Wegwerf-Test-DB (Default `<DB_NAME>_test`).
+  Optional: `DB_FORCE_RECREATE=1` droppt die Test-DB vor dem Lauf und baut sie frisch aus `schema.sql`
+  auf — **nötig nach Schema-Änderungen** (neue Spalten/Enums). `CREATE DATABASE IF NOT EXISTS` greift
+  bei bereits existierender Test-DB nicht auf Spaltenebene; ohne dieses Flag läuft die Suite sonst still
+  gegen ein veraltetes Schema.
 
 > ⚠️ **`.env`-Falle:** Der `.env.example`-Default `DB_USER=alarm` ist der Least-Privilege-App-User
 > und darf **kein** `CREATE DATABASE`. Wer `.env.example` 1:1 nach `.env` kopiert und `pytest` ohne
