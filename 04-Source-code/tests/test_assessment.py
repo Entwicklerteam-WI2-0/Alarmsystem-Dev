@@ -161,3 +161,27 @@ def test_ungueltige_prognose_ist_gelb(thresholds):
         assess_ice_risk(2.0, 0.0, thresholds, forecast_surface_temp_c=float("inf"))
         == RiskLevel.YELLOW
     )
+
+
+def test_defekte_prognose_unterdrueckt_kein_rot(thresholds):
+    """Eine kaputte Prognose (NaN/inf) darf eine akute ROT-Lage nicht auf GELB
+    deklassieren (NF-01 Under-Alarm): die Ist-Bewertung hat Vorrang."""
+    # T_s=-2.0, T_d=-1.0 ist fuer sich genommen ROT (gefroren + Kondensation).
+    assert (
+        assess_ice_risk(-2.0, -1.0, thresholds, forecast_surface_temp_c=float("nan"))
+        == RiskLevel.RED
+    )
+    assert (
+        assess_ice_risk(-2.0, -1.0, thresholds, forecast_surface_temp_c=float("inf"))
+        == RiskLevel.RED
+    )
+
+
+def test_defekte_prognose_unterdrueckt_kein_orange(thresholds):
+    """Eine kaputte Prognose (NaN/inf) darf eine ORANGE-Lage nicht auf GELB
+    deklassieren: die Ist-Bewertung hat Vorrang vor dem defekten Subsystem."""
+    # T_s=-1.0, T_d=-1.5 ist fuer sich genommen ORANGE (gefroren + feucht).
+    assert (
+        assess_ice_risk(-1.0, -1.5, thresholds, forecast_surface_temp_c=float("nan"))
+        == RiskLevel.ORANGE
+    )

@@ -87,7 +87,9 @@ class Repository(ABC):
             limit: Maximale Anzahl zurueckzugebender Readings (Default: 1000).
 
         Returns:
-            Sequenz der Readings, aufsteigend nach measured_at.
+            Sequenz der Readings, aufsteigend nach measured_at. Ueberschreitet das
+            Zeitfenster `limit` Readings, werden die FRISCHESTEN `limit` behalten (die
+            aeltesten fallen raus) — relevant fuer die Trend-Extrapolation (DTB-33).
             Leere Sequenz, wenn keine vorhanden sind.
 
         Raises:
@@ -163,10 +165,11 @@ class InMemoryReadingRepository(Repository):
         if limit <= 0:
             raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
         candidates = [r for r in self._items if r.sensor_id == sensor_id and r.measured_at >= since]
-        # Aufsteigend nach measured_at, bei Gleichstand nach id (analog _SINCE_SQL:
-        # ORDER BY measured_at ASC, id ASC).
-        ordered = sorted(candidates, key=lambda r: (r.measured_at, r.id or 0))
-        return tuple(ordered[:limit])
+        # Bei LIMIT-Ueberschreitung die FRISCHESTEN behalten (analog _SINCE_SQL: innere
+        # DESC-LIMIT-Subquery), dann aufsteigend zurueckgeben (aeussere ASC-Sortierung).
+        newest = sorted(candidates, key=lambda r: (r.measured_at, r.id or 0), reverse=True)[:limit]
+        ordered = sorted(newest, key=lambda r: (r.measured_at, r.id or 0))
+        return tuple(ordered)
 
     def get_between(
         self,
@@ -235,15 +238,24 @@ class ReadingRepository(Repository):
         LIMIT %s
     """
 
+    # Bei LIMIT-Ueberschreitung die FRISCHESTEN Readings behalten (fuer die Trend-
+    # Extrapolation relevantesten): innere Subquery kappt absteigend (neueste zuerst),
+    # die aeussere Sortierung stellt den dokumentierten ASC-Rueckgabevertrag wieder her.
+    # Ein blosses ASC+LIMIT haette bei Ueberschreitung die AELTESTEN geliefert und den
+    # juengsten Trend still verworfen (DTB-33 Review MEDIUM). Tritt mit der aktuellen
+    # Config (poll 30 s, max_readings_limit 1000) nicht ein, ist aber kadenz-robust.
     _SINCE_SQL = """
-        SELECT
-            id, sensor_id, measured_at, received_at,
-            surface_temp_c, air_temp_c, humidity_pct,
-            pressure_hpa, dew_point_c, source, status
-        FROM reading
-        WHERE sensor_id = %s AND measured_at >= %s
+        SELECT * FROM (
+            SELECT
+                id, sensor_id, measured_at, received_at,
+                surface_temp_c, air_temp_c, humidity_pct,
+                pressure_hpa, dew_point_c, source, status
+            FROM reading
+            WHERE sensor_id = %s AND measured_at >= %s
+            ORDER BY measured_at DESC, id DESC
+            LIMIT %s
+        ) AS recent
         ORDER BY measured_at ASC, id ASC
-        LIMIT %s
     """
 
     _SELECT_SQL = """

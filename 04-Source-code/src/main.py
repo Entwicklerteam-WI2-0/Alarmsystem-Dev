@@ -45,6 +45,7 @@ from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
 from src.config.constants import DEFAULT_SENSOR_ID
 from src.config.loader import load_thresholds
+from src.forecast.bridge import compute_forecast_for_cycle
 from src.ingest.poller import Poller
 from src.model.schemas import AssessmentCurrent, Error, Health, Reading
 from src.storage import (
@@ -112,6 +113,7 @@ def run_assessment_cycle(
     alarm_generator: AlarmGenerator,
     reading: Reading | None,
     now: datetime,
+    forecast_surface_temp_c: float | None = None,
 ) -> None:
     """Ein vollständiger Zyklus: Bewertung (DTB-64) -> Alarm-Generierung (DTB-27).
 
@@ -120,10 +122,19 @@ def run_assessment_cycle(
     Bei `unknown` löst der Generator keinen Alarm aus und die On-Delay-Hysterese friert ein —
     die in DTB-27 dokumentierte Vorbedingung (Stale -> UNKNOWN, nicht GELB) erfüllt DTB-64 hier.
 
+    `forecast_surface_temp_c` ist die optionale 30-min-T_s-Prognose (DTB-33/FA-06); sie wird
+    an die Bewertung durchgereicht und speist die GELB-Vorwarnung. None (Default) = keine
+    Prognose verfügbar (Fail-safe) -> Bewertung allein aus dem aktuellen Reading.
+
     Bewusst KEIN eigenes try/except: Persistenz-/Audit-Fehler propagieren in die Fail-safe-
     Schleife des Schedulers (NF-01: ein Zyklus-Fehler beendet den Betrieb nicht).
     """
-    assessment = service.assess_reading(reading, now)
+    # Keyword fuer forecast_surface_temp_c: `now` und der Prognosewert stehen beide
+    # float|None-nah nebeneinander -> benannt halten, damit eine Signaturreihenfolgen-
+    # aenderung nicht still die Argumente vertauscht.
+    assessment = service.assess_reading(
+        reading, now, forecast_surface_temp_c=forecast_surface_temp_c
+    )
     if assessment.id is None:  # pragma: no cover - defensiver Invarianten-Guard
         # assess_reading garantiert eine persistierte id; fehlt sie, ist die Invariante
         # verletzt -> laut scheitern (kein assert, -O-fest), statt stumm einen Alarm ohne
@@ -137,8 +148,10 @@ def run_assessment_cycle(
 async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
     """Periodische Poll-/Bewertungs-Schleife (Scheduler-Kern der T0-Slice, DTB-64).
 
-    Fail-safe: ein Fehler in einem Zyklus beendet die Schleife NICHT; der naechste
-    Zyklus versucht es erneut. Serve-Zeit-NF-01 (build_assessment_current) faengt
+    Poller holt Snapshot von G1, Prognose-Producer liest die T_s-Historie
+    (DTB-33/FA-06), AssessmentService bewertet + persistiert. Fail-safe: ein
+    Fehler in einem Zyklus beendet die Schleife NICHT; der naechste Zyklus
+    versucht es erneut. Serve-Zeit-NF-01 (build_assessment_current) faengt
     derweil veraltete Daten ab (nie GRUEN).
     """
     logger.info("DTB-64: Scheduler gestartet (Intervall %.0fs).", interval_s)
@@ -147,12 +160,15 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
         try:
             # poller.poll() ist blockierend (httpx.get) -> in einen Thread auslagern,
             # damit der Event-Loop frei bleibt.
-            reading = await asyncio.to_thread(runtime.poller.poll)
+            # now VOR dem Poll: haelt assessed_at nahe an measured_at (Audit-Konsistenz)
+            # und definiert das 30-min-Prognosefenster ab Zyklusbeginn.
             now = datetime.now(UTC)
+            reading = await asyncio.to_thread(runtime.poller.poll)
             # Monotonie erzwingen (Hysterese-Vorbedingung): eine NTP-Rueckwaertskorrektur der
             # Wall-Clock darf die On-Delay-Akkumulation nicht zuruecksetzen (sonst einmaliger
             # Under-Alarm). Nicht-fallende Zeit an die Engines weiterreichen; Clock-Skew fuer
             # Ops sichtbar machen (anhaltender Rueckwaerts-Offset friert die Zeit kurz ein).
+            # Das geklemmte `now` ist auch die gemeinsame Zeitbasis fuer Prognose UND Bewertung.
             if last_now is not None and now < last_now:
                 logger.warning(
                     "Wall-Clock-Rueckwaertssprung (%.1fs) - Zeit geklemmt (Clock-Skew?).",
@@ -160,12 +176,44 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
                 )
                 now = last_now
             last_now = now
+            # DTB-33 (FA-06): 30-min-T_s-Prognose aus der Historie -> GELB-Vorwarnung.
+            # Bruecke liest die Zeitreihe; Fail-safe: None bei fehlendem Reading/DB-Fehler.
+            # Clock-Skew-Implikation: `now` wird VOR dem Poll gesetzt. Laeuft die G1-Uhr G2 vor,
+            # liegt das soeben gepollte measured_at > now und faellt aus dem Trendfenster
+            # (trend.py verwirft `> now`). Das ist fail-safe (None senkt nie ab), kann aber bei
+            # duenner Datenlage die Prognose still degradieren. Bewusst NICHT `now = max(now,
+            # measured_at)`: das braeche die oben erzwungene Monotonie-Invariante der Hysterese.
+            # Prognose-Isolation (NF-01): die 30-min-Vorwarnung ist eine NICHT-kritische
+            # Hilfsfunktion. compute_forecast_for_cycle ist bereits fail-safe (None bei
+            # RepositoryError/fehlendem Reading), aber ein hier nicht erwarteter Fehler
+            # (kuenftige Regression im Producer, ungefangener DB-Edge-Case) wuerde sonst ins
+            # aeussere except propagieren und run_assessment_cycle in DIESEM Tick auslassen —
+            # eine Hilfsfunktion duerfte dann den sicherheitskritischen Bewertungspfad
+            # blockieren. Darum eigen kapseln: loggen (sichtbar, kein stilles Schlucken) ->
+            # forecast=None -> Bewertung laeuft unbedingt weiter (allein auf dem Ist-Reading).
+            try:
+                forecast = await asyncio.to_thread(
+                    compute_forecast_for_cycle,
+                    reading,
+                    runtime.reading_repo,
+                    runtime.thresholds.prognose,
+                    now,
+                )
+            except Exception:  # noqa: BLE001 - Prognose-Fehler darf Bewertung nie blockieren (NF-01)
+                # Fängt auch den ValueError aus bridge.py (naives `now`) ab, der
+                # laut Docstring sichtbar werden soll. Durch logger.exception bleibt
+                # er sichtbar; die Bewertung läuft unbedingt weiter (NF-01).
+                logger.exception("Prognose fehlgeschlagen (fail-safe, forecast=None).")
+                forecast = None
             await asyncio.to_thread(
                 run_assessment_cycle,
                 runtime.service,
                 runtime.alarm_generator,
                 reading,
                 now,
+                # Keyword (nicht 5. Positionsarg): konsistent zum inneren assess_reading-Aufruf,
+                # damit eine Signaturreihenfolgen-Aenderung die Argumente nicht still vertauscht.
+                forecast_surface_temp_c=forecast,
             )
         except AuditError as exc:
             # Alarm IST gespeichert + Engine aktiv (KEIN Re-Arm), aber OHNE Audit-Trail -> ERROR

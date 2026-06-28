@@ -104,9 +104,10 @@ class MySqlAssessmentRepository(AssessmentRepository):
         INSERT INTO assessment (
             ts, reading_id, threshold_set_id, risk_level,
             driving_factor, explanation,
-            surface_temp_c, dew_point_c, delta_t, humidity_pct
+            surface_temp_c, dew_point_c, delta_t, humidity_pct,
+            forecast_surface_temp_c
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
     """
 
@@ -116,7 +117,8 @@ class MySqlAssessmentRepository(AssessmentRepository):
         SELECT
             id, ts, reading_id, threshold_set_id, risk_level,
             driving_factor, explanation,
-            surface_temp_c, dew_point_c, delta_t, humidity_pct
+            surface_temp_c, dew_point_c, delta_t, humidity_pct,
+            forecast_surface_temp_c
         FROM assessment
         ORDER BY ts DESC, id DESC
         LIMIT 1
@@ -149,6 +151,7 @@ class MySqlAssessmentRepository(AssessmentRepository):
             assessment.dew_point_c,
             assessment.delta_t,
             assessment.humidity_pct,
+            assessment.forecast_surface_temp_c,
         )
         try:
             if self._connection is not None:
@@ -225,4 +228,5 @@ class MySqlAssessmentRepository(AssessmentRepository):
             dew_point_c=row["dew_point_c"],
             delta_t=row["delta_t"],
             humidity_pct=row["humidity_pct"],
+            forecast_surface_temp_c=row["forecast_surface_temp_c"],
         )

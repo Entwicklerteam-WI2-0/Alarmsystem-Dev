@@ -1,6 +1,6 @@
 # Team-Sync-Entscheidungen — API/Datenmodell-Naht (DTB-26 / P1.3 → P1.4)
 
-> **Zweck:** Ergebnis-Dokument des Seam-Syncs. Hält die **getroffenen Entscheidungen** zur Naht
+> **Zweck:** Ergebnis-Dokument des Team-Syncs. Hält die **getroffenen Entscheidungen** zur Naht
 > G1 → G2 → G3 fest (die Antworten, nicht mehr die Fragen). Friert die G2-Seite des Contracts ein (**P1.4**).
 > **Stand:** 2026-06-23 · **Bezug:** DTB-26 (P1.3), Entscheidungslog **E-36** (baut auf **E-31** Pull-Naht),
 > `src/model/schemas.py` (Reading/Assessment), `Umstellung-Pull-3Faktor-Faktenblatt.md`.
@@ -92,3 +92,33 @@ G2 ist an dieser Naht **Client**: G2 pollt G1, G1 liefert nur Rohwerte.
 4. ✅ Contract **beidseitig eingefroren (P1.4)** → entblockt DTB-19 (OpenAPI), DTB-28 (Persistenz), DTB-38 (Bewertungskern).
 
 > Die Versand-Vorlagen liegen jetzt im Repo: `02-Arbeitsdokumente/Anfrage-G1.md`, `02-Arbeitsdokumente/Anfrage-G3.md`.
+
+---
+
+## Post-Freeze-Team-Sync — Nachträge nach dem v1.0-Freeze (Stand 2026-06-27)
+
+> Additive G2→G3-Erweiterungen NACH dem 2026-06-24-Freeze. Sie brechen den eingefrorenen Wire-Kern
+> (oben) NICHT (`info.version` bleibt `1.0.0`). Maßgeblich: `04-Source-code/docs/api/v1/openapi.yaml`.
+
+### 6. `GET /v1/thresholds` (DTB-62) — neuer lesender G2→G3-Endpoint
+- Liefert die aktiven Vereisungs-Schwellen für das G3-Schwellenwert-Menü (rein lesend, RB-01-neutral).
+- **⚠️ Offen: G3-Sign-off fehlt.** Dieser Endpoint kam NACH dem Freeze dazu und hat noch kein
+  `team-sync-confirmed` von G3 (Nick).
+
+### 7. DTB-33 (FA-06) — 30-min-Prognose erweitert `/v1/thresholds.prognose` (additiv, E-41)
+- Neue Felder: `trend_window_min`, `horizon_min` (G3-Kalibrierwerte) + `min_points`, `max_readings_limit`
+  (interne Tuning-/DB-Last-Knöpfe, NICHT fürs G3-Menü). Non-breaking — G3 ignoriert unbekannte Felder.
+- G3 informiert + um Sign-off gebeten (Desktop-Nachricht 2026-06-27). **Offen: G3-Bestätigung.**
+
+### 8. Alarm-Endpoints — Contract vollständig, Laufzeit noch nicht
+- `GET /v1/alarms`, `GET /v1/alarms/stream` (SSE), `POST /v1/alarms/{id}/ack` (`operator`/`note`, `409`
+  bei Double-Ack, RB-01) stehen vollständig im Contract (openapi). G3 entwickelt gegen die Spec.
+- **⚠️ Noch nicht als Laufzeit-Route implementiert** (nur Alarm-Generierung DTB-27 läuft) — ein Live-Call
+  liefert aktuell `404`. Offene Implementierungs-Tasks (Alarm-Serving).
+
+### G3-Versandstand + offene Punkte für die nächste Team-Sync-Runde (2026-06-27)
+- Versandfertig auf dem Desktop: `G2-API-v1-openapi.yaml` (aktuelle vollständige G2→G3-Spec = Repo-Stand)
+  und `G1-API-Vertrag-G2-konsumiert.yaml` (was G2 von G1 abruft) + `G3-Nachricht-v1-thresholds-…txt`.
+- **Offen:** (a) G3-Sign-off `/v1/thresholds` (Endpoint + 4 neue Felder); (b) Alarm-Serving implementieren;
+  (c) finale G1-Schwellen — der `vereisung`-Block ist noch zu kalibrieren, `flatline_epsilon_c` ist
+  bereits aus dem DS18B20-Datenblatt abgeleitet (DTB-20).
