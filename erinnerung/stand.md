@@ -536,3 +536,17 @@ Scheduler scharf). Integration/Test bis Mi Nacht.
   über den 17:30-Test bereits abgedeckt; offen bleibt Pi-Deploy/Live-Integration (Mo 29.06.). Scratchpad-
   Launcher + Sim-Kopie außerhalb des Repos.
 —architekt/Petzold
+
+## 2026-06-28 (Nacht) — Lokale Vollverifikation + E-43 gemergt + DTB-67 geklärt (architekt/Petzold)
+- **Lokale Vollverifikation (DB-frei, alles grün, 0 Produktbugs):** 4-Stufen-Kaskade inkl. **exakter Grenzwerte**
+  (T_s 0/1 °C), beide Vorfälle, komplette Fail-safe-Schicht (stale/fault/down/recovery + Sprung/Out-of-Range),
+  Prognose→GELB, Alarm-Lifecycle (WARNING+CRITICAL, ack 200/409/404/400/422), SSE Push/Heartbeat/Cap, Auth,
+  Endpoints+Edge-Cases, **Anti-Chatter, Robustheit gegen Fehleingaben, Nebenläufigkeit (100 parallel)**. Reale
+  MySql-Persistenz separat über Lucas' 17:30-STOA-Test + Integrationstests.
+- **E-43 gemergt** (PR #154 → `main`): Fault-vs-Stale-Diagnoselücke dokumentiert (accept & defer, Sicherheit unberührt).
+- **DTB-67 (G3-Abstimmung) geklärt + erledigt:** G3 liest `explanation` nicht aus, `driving_factor=null` auf
+  `unknown` ok → E-43 **Variante C konditional/YAGNI** (Fault/Stale steht bereits in Server-Logs + Audit). ADR-E43-
+  Nachtrag + Logbuch-Zeile + persönlicher Log-Eintrag; Jira-Kommentar + DTB-67 → Erledigt.
+- **Offen:** Doku-PR `docs/e43-nachtrag-dtb67` mergen (nach `test`-Check). **Pi-Deploy + G1/G3-Live-Integration
+  Mo 29.06.** E-43 Variante C nur bei echtem G3-Konsument.
+—architekt/Petzold

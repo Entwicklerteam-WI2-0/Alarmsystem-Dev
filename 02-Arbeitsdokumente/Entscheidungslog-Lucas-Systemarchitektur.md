@@ -194,6 +194,7 @@
 - *Entscheidung:* Für M3 keine Code-Änderung (sicheres Verhalten bleibt); Diagnose-Verbesserung als Folge-Task nach M3. **Empfohlene Variante (C):** verlorenen Grund durch `poll()` durchreichen und in `explanation`/`driving_factor` schreiben — ohne Datenmodell-/Baseline-/`/v1/readings`-Eingriff.
 - *Alternativen (verworfen):* (A) sofort vor M3 — Regressionsrisiko am kritischen Pfad, kein Konsument. (B) Fault/Stale-Readings persistieren — teuer (Baseline-Schutz E-42, `test_schicht2a` umkehren, `/v1/readings`-Semantik). (D) nicht dokumentieren.
 - *Bezug:* NF-01; FA-04; R1–R5 (Wartbarkeit/Ausfall); RB-01; E-31; E-36; E-40 (Schichten 1/2/6); E-42; DTB-43/DTB-49/DTB-64.
+- *Nachtrag (28.06., DTB-67 geklärt):* G3 liest `explanation` nicht aus; `driving_factor=null` auf `unknown` ist ok (strukturierte Strings = nicht-blockierender Bonus). → Variante C von „empfohlen" auf **konditional** herabgestuft — Umsetzung nur, falls ein G3-Render-Pfad es konsumiert (YAGNI; Fault/Stale steht bereits in Server-Logs + Audit). Für M3 keine Änderung. Volltext: ADR-E43-Nachtrag.
 
 **E-11 — 4-Stufen-Risikomodell (🟢🟡🟠🔴) mit konkreten Schwellen + Hysterese/Entprellung**
 - *Begründung:* Klare, parametrierbare Kategorien statt eines unscharfen Einzelwerts; Hysterese verhindert Alarm-Flattern (ISA-18.2). Beide Vorfälle werden korrekt aufgelöst.
