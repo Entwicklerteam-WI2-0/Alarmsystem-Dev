@@ -59,10 +59,16 @@ class AssessmentService:
         thresholds: Thresholds,
         assessment_repo: AssessmentRepository,
         audit_repo: AuditRepository,
+        threshold_set_id: int | None = None,
     ) -> None:
         self._thresholds = thresholds
         self._assessment_repo = assessment_repo
         self._audit_repo = audit_repo
+        # DTB-65: id des aktiven threshold_set (DB) -> wird auf jedes Assessment gestempelt
+        # (NF-05-Traceability: welcher Schwellensatz galt). None, wenn die Schwellen aus der
+        # JSON-Seed-Config kommen (kein persistierter Satz). Pro laufende Instanz fix
+        # (Reload-on-Restart-Semantik, DTB-63).
+        self._threshold_set_id = threshold_set_id
 
     def assess_reading(
         self,
@@ -107,18 +113,29 @@ class AssessmentService:
         if reading is None:
             # Kein Reading -> kein reading_id moeglich (Fail-safe ohne Bezug).
             assessment = build_unknown_assessment("keine aktuellen Daten", now).model_copy(
-                update={"driving_factor": DRIVING_FACTOR_STALE}
+                update={
+                    "driving_factor": DRIVING_FACTOR_STALE,
+                    "threshold_set_id": self._threshold_set_id,
+                }
             )
         elif reading.status is SensorStatus.FAULT:
             # Reading liegt vor (Poller hat persistiert) -> reading_id verknuepfen,
             # damit aus dem Snapshot nachvollziehbar bleibt, welches konkrete Reading
             # den Fail-safe ausgeloest hat (NF-05 / Audit-Traceability).
             assessment = build_unknown_assessment("sensor fault", now).model_copy(
-                update={"reading_id": reading.id, "driving_factor": DRIVING_FACTOR_SENSOR_FAULT}
+                update={
+                    "reading_id": reading.id,
+                    "driving_factor": DRIVING_FACTOR_SENSOR_FAULT,
+                    "threshold_set_id": self._threshold_set_id,
+                }
             )
         elif is_stale(reading, now, stale_timeout_s):
             assessment = build_unknown_assessment("stale (Messwert veraltet)", now).model_copy(
-                update={"reading_id": reading.id, "driving_factor": DRIVING_FACTOR_STALE}
+                update={
+                    "reading_id": reading.id,
+                    "driving_factor": DRIVING_FACTOR_STALE,
+                    "threshold_set_id": self._threshold_set_id,
+                }
             )
         else:
             if reading.id is None:
@@ -142,11 +159,7 @@ class AssessmentService:
                 else reading.surface_temp_c - reading.dew_point_c
             )
             # DTB-66: driving_factor + explanation aus der Kaskade ableiten.
-            # threshold_set_id bleibt bewusst None: der aktuelle Loader (DTB-15)
-            # traegt keine Schwellensatz-Referenz (nur Sektionen), der geltende
-            # Satz ist strukturell noch nicht belegbar. Die DB-Spalte (FK auf
-            # threshold_set) + INSERT/SELECT sind vorbereitet; die audit-feste
-            # Traceability bei Schwellen-Aenderungen (NF-05) zieht DTB-65 nach.
+            # DTB-65: threshold_set_id (s. u.) = der aktive DB-Schwellensatz; None bei JSON-Seed.
             driving_factor, explanation = derive_explanation(
                 reading.surface_temp_c,
                 reading.dew_point_c,
@@ -158,6 +171,7 @@ class AssessmentService:
             assessment = Assessment(
                 ts=now,
                 reading_id=reading.id,
+                threshold_set_id=self._threshold_set_id,
                 risk_level=risk,
                 driving_factor=driving_factor,
                 explanation=explanation,
