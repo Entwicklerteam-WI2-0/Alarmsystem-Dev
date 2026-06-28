@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -40,7 +41,12 @@ from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator, AuditError
 from src.api.broadcaster import AlarmBroadcaster
 from src.api.exceptions import RuntimeNotReadyError
-from src.api.responses import NO_STORE_HEADERS, service_unavailable
+from src.api.responses import (
+    NO_STORE_HEADERS,
+    VALIDATION_ERROR_CODE,
+    error_response,
+    service_unavailable,
+)
 from src.api.runtime import Runtime, get_runtime
 from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
@@ -54,6 +60,7 @@ from src.storage import (
     ReadingRepository,
     RepositoryError,
 )
+from src.storage.acknowledgement_repository import MySqlAcknowledgementRepository
 from src.storage.alarm_repository import MySqlAlarmRepository
 
 logger = logging.getLogger(__name__)
@@ -105,6 +112,10 @@ def build_runtime() -> Runtime:
     # DTB-61: ein Broadcaster pro laufende Instanz — geteilt zwischen run_scheduler (Producer)
     # und GET /v1/alarms/stream (Consumer). Haelt nur In-Memory-Abos, kontaktiert nichts.
     alarm_broadcaster = AlarmBroadcaster()
+    # DTB-24: Quittierungs-Repo fuer POST /v1/alarms/{id}/ack (verbindet State-Wechsel +
+    # acknowledgement-Eintrag + Audit atomar). Wie die uebrigen MySql-Repos: verbindet erst pro
+    # Query, kontaktiert beim Bauen des Graphen keine DB.
+    ack_repo = MySqlAcknowledgementRepository()
     return Runtime(
         thresholds=thresholds,
         reading_repo=reading_repo,
@@ -114,6 +125,7 @@ def build_runtime() -> Runtime:
         service=service,
         alarm_generator=alarm_generator,
         alarm_broadcaster=alarm_broadcaster,
+        ack_repo=ack_repo,
     )
 
 
@@ -345,6 +357,27 @@ async def _runtime_not_ready_handler(_request: Request, exc: RuntimeNotReadyErro
     """Fehlt der Runtime-Graph, contract-konform als 503 melden (nie rohes 500/{detail})."""
     logger.error("Runtime nicht verfuegbar: %s", exc)
     return service_unavailable("G2 momentan nicht lieferfaehig.")
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Body-/Parameter-Validierungsfehler contract-konform als 422 `Error {code, message}`.
+
+    FastAPIs Default liefert 422 `{"detail": [...]}` — das bricht die eingefrorene Naht
+    (Contract D: Fehlerformat `{code, message}`). Wir bilden den ERSTEN Fehler auf eine knappe,
+    nicht-leakende Meldung ab (nur Feldname aus dem oeffentlichen Schema, keine internen Details).
+    Gilt API-weit; betrifft aktuell den ack-Body (DTB-24, POST /v1/alarms/{id}/ack).
+    Geschaeftsregeln am Pfad wie `id < 1` meldet der ack-Endpoint selbst als 400 (der Param ist
+    bewusst ohne ge-Constraint deklariert, damit id=0 dort landet statt hier als 422).
+    """
+    errors = exc.errors()
+    if errors:
+        loc = errors[0].get("loc", ())
+        field = ".".join(str(part) for part in loc if part != "body") or "Anfrage"
+        message = f"Ungueltiger oder fehlender Wert: {field}."
+    else:  # pragma: no cover - RequestValidationError traegt immer mindestens einen Fehler
+        message = "Ungueltige Anfrage (Schema-Validierung fehlgeschlagen)."
+    return error_response(422, VALIDATION_ERROR_CODE, message)
 
 
 @app.get(

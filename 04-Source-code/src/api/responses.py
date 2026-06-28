@@ -13,8 +13,13 @@ from fastapi.responses import JSONResponse
 
 from src.model.schemas import Error
 
-# Contract-Fehlercode "G2 (noch) nicht lieferfaehig" (503), s. openapi.yaml Error-Beispiel.
-SERVICE_UNAVAILABLE_CODE = "SERVICE_UNAVAILABLE"
+# Contract-Fehlercodes (s. openapi.yaml Error-Beispiele). Benannte Konstanten statt
+# Inline-Strings -> keine Tippfehler-Drift zwischen Endpoint und Spec.
+SERVICE_UNAVAILABLE_CODE = "SERVICE_UNAVAILABLE"  # 503: G2 (noch) nicht lieferfaehig
+BAD_REQUEST_CODE = "BAD_REQUEST"  # 400: Request-/Pfad-/Geschaeftsregel-Fehler (z. B. id < 1)
+NOT_FOUND_CODE = "NOT_FOUND"  # 404: Ressource existiert nicht
+ALARM_ALREADY_ACKNOWLEDGED_CODE = "ALARM_ALREADY_ACKNOWLEDGED"  # 409: Double-Ack (NF-09)
+VALIDATION_ERROR_CODE = "VALIDATION_ERROR"  # 422: Body-Schema-Validierung
 
 # Sicherheits-/Echtzeit-Naht: weder Proxy noch Browser duerfen einen ueberholten Ausfall
 # (503) ODER einen Momentan-/Konfig-Zustand (200) cachen. Ein gecachtes 503 (G2 laengst
@@ -25,15 +30,22 @@ SERVICE_UNAVAILABLE_CODE = "SERVICE_UNAVAILABLE"
 NO_STORE_HEADERS = MappingProxyType({"Cache-Control": "no-store"})
 
 
-def service_unavailable(message: str) -> JSONResponse:
-    """503 im Contract-Fehlerformat `Error {code, message}` + `Cache-Control: no-store`.
+def error_response(status_code: int, code: str, message: str) -> JSONResponse:
+    """Contract-konforme Fehlerantwort `Error {code, message}` + `Cache-Control: no-store`.
 
-    Bewusst NICHT `HTTPException(detail=...)`: das liefert `{"detail": ...}` und bricht
-    damit die eingefrorene Naht (Contract verlangt `{code, message}`). Die Nachricht
-    bleibt generisch (keine internen Details/Secrets, Contract D / RB-01).
+    Eine Quelle der Wahrheit fuer ALLE /v1-Fehler (400/404/409/422/503): nie FastAPIs
+    `{"detail": ...}` (bricht die eingefrorene Naht, Contract D), nie ein von einem Proxy
+    gecachter Fehlerzustand (NF-01-Geist). Die Nachricht bleibt generisch — keine internen
+    Details/Secrets (Contract D / RB-01).
     """
     return JSONResponse(
-        status_code=503,
-        content=Error(code=SERVICE_UNAVAILABLE_CODE, message=message).model_dump(),
+        status_code=status_code,
+        content=Error(code=code, message=message).model_dump(),
         headers=NO_STORE_HEADERS,
     )
+
+
+def service_unavailable(message: str) -> JSONResponse:
+    """503 `Error {code, message}` (Spezialfall von `error_response`, eigener Name fuer
+    den haeufigsten Fall: G2 nicht lieferfaehig)."""
+    return error_response(503, SERVICE_UNAVAILABLE_CODE, message)

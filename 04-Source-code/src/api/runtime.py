@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from src.config.loader import Thresholds
     from src.ingest.poller import Poller
     from src.storage import AssessmentRepository, AuditRepository, Repository
+    from src.storage.acknowledgement_repository import AcknowledgementRepository
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,9 @@ class Runtime:
     # DTB-61: In-Process Pub/Sub fuer den Live-Alarm-Stream. run_scheduler (Producer) pusht
     # ausgeloeste Alarme hinein, GET /v1/alarms/stream (Consumer) abonniert daraus.
     alarm_broadcaster: AlarmBroadcaster
+    # DTB-24: Persistenz der Alarm-Quittierung (POST /v1/alarms/{id}/ack). Eigenes Repo, weil
+    # Quittieren State-Wechsel + acknowledgement-Eintrag + Audit atomar verbindet (NF-09).
+    ack_repo: AcknowledgementRepository
 
 
 def get_runtime(request: Request) -> Runtime:

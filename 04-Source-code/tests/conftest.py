@@ -21,6 +21,7 @@ from src.assessment.service import AssessmentService
 from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
 from src.main import _SENSOR_ID, Runtime
+from src.storage.acknowledgement_repository import InMemoryAcknowledgementRepository
 from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
@@ -92,6 +93,13 @@ def alarm_broadcaster() -> AlarmBroadcaster:
 
 
 @pytest.fixture
+def ack_repo() -> InMemoryAcknowledgementRepository:
+    # DTB-24: In-Memory-Quittierungs-Repo. Kein Alarm vorab geseedet — Tests, die einen
+    # konkreten Alarm quittieren, seeden ihn selbst ueber den Konstruktor.
+    return InMemoryAcknowledgementRepository()
+
+
+@pytest.fixture
 def runtime(
     thresholds: Thresholds,
     reading_repo: InMemoryReadingRepository,
@@ -101,6 +109,7 @@ def runtime(
     assessment_service: AssessmentService,
     alarm_generator: AlarmGenerator,
     alarm_broadcaster: AlarmBroadcaster,
+    ack_repo: InMemoryAcknowledgementRepository,
 ) -> Runtime:
     # Vollstaendiger Runtime-Graph mit In-Memory-Repos; teilt alle Instanzen mit den
     # Einzelfixtures, sodass poller.poll() + service.assess_reading() und die spaetere
@@ -114,6 +123,7 @@ def runtime(
         service=assessment_service,
         alarm_generator=alarm_generator,
         alarm_broadcaster=alarm_broadcaster,
+        ack_repo=ack_repo,
     )
 
 
