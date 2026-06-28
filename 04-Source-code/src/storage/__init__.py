@@ -4,6 +4,11 @@ Rohes PyMySQL -> MySQL/MariaDB; kein ORM, E-35.
 Siehe Backend-Konzept §6a.
 """
 
+from src.storage.alarm_repository import (
+    AlarmRepository,
+    InMemoryAlarmRepository,
+    MySqlAlarmRepository,
+)
 from src.storage.assessment_repository import (
     AssessmentRepository,
     InMemoryAssessmentRepository,
@@ -33,6 +38,10 @@ __all__ = [
     "ReadingRepository",
     "Repository",
     "RepositoryError",
+    # Alarm-Persistenz + Resync-Lesepfad (DTB-27 / DTB-31):
+    "AlarmRepository",
+    "InMemoryAlarmRepository",
+    "MySqlAlarmRepository",
     # Assessment-Persistenz (DTB-64 / F10):
     "AssessmentRepository",
     "InMemoryAssessmentRepository",

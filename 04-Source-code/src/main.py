@@ -66,6 +66,7 @@ from src.storage import (
     RepositoryError,
     ThresholdSetRepository,
 )
+from src.storage.acknowledgement_repository import MySqlAcknowledgementRepository
 from src.storage.alarm_repository import MySqlAlarmRepository
 
 logger = logging.getLogger(__name__)
@@ -110,25 +111,33 @@ def build_runtime() -> Runtime:
         plausibility_thresholds=thresholds.plausibilitaet,
     )
     service = AssessmentService(thresholds, assessment_repo, audit_repo)
+    # DTB-27/DTB-31: EINE Alarm-Repository-Instanz pro laufende Instanz -- geteilt zwischen
+    # AlarmGenerator (Schreiben beim Ausloesen) und GET /v1/alarms (Resync-Lesen ueber
+    # runtime.alarm_repo). Ein gemeinsames Repository statt zweier Instanzen.
+    alarm_repo = MySqlAlarmRepository()
     # DTB-27: Alarm-Generierung als Konsument der Bewertung. AlarmHysterese ist pro Sensor
     # zustandsbehaftet (On-Delay) -> gehört in den langlebigen DI-Graph (eine Instanz je
     # laufende Instanz; aktuell genau ein Sensor). Audit-Log wird mit dem Service geteilt.
-    alarm_generator = AlarmGenerator(
-        AlarmHysterese(thresholds.hysterese), MySqlAlarmRepository(), audit_repo
-    )
+    alarm_generator = AlarmGenerator(AlarmHysterese(thresholds.hysterese), alarm_repo, audit_repo)
     # DTB-61: ein Broadcaster pro laufende Instanz — geteilt zwischen run_scheduler (Producer)
     # und GET /v1/alarms/stream (Consumer). Haelt nur In-Memory-Abos, kontaktiert nichts.
     alarm_broadcaster = AlarmBroadcaster()
+    # DTB-24: Quittierungs-Repo fuer POST /v1/alarms/{id}/ack (verbindet State-Wechsel +
+    # acknowledgement-Eintrag + Audit atomar). Wie die uebrigen MySql-Repos: verbindet erst pro
+    # Query, kontaktiert beim Bauen des Graphen keine DB.
+    ack_repo = MySqlAcknowledgementRepository()
     return Runtime(
         thresholds=thresholds,
         reading_repo=reading_repo,
         assessment_repo=assessment_repo,
         audit_repo=audit_repo,
+        alarm_repo=alarm_repo,
         threshold_set_repo=threshold_set_repo,
         poller=poller,
         service=service,
         alarm_generator=alarm_generator,
         alarm_broadcaster=alarm_broadcaster,
+        ack_repo=ack_repo,
     )
 
 
@@ -417,7 +426,8 @@ async def _request_validation_error_handler(
 
     Query-/Pfad-/Header-Fehler sind Request-Fehler -> 400 `Error {code, message}`.
     Body-Schema-Fehler (POST/PUT/PATCH) bleiben 422, weil der Contract `422` explizit
-    fuer Body-Validierung reserviert (API_FROZEN_v1.md §2D).
+    fuer Body-Validierung reserviert (API_FROZEN_v1.md §2D). Betrifft auch den ack-Body
+    (DTB-24, POST /v1/alarms/{id}/ack); ein nicht-numerischer Pfad-`id` faellt als 400.
     """
     errors = exc.errors()
     has_body_error = any(err.get("loc", [None])[0] == "body" for err in errors)
@@ -438,10 +448,15 @@ async def _request_validation_error_handler(
             # Aufloesung vom abweichenden "VALIDATION_ERROR" vereinheitlicht, damit derselbe
             # 422-Fall app-weit denselben Code liefert (DTB-63/DTB-34).
             content=Error(code="UNPROCESSABLE_ENTITY", message=message).model_dump(),
+            # no-store wie auf ALLEN Fehlerpfaden (NF-01-Geist): auch ein Validierungsfehler
+            # darf nicht von einem Proxy gecacht werden (#132<-main-Merge, ack-Test deckte die
+            # bislang fehlende Header-Setzung auf).
+            headers=NO_STORE_HEADERS,
         )
     return JSONResponse(
         status_code=400,
         content=Error(code="BAD_REQUEST", message=message).model_dump(),
+        headers=NO_STORE_HEADERS,
     )
 
 

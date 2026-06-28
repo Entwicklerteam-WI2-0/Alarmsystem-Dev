@@ -22,6 +22,7 @@ from src.config.constants import DEFAULT_SENSOR_ID
 from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
 from src.main import Runtime
+from src.storage.acknowledgement_repository import InMemoryAcknowledgementRepository
 from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
@@ -85,12 +86,22 @@ def poller(reading_repo: InMemoryReadingRepository, thresholds: Thresholds) -> P
 
 
 @pytest.fixture
-def alarm_generator(thresholds: Thresholds, audit_repo: InMemoryAuditRepository) -> AlarmGenerator:
-    # In-Memory-AlarmGenerator (DTB-27): Hysterese aus echter Config, In-Memory-Alarm-Repo,
+def alarm_repo() -> InMemoryAlarmRepository:
+    # Geteilte Alarm-Persistenz: eine Instanz fuer Generator (DTB-27 Schreiben) UND
+    # runtime.alarm_repo (DTB-31 Resync-Lesen) — analog build_runtime (main.py), sodass
+    # ein erzeugter Alarm spaeter ueber GET /v1/alarms sichtbar ist.
+    return InMemoryAlarmRepository()
+
+
+@pytest.fixture
+def alarm_generator(
+    thresholds: Thresholds,
+    alarm_repo: InMemoryAlarmRepository,
+    audit_repo: InMemoryAuditRepository,
+) -> AlarmGenerator:
+    # In-Memory-AlarmGenerator (DTB-27): Hysterese aus echter Config, geteiltes Alarm-Repo,
     # geteiltes audit_repo — analog build_runtime, aber ohne DB.
-    return AlarmGenerator(
-        AlarmHysterese(thresholds.hysterese), InMemoryAlarmRepository(), audit_repo
-    )
+    return AlarmGenerator(AlarmHysterese(thresholds.hysterese), alarm_repo, audit_repo)
 
 
 @pytest.fixture
@@ -100,16 +111,25 @@ def alarm_broadcaster() -> AlarmBroadcaster:
 
 
 @pytest.fixture
+def ack_repo() -> InMemoryAcknowledgementRepository:
+    # DTB-24: In-Memory-Quittierungs-Repo. Kein Alarm vorab geseedet — Tests, die einen
+    # konkreten Alarm quittieren, seeden ihn selbst ueber den Konstruktor.
+    return InMemoryAcknowledgementRepository()
+
+
+@pytest.fixture
 def runtime(
     thresholds: Thresholds,
     reading_repo: InMemoryReadingRepository,
     assessment_repo: InMemoryAssessmentRepository,
     audit_repo: InMemoryAuditRepository,
+    alarm_repo: InMemoryAlarmRepository,
     threshold_set_repo: InMemoryThresholdSetRepository,
     poller: Poller,
     assessment_service: AssessmentService,
     alarm_generator: AlarmGenerator,
     alarm_broadcaster: AlarmBroadcaster,
+    ack_repo: InMemoryAcknowledgementRepository,
 ) -> Runtime:
     # Vollstaendiger Runtime-Graph mit In-Memory-Repos; teilt alle Instanzen mit den
     # Einzelfixtures, sodass poller.poll() + service.assess_reading() und die spaetere
@@ -119,11 +139,13 @@ def runtime(
         reading_repo=reading_repo,
         assessment_repo=assessment_repo,
         audit_repo=audit_repo,
+        alarm_repo=alarm_repo,
         threshold_set_repo=threshold_set_repo,
         poller=poller,
         service=assessment_service,
         alarm_generator=alarm_generator,
         alarm_broadcaster=alarm_broadcaster,
+        ack_repo=ack_repo,
     )
 
 

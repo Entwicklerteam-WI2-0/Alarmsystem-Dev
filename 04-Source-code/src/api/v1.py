@@ -1,8 +1,11 @@
 """v1-API-Router des G2-Backends (Serving zu G3).
 
-Sammelt die versionierten `/v1/`-Endpoints (AE-03). Aktuell: `GET /v1/thresholds`
-(DTB-62) und `GET /v1/readings` (DTB-34).
-Alle Endpoints hier sind **rein lesend** (RB-01-neutral).
+Sammelt die versionierten `/v1/`-Endpoints (AE-03): `GET /v1/thresholds` (DTB-62),
+`GET /v1/readings` (DTB-34), `GET /v1/alarms/stream` (DTB-61, SSE) und
+`POST /v1/alarms/{id}/ack` (DTB-24, Quittierung). Alle sind **RB-01-neutral**:
+die GET-Endpoints sind rein lesend; der ack-Endpoint schreibt zwar (Zustand
+`active -> acknowledged` + Audit), ist aber reine UI-/Audit-Quittierung — KEIN Aktor,
+keine Runway-Freigabe/-Sperre.
 """
 
 import logging
@@ -16,18 +19,33 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import ValidationError
 
 from src.api.broadcaster import StreamCapacityError, sse_alarm_frames
-from src.api.responses import NO_STORE_HEADERS, service_unavailable, unprocessable_entity
+from src.api.responses import (
+    ALARM_ALREADY_ACKNOWLEDGED_CODE,
+    BAD_REQUEST_CODE,
+    NO_STORE_HEADERS,
+    NOT_FOUND_CODE,
+    error_response,
+    service_unavailable,
+    unprocessable_entity,
+)
 from src.api.runtime import Runtime, get_runtime
 from src.api.security import require_api_key
 from src.config.constants import DEFAULT_SENSOR_ID
 from src.config.loader import ConfigError, Thresholds, parse_thresholds
-from src.model.enums import AuditEventType
+from src.model.enums import AlarmState, AuditEventType
 from src.model.schemas import (
+    Acknowledgement,
+    AckRequest,
+    AlarmResponse,
     AuditLogEntry,
     Error,
     ReadingResponse,
     ThresholdSet,
     ThresholdUpdateRequest,
+)
+from src.storage.acknowledgement_repository import (
+    AlarmNotAcknowledgeableError,
+    AlarmNotFoundError,
 )
 from src.storage.repository import RepositoryError
 
@@ -271,6 +289,81 @@ def read_readings(
     return readings_wire
 
 
+@router.get(
+    "/alarms",
+    response_model=list[AlarmResponse],
+    summary="Zustands-Abfrage der Alarme (Resync, kein Entdeckungs-Poll)",
+    tags=["Alarms"],
+    responses={
+        400: {
+            "model": Error,
+            "description": "Ungueltiger state-Filter.",
+        },
+        503: {
+            "model": Error,
+            "description": "G2 (noch) nicht lieferfaehig (Runtime nicht bereit / DB-Ausfall).",
+        },
+    },
+)
+def list_alarms(
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+    response: Response,
+    state: Annotated[
+        AlarmState | None,
+        Query(
+            description=(
+                "Auf einen Alarm-Zustand filtern (active|acknowledged|cleared). "
+                "Ohne Angabe: alle OFFENEN Alarme (active + acknowledged). Ein "
+                "ungueltiger Wert -> 400 (globaler Request-Validation-Handler)."
+            ),
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        Query(description="Maximale Anzahl zurueckgegebener Alarme.", ge=1, le=500),
+    ] = 100,
+) -> list[AlarmResponse] | JSONResponse:
+    """Liefert Alarme als Resync-Backstop fuer G3 (DTB-31, E-37).
+
+    Zustands-Abfrage fuer Initial-Load + Resync nach SSE-Disconnect -- KEIN
+    Entdeckungs-Poll (Live-Alarme kommen ueber GET /v1/alarms/stream). Rein lesend
+    (RB-01-neutral): kein Zustandswechsel, kein Aktor.
+
+    Ohne `state`-Filter werden die OFFENEN Alarme (active + acknowledged) geliefert, damit
+    nach einem Disconnect auch bereits quittierte, aber noch nicht beendete Alarme in der
+    G3-Ansicht bleiben. Bei Persistenzfehlern wird fail-safe 503 im Contract-Format
+    `Error {code, message}` gemeldet (NF-01).
+
+    `state` ist als `AlarmState`-Enum typisiert (matcht das frozen openapi.yaml-Schema
+    `$ref AlarmState`). Ein ungueltiger Wert wird vom globalen RequestValidationError-
+    Handler contract-konform als `400 Error{code, message}` abgebildet (Query-Fehler =
+    400, Contract D) -- nicht als FastAPI-Default-422.
+    """
+    response.headers.update(NO_STORE_HEADERS)
+
+    try:
+        alarms = runtime.alarm_repo.get_alarms(state=state, limit=limit)
+        # Domain->Wire-Mapping bewusst INNERHALB des try (analog readings): ein unerwarteter
+        # Drift (z. B. id=None) propagierte sonst als roher 500 und braeche den
+        # Error{code,message}-Contract (NF-01).
+        alarms_wire = [AlarmResponse(**alarm.model_dump()) for alarm in alarms]
+    except ValidationError:
+        # Serverseitiger Mapping-/Schema-Drift -> fail-safe 503, ohne interne Details (NF-01).
+        logger.exception("Domain->Wire-Mapping der Alarme fehlgeschlagen (Drift?).")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+    except RepositoryError as exc:
+        # DB-Ausfall -> 503 (Fail-safe, NF-01). Ursache am API-Rand loggen.
+        logger.error("alarms: Persistenz nicht verfuegbar: %s", exc)
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+    except Exception:  # noqa: BLE001 - letzter Fail-safe: JEDER Fehlerpfad liefert
+        # Error{code,message} (Contract), nie ein roher 500 mit {detail}. Volle Ursache
+        # bleibt im Log (logger.exception) erhalten (NF-01).
+        logger.exception("Unerwarteter Fehler beim Lesen der Alarme.")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+
+    return alarms_wire
+
+
 # SSE-Antwortheader (DTB-61): no-store (Echtzeit-Sicherheitsnaht, kein Cache eines
 # ueberholten Stream-Zustands) und X-Accel-Buffering:no (schaltet das Response-Buffering
 # eines Reverse-Proxys wie nginx fuer SSE ab -> Events erreichen G3 sofort statt blockweise).
@@ -400,3 +493,57 @@ async def stream_alarms(
         # die Idempotenz ist hier der bewusste Sicherheitsgurt, keine zufaellige Annahme.
         broadcaster.release(queue)
         raise
+
+
+@router.post(
+    "/alarms/{id}/ack",
+    response_model=Acknowledgement,
+    summary="Alarm quittieren (UI-/Audit-Aktion, kein Aktor)",
+    tags=["Alarms"],
+    responses={
+        400: {"model": Error, "description": "Ungueltige Alarm-ID (`id < 1`)."},
+        404: {"model": Error, "description": "Alarm mit dieser ID existiert nicht."},
+        409: {"model": Error, "description": "Alarm bereits quittiert/geschlossen (NF-09)."},
+        422: {"model": Error, "description": "Ungueltiger Request-Body (Schema-Validierung)."},
+        503: {"model": Error, "description": "G2 momentan nicht lieferfaehig (Persistenz)."},
+    },
+)
+def acknowledge_alarm(
+    id: int,
+    body: AckRequest,
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+    response: Response,
+) -> Acknowledgement | JSONResponse:
+    """Quittiert einen Alarm (DTB-24, FA-10) — reine UI-/Audit-Aktion, kein Aktor (RB-01).
+
+    Setzt den Alarm-Zustand atomar `active -> acknowledged`, schreibt einen append-only
+    `acknowledgement`-Eintrag (NF-09) und einen `alarm_acknowledged`-Audit-Eintrag in EINER
+    Transaktion (AcknowledgementRepository). Fehlerbilder strikt nach `openapi.yaml`:
+
+    - `id < 1` -> **400** (`BAD_REQUEST`): bewusst hier geprueft (Pfad-Param ohne ge-Constraint),
+      damit id=0 als Geschaeftsregel-400 landet statt als 422 im Validierungs-Handler.
+    - Body ungueltig (z. B. `operator` fehlt) -> **422** (globaler RequestValidationError-Handler).
+    - Alarm nicht vorhanden -> **404**; bereits acknowledged/cleared -> **409** (Double-Ack, NF-09).
+    - Persistenz-/DB-Ausfall -> **503** (`Error {code, message}`, nie GRUEN/Leak; NF-01/Contract D).
+
+    Auth: im Prototyp (M2/Contract) bewusst KEIN Auth-Header; additiv in M3 ohne Breaking Change
+    ergaenzbar (`Authorization`, vgl. DTB-63). Erfolg -> **200** + `Acknowledgement`.
+    `Cache-Control: no-store` auch hier (Konvention der /v1-Naht, NF-01-Geist).
+    """
+    response.headers.update(NO_STORE_HEADERS)
+    if id < 1:
+        return error_response(400, BAD_REQUEST_CODE, "Ungueltige Alarm-ID.")
+    try:
+        return runtime.ack_repo.acknowledge(id, body.operator, body.note, datetime.now(UTC))
+    except AlarmNotFoundError:
+        return error_response(404, NOT_FOUND_CODE, f"Alarm {id} nicht gefunden.")
+    except AlarmNotAcknowledgeableError as exc:
+        return error_response(
+            409,
+            ALARM_ALREADY_ACKNOWLEDGED_CODE,
+            f"Alarm {id} ist bereits im Zustand '{exc.state.value}'.",
+        )
+    except RepositoryError as exc:
+        # DB-Ausfall: Detail server-seitig loggen, nach aussen nur generisch (Contract D).
+        logger.error("ack: Persistenz nicht verfuegbar (alarm_id=%s): %s", id, exc)
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
