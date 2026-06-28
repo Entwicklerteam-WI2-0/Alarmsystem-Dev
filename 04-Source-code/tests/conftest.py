@@ -18,9 +18,10 @@ from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator
 from src.api.broadcaster import AlarmBroadcaster
 from src.assessment.service import AssessmentService
+from src.config.constants import DEFAULT_SENSOR_ID
 from src.config.loader import Thresholds, load_thresholds
 from src.ingest.poller import Poller
-from src.main import _SENSOR_ID, Runtime
+from src.main import Runtime
 from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
@@ -29,8 +30,8 @@ from src.storage.repository import InMemoryReadingRepository
 
 @pytest.fixture
 def sensor_id() -> str:
-    # Aus src.main importiert (kein Duplikat -> kein Drift bei einem Sensor-Rename).
-    return _SENSOR_ID
+    # Aus src.config.constants (kein Duplikat -> kein Drift bei einem Sensor-Rename).
+    return DEFAULT_SENSOR_ID
 
 
 @pytest.fixture
