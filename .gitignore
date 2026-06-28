@@ -17,6 +17,9 @@ CLAUDE.md
 AGENTS.md
 .claude/settings.local.json
 
+# ── Kimi Code: lokal / Sessions ────────────────────────────────
+.kimi-code/
+
 # ── OS-Müll ───────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
