@@ -44,7 +44,7 @@ State-Datei (`g1_state.json`, Vorlage: `g1_state.example.json`) bearbeiten — d
 | `surface_temp_c`/`air_temp_c`/`humidity_pct` | float | Messwerte (treiben die Ampel) |
 | `pressure_hpa` | float\|null | Kontext (optional) |
 | `status` | `ok`\|`fault` | `fault` → G2 verwirft Reading → `unknown` |
-| `age_s` | int | Sekunden, die `measured_at` zurückdatiert wird (Stale-Test) |
+| `age_s` | int ≥ 0 | Sekunden, die `measured_at` zurückdatiert wird (Stale-Test). Negativ würde `measured_at` in die Zukunft setzen — nicht verwenden. |
 | `health_down` | bool | `true` → `/health` 503 → G2 pollt nicht → `unknown` |
 
 Erwartete G2-Reaktion (gegen aktuelle `config/thresholds.json`):

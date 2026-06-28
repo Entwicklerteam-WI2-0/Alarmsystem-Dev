@@ -51,7 +51,9 @@ def _load_state() -> dict:
     try:
         with open(_state_path(), encoding="utf-8") as fh:
             return {**_DEFAULT_STATE, **json.load(fh)}
-    except FileNotFoundError:
+    except (FileNotFoundError, json.JSONDecodeError):
+        # Beim Live-Editieren ist die State-Datei kurzzeitig invalides JSON -> nicht mit
+        # HTTP 500 crashen, sondern auf den Gruen-Default zurueckfallen (Dev-Komfort).
         return dict(_DEFAULT_STATE)
 
 
