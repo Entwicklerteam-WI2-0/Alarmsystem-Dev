@@ -139,3 +139,17 @@ G2 ist **Server**; G3 konsumiert per `GET` (REST). Alle Endpoints unter `/v1/` (
 - `POST /v1/thresholds` — Schwellenwerte versioniert ändern (**Auth: `Authorization: Bearer <G2_API_KEY>`**, DTB-63); greift beim nächsten Reload (kein Live-Swap), versioniert per `threshold_set` + Audit (NF-09)
 
 **Kein** Freigabe-/Sperr-Endpoint (RB-01). Stale/Ausfall → `unknown`, nie GRÜN (NF-01).
+
+## G1-Sensor-Simulator (Dev-Test, ohne Sensor-Hardware)
+
+Für live-nahe Tests der G1-Naht: **`tools/g1_sim/`** — steuerbarer Dummy-G1, bedient `GET /current` + `/health`
+(konsumierter G1-Contract). Szenario per State-Datei **live umschaltbar** (grün/rot/stale/fault/down):
+
+```bash
+python tools/g1_sim/g1_sim.py --port 9101 --state tools/g1_sim/g1_state.json
+# G2 dagegen (eigene Shell, gegen lokale MariaDB):
+G1_BASE_URL=http://127.0.0.1:9101 G2_ENABLE_SCHEDULER=true uvicorn src.main:app --port 8000
+```
+
+Details + Szenario-/Erwartungs-Tabelle: **`tools/g1_sim/README.md`**. Lokale DB einrichten: **`docs/dev-db-setup.md`**.
+Kein Produktiv-Bezug (liegt unter `tools/`, nicht von `src/` importiert).
