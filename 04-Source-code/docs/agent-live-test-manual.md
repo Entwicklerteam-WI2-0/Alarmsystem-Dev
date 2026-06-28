@@ -6,6 +6,12 @@
 > **Warum das existiert:** Bis 2026-06-28 skippten in vielen Session-Umgebungen 36 DB-Tests still, weil die
 > `.env` nicht geladen wurde. Das ist inzwischen gefixt (pytest-dotenv, s. §1). Dieses Manual stellt sicher,
 > dass jede Instanz denselben verifizierten Stand erreicht wie der Architekt — ohne Rätselraten.
+>
+> **Plattform-Hinweis:** Die Befehle sind primär auf **Windows** (Entwicklerrechner) formuliert — venv-Python
+> liegt dann unter `.venv/Scripts/python.exe`. Auf **Linux/Mac/CI** liegt es unter `.venv/bin/python`;
+> PowerShell-Cmdlets (`Get-NetTCPConnection`) und `tasklist` gibt es dort nicht ( stattdessen `ss -ltnp` /
+> `ps aux | grep`). Die Plattform-Map steht in §6 (Troubleshooting). Alle Python-/pytest-/curl-Befehle
+> selbst sind plattformunabhängig.
 
 ---
 
@@ -226,14 +232,20 @@ Ampelwechsel in §3: DB leeren + Backend neu starten, Ziel-State **vor** erstem 
 import pymysql
 c=pymysql.connect(host='127.0.0.1',port=3306,user='app',password='<pw>',database='alarmsystem',autocommit=True)
 with c.cursor() as cur:
+    # FK-Safe: Checks vor TRUNCATE deaktiviert, danach wiederhergestellt. Sonst kann InnoDB
+    # bei assessment.reading_id (FK auf reading) oder alarm.assessment_id den TRUNCATE verweigern.
     cur.execute('SET FOREIGN_KEY_CHECKS=0')
-    for t in ('alarm','assessment','reading','acknowledgement'):
+    for t in ('alarm','assessment','reading','acknowledgement','audit_log'):
         cur.execute(f'TRUNCATE {t}')
     cur.execute('SET FOREIGN_KEY_CHECKS=1')
 c.close()
 "
 # dann Backend neu starten.
 ```
+
+> **`audit_log` mit leeren** — sonst bleiben nach einem Live-Lauf `alarm_raised`/`alarm_acknowledged`-
+> Einträge stehen und die Audit-Prüfung in §3f zeigt veraltete Altdaten. `audit_log` ist im Betrieb
+> append-only (NF-09); `TRUNCATE` als privilegierter User nur für lokale Tests, nie in Produktion.
 
 ---
 
@@ -242,12 +254,15 @@ c.close()
 | Symptom | Ursache | Fix |
 |---|---|---|
 | 36 Tests skippen | `.env` fehlt/falsch, DB_PASSWORD-Default `changeme` greift | `.env` anlegen mit echtem PW (§0); ab Fix läuft alles auto. |
+| 36 Tests skippen **trotz** `.env` | pytest wird **nicht aus `04-Source-code/`** aufgerufen — `env_files=[".env"]` wird relativ zum CWD aufgelöst, nicht zur `pyproject.toml` | `cd 04-Source-code` vor pytest; `.env` muss im CWD liegen |
 | `/v1/assessment/current` = `503` | Scheduler aus (`G2_ENABLE_SCHEDULER=false`) ODER DB-Verbindung fehlgeschlagen | `G2_ENABLE_SCHEDULER=true` setzen; Server-Log prüfen (`Umgebungsvariable fehlt...`) |
 | Ampel ändert sich nicht bei Szenariowechsel | Sprung-Guard hat Reading verworfen | DB leeren + Backend neu starten (§5) |
 | `ERROR 1142 ... command denied` | `'alarm'@'localhost'` statt `'alarm'@'%'` (TCP vs. Socket) | User als `@'%'` anlegen (dev-db-setup.md) |
 | Rot/Orange, obwohl trocken | Taupunkt falsch berechnet? Magnus-Pol (`air_temp <= -b`) | `air_temp_c` muss > Magnus-Grenze sein; sonst `dew_point_c=None` → Fail-safe |
 | `mariadb.exe -h127.0.0.1` zerfällt zu Host `'127'` | Windows-CLI-Bug | `--host=127.0.0.1 --protocol=tcp` nutzen; pymysql ist nicht betroffen |
-| MariaDB schon am Laufen? | Vor Start prüfen, nicht doppelt starten | `tasklist \| grep mariadbd` (Windows) bzw. Port 3306 checken |
+| MariaDB schon am Laufen? | Vor Start prüfen, nicht doppelt starten | Windows: `tasklist \| grep mariadbd`; Linux: `ss -ltnp \| grep 3306` |
+| `.venv/Scripts/python.exe` nicht gefunden | Linux/Mac — dort liegt venv-Python woanders | Linux/Mac: `.venv/bin/python` nutzen (großes Theme dieses Manuals) |
+| PowerShell-Cmdlet nicht verfügbar (`Get-NetTCPConnection`) | Linux/Mac hat keine PowerShell-Cmdlets | Linux: `ss -ltnp \| grep :8000`; Mac: `lsof -i :8000` |
 
 ---
 
