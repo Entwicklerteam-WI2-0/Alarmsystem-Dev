@@ -43,6 +43,7 @@ from src.api.responses import NO_STORE_HEADERS, service_unavailable
 from src.api.runtime import Runtime, get_runtime
 from src.api.v1 import router as v1_router
 from src.assessment import AssessmentService, build_assessment_current
+from src.config.constants import DEFAULT_SENSOR_ID
 from src.config.loader import load_thresholds
 from src.ingest.poller import Poller
 from src.model.schemas import AssessmentCurrent, Error, Health, Reading
@@ -64,11 +65,6 @@ logger = logging.getLogger(__name__)
 # gewuenscht wird.
 _DEFAULT_G1_BASE_URL = "http://g1-sensorik.local"
 
-# Single-Sensor-Betrieb (anr-rwy-01). Bewusst eine benannte Konstante statt eines
-# inline-Strings. TODO F24/Geo: Sensor-/Standort-Liste aus config/ laden statt hier
-# zu fixieren — das get_latest()-Assessment ist ohnehin noch global (nicht pro Sensor),
-# daher ist die ID hier nur die Reading-Auswahl fuer den Aktualitaets-/Status-Check.
-_SENSOR_ID = "anr-rwy-01"
 
 # CORS (C1, Vorbereitung G3-Browser-Integration / DTB-23): G3 ist ein Browser-Frontend
 # von ANDERER Origin (eigener Host/Port). Ohne CORS-Header blockt der Browser per
@@ -353,7 +349,7 @@ def assessment_current(
     response.headers.update(NO_STORE_HEADERS)
     try:
         assessment = runtime.assessment_repo.get_latest()
-        readings = runtime.reading_repo.get_latest(_SENSOR_ID, limit=1)
+        readings = runtime.reading_repo.get_latest(DEFAULT_SENSOR_ID, limit=1)
     except RepositoryError as exc:
         # DB-Ausfall: Detail server-seitig loggen, nach aussen nur generisch (Contract D).
         logger.error("assessment/current: Persistenz nicht verfuegbar: %s", exc)

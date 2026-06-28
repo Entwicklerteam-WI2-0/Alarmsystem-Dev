@@ -13,12 +13,10 @@ from fastapi.responses import JSONResponse
 
 from src.api.responses import NO_STORE_HEADERS, service_unavailable
 from src.api.runtime import Runtime, get_runtime
+from src.config.constants import DEFAULT_SENSOR_ID
 from src.config.loader import Thresholds
 from src.model.schemas import Error, ReadingResponse
 from src.storage.repository import RepositoryError
-
-# Single-Sensor-Betrieb bis F24/Geo (analog src.main._SENSOR_ID).
-_DEFAULT_SENSOR_ID = "anr-rwy-01"
 
 # Kein Router-weiter Tag: jeder Endpoint deklariert seinen Ressourcen-Tag selbst
 # (wie assessment/current -> "Assessment" in main.py), damit die FastAPI-Auto-Docs
@@ -106,8 +104,12 @@ def read_readings(
     ] = None,
     sensor_id: Annotated[
         str,
-        Query(description="Sensor-ID; Default: einziger aktiver Sensor.", min_length=1),
-    ] = _DEFAULT_SENSOR_ID,
+        Query(
+            description="Sensor-ID; Default: einziger aktiver Sensor.",
+            min_length=1,
+            max_length=64,
+        ),
+    ] = DEFAULT_SENSOR_ID,
     limit: Annotated[
         int,
         Query(description="Maximale Anzahl Eintraege.", ge=1, le=1000),
