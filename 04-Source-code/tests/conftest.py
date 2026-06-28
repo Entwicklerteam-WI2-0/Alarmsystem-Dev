@@ -26,6 +26,8 @@ from src.storage.alarm_repository import InMemoryAlarmRepository
 from src.storage.assessment_repository import InMemoryAssessmentRepository
 from src.storage.audit_repository import InMemoryAuditRepository
 from src.storage.repository import InMemoryReadingRepository
+from src.storage.threshold_set_repository import InMemoryThresholdSetRepository
+from tests._db_helpers import database, db_available  # noqa: F401  (DTB-21: geteilte DB-Fixtures)
 
 
 @pytest.fixture
@@ -53,6 +55,11 @@ def assessment_repo() -> InMemoryAssessmentRepository:
 @pytest.fixture
 def audit_repo() -> InMemoryAuditRepository:
     return InMemoryAuditRepository()
+
+
+@pytest.fixture
+def threshold_set_repo() -> InMemoryThresholdSetRepository:
+    return InMemoryThresholdSetRepository()
 
 
 @pytest.fixture
@@ -109,6 +116,7 @@ def runtime(
     assessment_repo: InMemoryAssessmentRepository,
     audit_repo: InMemoryAuditRepository,
     alarm_repo: InMemoryAlarmRepository,
+    threshold_set_repo: InMemoryThresholdSetRepository,
     poller: Poller,
     assessment_service: AssessmentService,
     alarm_generator: AlarmGenerator,
@@ -123,6 +131,7 @@ def runtime(
         assessment_repo=assessment_repo,
         audit_repo=audit_repo,
         alarm_repo=alarm_repo,
+        threshold_set_repo=threshold_set_repo,
         poller=poller,
         service=assessment_service,
         alarm_generator=alarm_generator,

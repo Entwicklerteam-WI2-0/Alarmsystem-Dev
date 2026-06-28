@@ -217,3 +217,24 @@ class AckRequest(_Base):
 
     operator: str = Field(min_length=1, max_length=128)
     note: str | None = Field(default=None, max_length=512)
+
+
+class ThresholdUpdateRequest(_Base):
+    """Request-Body fuer POST /v1/thresholds (DTB-63, NF-07).
+
+    `thresholds` ist die vollstaendige Schwellen-Struktur (wie GET /v1/thresholds sie
+    liefert); fachlich validiert wird sie im Endpoint ueber den kanonischen Loader
+    (`parse_thresholds`) -> bei ungueltigen Werten 422. `changed_by` ist der
+    selbstdeklarierte Operator fuer den Audit-Trail (NF-09/K6): bei einem geteilten
+    API-Key der einzige Accountability-Anker (analog `operator` bei der Quittierung).
+    `name` ist ein Label fuer den versionierten Schwellensatz (threshold_set.name).
+    """
+
+    changed_by: str = Field(min_length=1, max_length=128)
+    name: str = Field(default="manuelle Aktualisierung", min_length=1, max_length=128)
+    # max_length = Obergrenze der Top-Level-Sektionen (OpenAPI maxProperties): die gueltige
+    # Struktur hat 6 (parse_thresholds), 64 laesst Spielraum fuer optionale Kommentar-Keys.
+    # Bremst pathologisch breite Payloads bereits am Schema, bevor parse_thresholds ueber
+    # alle Keys iteriert. Ein echtes Byte-Groessen-Limit gehoert an Server/Proxy
+    # (Request-Body-Limit), nicht ins Schema -- dies bindet nur die Schluessel-Anzahl.
+    thresholds: dict[str, Any] = Field(max_length=64)

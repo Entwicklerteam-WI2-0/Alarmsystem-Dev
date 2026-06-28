@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         AssessmentRepository,
         AuditRepository,
         Repository,
+        ThresholdSetRepository,
     )
 
 
@@ -45,6 +46,9 @@ class Runtime:
     # DTB-31: Lesepfad fuer GET /v1/alarms (Resync). Dieselbe Instanz, die der
     # AlarmGenerator zum Schreiben nutzt -> ein Repository pro laufende Instanz.
     alarm_repo: AlarmRepository
+    # Versionierte Schwellensaetze (DTB-63): get_latest beim Start (Reload-Quelle),
+    # append im Auth-geschuetzten POST /v1/thresholds (threshold_set INSERT + Audit).
+    threshold_set_repo: ThresholdSetRepository
     poller: Poller
     service: AssessmentService
     alarm_generator: AlarmGenerator
