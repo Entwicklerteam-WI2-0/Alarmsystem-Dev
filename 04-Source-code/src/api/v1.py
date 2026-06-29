@@ -38,6 +38,7 @@ from src.model.schemas import (
     AckRequest,
     AlarmResponse,
     AuditLogEntry,
+    AuditLogResponse,
     Error,
     ReadingResponse,
     ThresholdSet,
@@ -547,3 +548,52 @@ def acknowledge_alarm(
         # DB-Ausfall: Detail server-seitig loggen, nach aussen nur generisch (Contract D).
         logger.error("ack: Persistenz nicht verfuegbar (alarm_id=%s): %s", id, exc)
         return service_unavailable("G2 momentan nicht lieferfaehig.")
+
+
+@router.get(
+    "/audit",
+    response_model=list[AuditLogResponse],
+    summary="Audit-/Ereignis-Log lesen (Datenbank-Spiegel, read-only)",
+    tags=["Audit"],
+    responses={
+        400: {
+            "model": Error,
+            "description": "Ungueltiger Query-Parameter (z. B. limit ausserhalb 1..500).",
+        },
+        503: {
+            "model": Error,
+            "description": "G2 (noch) nicht lieferfaehig (Runtime nicht bereit / DB-Ausfall).",
+        },
+    },
+)
+def list_audit(
+    runtime: Annotated[Runtime, Depends(get_runtime)],
+    response: Response,
+    limit: Annotated[
+        int,
+        Query(description="Maximale Anzahl Eintraege (neueste zuerst).", ge=1, le=500),
+    ] = 50,
+) -> list[AuditLogResponse] | JSONResponse:
+    """Liefert die neuesten Audit-/Ereignis-Eintraege fuer den G3-DB-Spiegel (NF-09).
+
+    Rein lesend (RB-01-neutral); aendert das append-only Audit-Log NICHT. Zeigt den
+    Schreibstrom der DB (assessment_made / alarm_raised / alarm_acknowledged / ...).
+    Bei Persistenzfehlern fail-safe 503 im Contract-Format Error {code, message} (NF-01).
+    `Cache-Control: no-store` (Live-Spiegel, kein gecachter Zustand).
+    """
+    response.headers.update(NO_STORE_HEADERS)
+    try:
+        entries = runtime.audit_repo.get_recent(limit)
+        # Domain->Wire-Mapping innerhalb des try (analog readings/alarms): ein Drift
+        # propagierte sonst als roher 500 und braeche den Error{code,message}-Contract.
+        entries_wire = [AuditLogResponse(**entry.model_dump()) for entry in entries]
+    except ValidationError:
+        logger.exception("Domain->Wire-Mapping des Audit-Logs fehlgeschlagen (Drift?).")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+    except RepositoryError as exc:
+        logger.error("audit: Persistenz nicht verfuegbar: %s", exc)
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+    except Exception:  # noqa: BLE001 - letzter Fail-safe: immer Error{code,message}, nie 500/{detail}
+        logger.exception("Unerwarteter Fehler beim Lesen des Audit-Logs.")
+        return service_unavailable("G2 momentan nicht lieferfaehig.")
+    return entries_wire
