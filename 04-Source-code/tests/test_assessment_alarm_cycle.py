@@ -17,7 +17,6 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from src.alarm.hysterese import AlarmHysterese
-from src.alarm.riskhysterese import RiskHysterese
 from src.alarm.service import AlarmGenerator, AuditError
 from src.api.broadcaster import AlarmBroadcaster
 from src.assessment.service import AssessmentService
@@ -91,7 +90,7 @@ def _wiring() -> tuple[
 ]:
     audit_repo = InMemoryAuditRepository()
     assessment_repo = InMemoryAssessmentRepository()
-    service = AssessmentService(_THR, RiskHysterese(_THR.hysterese), assessment_repo, audit_repo)
+    service = AssessmentService(_THR, assessment_repo, audit_repo)
     alarm_repo = InMemoryAlarmRepository()
     generator = AlarmGenerator(AlarmHysterese(_THR.hysterese), alarm_repo, audit_repo)
     return service, generator, alarm_repo, assessment_repo

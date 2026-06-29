@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from src.assessment.core import (
     DRIVING_FACTOR_SENSOR_FAULT,
@@ -32,15 +31,6 @@ from src.assessment.core import (
 )
 from src.assessment.failsafe import build_unknown_assessment, is_stale
 from src.config.loader import Thresholds
-
-# TYPE_CHECKING: bricht den Circular Import. riskhysterese.py importiert
-# assess_ice_risk aus src.assessment.core und triggert damit assessment/__init__.py,
-# das service.py laedt. Wuerde service.py RiskHysterese zur Ladezeit importieren,
-# entstuende ein Ring. Dank `from __future__ import annotations` sind alle
-# Annotationen Strings und werden nicht zur Laufzeit ausgewertet -> der Typ ist nur
-# fuer statische Pruefung noetig (TYPE_CHECKING-Zweig).
-if TYPE_CHECKING:
-    from src.alarm.riskhysterese import RiskHysterese
 from src.model.enums import AuditEventType, RiskLevel, SensorStatus
 from src.model.schemas import (
     Assessment,
@@ -67,19 +57,11 @@ class AssessmentService:
     def __init__(
         self,
         thresholds: Thresholds,
-        risk_hysterese: RiskHysterese,
         assessment_repo: AssessmentRepository,
         audit_repo: AuditRepository,
         threshold_set_id: int | None = None,
     ) -> None:
         self._thresholds = thresholds
-        # DTB-27 Anzeige-Hysterese (RiskHysterese): zustandsbehaftet, pro Sensor einmal
-        # (Single-Sensor). Wird in JEDEM Poll-Zyklus exakt EINMAL getickt — im Gutfall
-        # via bewerten(), in den Fail-safe-Pfaden via uebernimm_unknown(). So durchlaeuft
-        # die Zustandsmaschine immer den UNKNOWN-Durchgang bei Stale/Fault und recoveryt
-        # beim naechsten Gutfall sofort (Spezifikation: Recovery aus Unsicherheit),
-        # statt auf der letzten Gutfall-Stufe kleben zu bleiben (State-Desync).
-        self._risk_hysterese = risk_hysterese
         self._assessment_repo = assessment_repo
         self._audit_repo = audit_repo
         # DTB-65: id des aktiven threshold_set (DB) -> wird auf jedes Assessment gestempelt
@@ -130,37 +112,29 @@ class AssessmentService:
         # neue Werte muessen diese Grenze ebenfalls einhalten (sonst 500 erst beim Serven).
         if reading is None:
             # Kein Reading -> kein reading_id moeglich (Fail-safe ohne Bezug).
-            # RiskHysterese ticken (State-Desync-Schutz): UNKNOWN-Durchgang registrieren,
-            # damit der naechste Gutfall sofort recoveryt statt auf der alten Stufe zu kleben.
-            displayed = self._risk_hysterese.uebernimm_unknown(now)
             assessment = build_unknown_assessment("keine aktuellen Daten", now).model_copy(
                 update={
                     "driving_factor": DRIVING_FACTOR_STALE,
                     "threshold_set_id": self._threshold_set_id,
-                    "displayed_risk_level": displayed,
                 }
             )
         elif reading.status is SensorStatus.FAULT:
             # Reading liegt vor (Poller hat persistiert) -> reading_id verknuepfen,
             # damit aus dem Snapshot nachvollziehbar bleibt, welches konkrete Reading
             # den Fail-safe ausgeloest hat (NF-05 / Audit-Traceability).
-            displayed = self._risk_hysterese.uebernimm_unknown(now)
             assessment = build_unknown_assessment("sensor fault", now).model_copy(
                 update={
                     "reading_id": reading.id,
                     "driving_factor": DRIVING_FACTOR_SENSOR_FAULT,
                     "threshold_set_id": self._threshold_set_id,
-                    "displayed_risk_level": displayed,
                 }
             )
         elif is_stale(reading, now, stale_timeout_s):
-            displayed = self._risk_hysterese.uebernimm_unknown(now)
             assessment = build_unknown_assessment("stale (Messwert veraltet)", now).model_copy(
                 update={
                     "reading_id": reading.id,
                     "driving_factor": DRIVING_FACTOR_STALE,
                     "threshold_set_id": self._threshold_set_id,
-                    "displayed_risk_level": displayed,
                 }
             )
         else:
@@ -179,32 +153,19 @@ class AssessmentService:
                 self._thresholds,
                 forecast_surface_temp_c=forecast_surface_temp_c,
             )
-            # Anzeige-Hysterese (DTB-27): entprellte Stufe fuer die Ampel. risk (roh)
-            # wird als risk_level persistiert (Alarm-Gen + Audit-Forensik); displayed
-            # wird als displayed_risk_level gespeichert und vom Serve-Pfad ausgeliefert.
-            displayed = self._risk_hysterese.bewerten(
-                reading.surface_temp_c,
-                reading.dew_point_c,
-                self._thresholds,
-                now,
-                forecast_surface_temp_c=forecast_surface_temp_c,
-            )
             delta_t = (
                 None
                 if reading.dew_point_c is None
                 else reading.surface_temp_c - reading.dew_point_c
             )
-            # DTB-66 + Hysterese: driving_factor/explanation erklaeren die ANGEZEIGTE
-            # Stufe (`displayed`), nicht die rohe — sonst widerspricht der Text der
-            # Ampel (z.B. Ampel ORANGE gehalten, aber Text "grenzwertig GELB"). Farbe
-            # und Begruendung bleiben konsistent fuer den Operator. Die rohe Stufe steht
-            # ueber risk_level weiterhin forensisch zur Verfuegung.
+            # DTB-66: driving_factor + explanation aus der Kaskade ableiten.
+            # DTB-65: threshold_set_id (s. u.) = der aktive DB-Schwellensatz; None bei JSON-Seed.
             driving_factor, explanation = derive_explanation(
                 reading.surface_temp_c,
                 reading.dew_point_c,
                 self._thresholds,
                 forecast_surface_temp_c,
-                displayed,
+                risk,
                 delta_t,
             )
             assessment = Assessment(
@@ -219,7 +180,6 @@ class AssessmentService:
                 delta_t=delta_t,
                 humidity_pct=reading.humidity_pct,
                 forecast_surface_temp_c=forecast_surface_temp_c,
-                displayed_risk_level=displayed,
             )
 
         assessment_id = self._assessment_repo.save(assessment)
@@ -314,14 +274,8 @@ def build_assessment_current(
         )
 
     # Aktuell und Sensor ok -> die persistierte Bewertung gilt unveraendert.
-    # Serve-Ampel = entprellte Stufe (DTB-27 Anzeige-Hysterese). Fallback auf risk_level,
-    # falls das Assessment noch kein displayed_risk_level traegt (Legacy-/Test-Assets vor
-    # der Hysterese-Einfuehrung) -> konservativ roh nehmen statt None ans Wire zu leaken.
-    served_risk = assessment.displayed_risk_level
-    if served_risk is None:
-        served_risk = assessment.risk_level
     return AssessmentCurrent(
-        risk_level=served_risk,
+        risk_level=assessment.risk_level,
         driving_factor=assessment.driving_factor,
         explanation=assessment.explanation,
         surface_temp_c=assessment.surface_temp_c,
