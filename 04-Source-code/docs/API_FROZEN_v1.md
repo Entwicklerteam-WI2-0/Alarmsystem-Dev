@@ -35,6 +35,8 @@ G2 ist hier **Client**. G1 stellt bereit, G2 pollt.
   | `air_temp_c` | number (°C) | ja | Lufttemperatur `T_a` (Kontext + Taupunkt-Berechnung) |
   | `humidity_pct` | number (%) | ja | **Luftfeuchte** (von G1 zu bestätigen) |
   | `pressure_hpa` | number (hPa) | nein | Luftdruck (Kontext) |
+  | `surface_moisture_pct` | number (%) | nein | Kalibrierte Oberflächenfeuchte (Kontext, Contract v1.1) — nur Speicher/Anzeige, **nicht** in der Bewertung |
+  | `wind_speed_ms` | number (m/s) | nein | Windgeschwindigkeit (Kontext, Contract v1.1) — nur Speicher/Anzeige, **nicht** in der Bewertung |
   | `status` | enum `ok` \| `fault` | ja | Sensor-/Lieferstatus |
 
 - **G1 liefert NICHT:** keinen `ice_indicator`, keinen Taupunkt, kein `ΔT`. G2 berechnet `dew_point_c`

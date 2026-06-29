@@ -855,6 +855,14 @@ components:
           type: number
           nullable: true
           description: Luftdruck (hPa), optional.
+        surface_moisture_pct:
+          type: number
+          nullable: true
+          description: Kalibrierte Oberflaechenfeuchte (%), optional/Kontext (Contract v1.1), nur Speicher/Anzeige.
+        wind_speed_ms:
+          type: number
+          nullable: true
+          description: Windgeschwindigkeit (m/s), optional/Kontext (Contract v1.1), nur Speicher/Anzeige.
         status:
           $ref: "#/components/schemas/SensorStatus"
         received_at:

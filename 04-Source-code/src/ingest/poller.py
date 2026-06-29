@@ -364,6 +364,25 @@ class Poller:
             logger.error("pressure_hpa ausserhalb des gueltigen Bereichs: %s", pressure_hpa)
             pressure_hpa = None
 
+        # Optionale G1-Kontextfelder (Contract v1.1): surface_moisture_pct (kalibrierte
+        # Oberflaechenfeuchte %) und wind_speed_ms (Windgeschwindigkeit m/s). Reine Speicher-/
+        # Anzeigewerte -> fliessen NICHT in die Bewertung, daher bewusst KEINE config-
+        # Plausibilitaetsschwelle (blaeht NF-05 nicht auf). Ein defekter Wert wird auf None
+        # gesetzt und blockiert die Pflicht-Trias nie (Fail-safe); _optional_float faengt
+        # bool/inf/Nicht-Zahl ab (NF-01). G2 nimmt bewusst nur die kalibrierten/SI-Werte,
+        # nicht die G1-Rohwerte (surface_moisture_raw, wind_speed_kmh, wind_raw).
+        optional_context: dict[str, float | None] = {
+            "surface_moisture_pct": None,
+            "wind_speed_ms": None,
+        }
+        for context_field in optional_context:
+            try:
+                optional_context[context_field] = _optional_float(
+                    data.get(context_field), context_field
+                )
+            except ValueError as exc:
+                logger.error("G1-Feld ungueltig: %s", exc)
+
         # Sensor meldet selbst einen Defekt -> Reading ablehnen (Fail-safe, NF-01).
         if status is SensorStatus.FAULT:
             logger.error("G1-Sensor meldet status=fault, Reading wird verworfen")
@@ -434,6 +453,8 @@ class Poller:
             humidity_pct=humidity_pct,
             dew_point_c=dew_point_c,
             pressure_hpa=pressure_hpa,
+            surface_moisture_pct=optional_context["surface_moisture_pct"],
+            wind_speed_ms=optional_context["wind_speed_ms"],
             status=status,
             received_at=received_at,
             source=Source.REAL,

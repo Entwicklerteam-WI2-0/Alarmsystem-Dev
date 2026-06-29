@@ -467,6 +467,77 @@ def test_poll_optional_pressure_at_boundaries_saves(
         assert len(fake_repo.readings) == 1
 
 
+def test_poll_optional_context_fields_stored(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Contract v1.1: optionale G1-Kontextfelder werden gespeichert (nur Speicher/Anzeige,
+    # NICHT bewertet). Analog pressure_hpa, aber ohne Plausibilitaetsschwelle.
+    snapshot = {**valid_snapshot, "surface_moisture_pct": 7, "wind_speed_ms": 3.5}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.surface_moisture_pct == 7.0
+    assert reading.wind_speed_ms == 3.5
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_missing_optional_context_fields_are_none(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Fehlende Kontextfelder blockieren die Pflicht-Trias nie -> Reading gespeichert, Felder None.
+    snapshot = dict(valid_snapshot)  # enthaelt weder surface_moisture_pct noch wind_speed_ms
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.surface_moisture_pct is None
+    assert reading.wind_speed_ms is None
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_non_numeric_context_field_is_set_to_none(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Defektes Kontextfeld -> None (Fail-safe), Reading wird trotzdem gespeichert.
+    snapshot = {**valid_snapshot, "surface_moisture_pct": "nass", "wind_speed_ms": 2.0}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.surface_moisture_pct is None
+    assert reading.wind_speed_ms == 2.0
+    assert len(fake_repo.readings) == 1
+    assert "surface_moisture_pct muss eine Zahl sein" in caplog.text
+
+
+def test_poll_ignores_uncontracted_g1_fields(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # G1 liefert real zusaetzlich Rohwerte/Niederschlag/Wind-Varianten, die G2 NICHT konsumiert
+    # (surface_moisture_raw, wind_speed_kmh, wind_raw, rain_status). Diese duerfen den Ingest
+    # nicht brechen: der Poller liest gezielt aus, baut kein Reading(**data)
+    # -> kein extra="forbid"-Bruch.
+    snapshot = {
+        **valid_snapshot,
+        "surface_moisture_raw": 343,
+        "wind_speed_kmh": 12,
+        "wind_raw": 0,
+        "rain_status": "trocken",
+    }
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 1
+    assert not hasattr(reading, "surface_moisture_raw")
+    assert not hasattr(reading, "rain_status")
+
+
 def test_poll_out_of_range_air_temp_does_not_save(
     poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
 ) -> None:

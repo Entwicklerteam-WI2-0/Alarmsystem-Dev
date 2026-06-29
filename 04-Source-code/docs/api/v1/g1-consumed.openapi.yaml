@@ -113,6 +113,19 @@ components:
           type: number
           nullable: true
           description: Luftdruck (hPa), optional/Kontext.
+        surface_moisture_pct:
+          type: number
+          nullable: true
+          description: >-
+            Kalibrierte Oberflaechenfeuchte (%), optional/Kontext (Contract v1.1).
+            G2 konsumiert NUR den kalibrierten Prozentwert; den Rohwert
+            surface_moisture_raw nimmt G2 bewusst NICHT (Sensor-Kalibrierung = G1-Hoheit).
+        wind_speed_ms:
+          type: number
+          nullable: true
+          description: >-
+            Windgeschwindigkeit (m/s), optional/Kontext (Contract v1.1). G2 konsumiert
+            nur m/s; wind_speed_kmh und wind_raw nimmt G2 bewusst NICHT (redundant/roh).
         status:
           type: string
           # Muss mit SensorStatus in openapi.yaml synchron bleiben (getrennte Specs -> kein $ref moeglich).
