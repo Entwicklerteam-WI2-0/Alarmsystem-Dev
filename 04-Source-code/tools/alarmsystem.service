@@ -1,0 +1,22 @@
+[Unit]
+Description=G2-Backend — Vereisungserkennung ANR
+After=network.target mariadb.service
+Wants=mariadb.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/Alarmsystem-Dev/04-Source-code
+EnvironmentFile=/home/pi/Alarmsystem-Dev/04-Source-code/.env
+ExecStart=/home/pi/Alarmsystem-Dev/04-Source-code/.venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+# Sicherheit (optional, aber empfohlen für Prototyp)
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target
