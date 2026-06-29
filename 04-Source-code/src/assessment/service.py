@@ -182,12 +182,15 @@ class AssessmentService:
             # Anzeige-Hysterese (DTB-27): entprellte Stufe fuer die Ampel. risk (roh)
             # wird als risk_level persistiert (Alarm-Gen + Audit-Forensik); displayed
             # wird als displayed_risk_level gespeichert und vom Serve-Pfad ausgeliefert.
+            # risk als roh_stufe durchreichen -> bewerten berechnet die Roh-Stufe nicht
+            # erneut (assess_ice_risk laeuft pro Poll nur einmal, Review MEDIUM).
             displayed = self._risk_hysterese.bewerten(
                 reading.surface_temp_c,
                 reading.dew_point_c,
                 self._thresholds,
                 now,
                 forecast_surface_temp_c=forecast_surface_temp_c,
+                roh_stufe=risk,
             )
             delta_t = (
                 None

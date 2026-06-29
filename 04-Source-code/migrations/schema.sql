@@ -169,7 +169,7 @@ WHERE TABLE_SCHEMA = DATABASE()
 
 SET @add_displayed_risk_level_col_sql = IF(
     @displayed_risk_level_col_exists = 0,
-    'ALTER TABLE assessment ADD COLUMN displayed_risk_level VARCHAR(8) NULL',
+    'ALTER TABLE assessment ADD COLUMN displayed_risk_level VARCHAR(8) NULL AFTER forecast_surface_temp_c',
     'SELECT 1'
 );
 

@@ -135,6 +135,14 @@ def test_uebernimm_unknown_weist_naive_datetime_ab():
         engine.uebernimm_unknown(datetime(2026, 6, 26, 12, 0, 0))  # noqa: DTZ001
 
 
+def test_bewerten_nutzt_vorberechnete_roh_stufe():
+    # MEDIUM: der Service reicht die bereits berechnete Roh-Stufe als roh_stufe durch,
+    # damit assess_ice_risk pro Poll nur einmal laeuft statt doppelt. roh_stufe schlaegt
+    # bei Erstaufruf direkt durch: GRUENE Argumente ergaeben sonst GRUEN, roh_stufe ROT.
+    assert _bewerte(_engine(), 2.0, -5.0, _T0) is RiskLevel.GREEN
+    assert _engine().bewerten(2.0, -5.0, _THR, _T0, roh_stufe=RiskLevel.RED) is RiskLevel.RED
+
+
 def test_risk_rang_deckt_alle_nicht_unknown_stufen_ab():
     # Schutz gegen stille KeyError, falls RiskLevel erweitert wird. UNKNOWN ist orthogonal
     # (Unsicherheit) und bewusst NICHT in der Rangordnung -> separat ausgenommen.
