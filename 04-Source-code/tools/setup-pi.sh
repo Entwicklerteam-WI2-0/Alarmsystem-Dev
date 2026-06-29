@@ -71,6 +71,21 @@ prompt_yes_no() {
     done
 }
 
+# Erzeugt ein rein alphanumerisches Geheimnis mit $1 Zeichen Länge.
+# Bewusst OHNE + / = " ' \ $ -> sicher als SQL-String-Literal UND in der .env –
+# unabhängig davon, ob openssl vorhanden ist (sonst /dev/urandom-Fallback).
+# (openssl rand -base64 allein würde +,/,= erzeugen; daher konsequent durchfiltern.)
+gen_alnum_secret() {
+    local len="$1" out=""
+    if command -v openssl &>/dev/null; then
+        out=$(openssl rand -base64 $(( len * 2 )) | tr -dc 'a-zA-Z0-9' | cut -c1-"$len")
+    fi
+    if [[ "${#out}" -lt "$len" ]]; then
+        out=$(head -c $(( len * 8 )) /dev/urandom | tr -dc 'a-zA-Z0-9' | cut -c1-"$len")
+    fi
+    printf '%s' "$out"
+}
+
 # -----------------------------------------------------------------------------
 # 1) Python 3.12 prüfen / installieren
 # -----------------------------------------------------------------------------
@@ -80,8 +95,10 @@ PYTHON_CMD=""
 for cmd in python3.12 python3; do
     if command -v "$cmd" &>/dev/null; then
         version=$($cmd --version 2>&1 | awk '{print $2}')
-        major_minor=$(echo "$version" | cut -d. -f1,2)
-        if awk "BEGIN {exit !($major_minor >= 3.12)}"; then
+        major=$(echo "$version" | cut -d. -f1)
+        minor=$(echo "$version" | cut -d. -f2)
+        # Integer-Vergleich statt Float: 3.20 als Float wäre 3.2 < 3.12 (falsch-negativ ab 3.20).
+        if [[ "$major" -gt 3 ]] || { [[ "$major" -eq 3 ]] && [[ "$minor" -ge 12 ]]; }; then
             PYTHON_CMD=$cmd
             log_info "Python $version gefunden ($cmd)."
             break
@@ -168,7 +185,7 @@ if [[ "$REUSE_ENV" -eq 1 ]]; then
     fi
     log_info "DB-Passwort aus bestehender .env übernommen (DB-User wird darauf gesetzt)."
 else
-    DB_PASSWORD=$(openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')
+    DB_PASSWORD=$(gen_alnum_secret 32)
 fi
 
 echo "Bitte das MariaDB-Root-Passwort eingeben (bei frischer Installation oft leer):"
@@ -194,9 +211,10 @@ run_mysql_root() {
     fi
 }
 
-# DB_NAME/DB_USER/DB_HOST sind feste Konstanten, DB_PASSWORD ist base64/alphanumerisch
-# (keine Quotes/Backslashes) -> in der einfach gequoteten SQL-Form unkritisch. SQL kommt
-# über stdin (Heredoc), nicht als interpolierter Shell-String.
+# DB_NAME/DB_USER/DB_HOST sind feste Konstanten; DB_PASSWORD ist rein alphanumerisch
+# (gen_alnum_secret bzw. aus der bestehenden .env) -> enthält kein ' " \ und ist in der
+# einfach gequoteten SQL-Form unkritisch. SQL kommt über stdin (Heredoc), nicht als
+# interpolierter Shell-String.
 run_mysql_root <<SQL
 DROP DATABASE IF EXISTS \`$DB_NAME\`;
 CREATE DATABASE \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -266,11 +284,12 @@ else
         log_info "Bestehende .env gesichert."
     fi
 
-    API_KEY=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')
+    API_KEY=$(gen_alnum_secret 48)
 
     cat > .env <<EOF
 # Automatisch generiert durch tools/setup-pi.sh am $(date -Iseconds)
 # Diese Datei gehört NICHT ins Git.
+# Format: KEY=wert  – Werte OHNE Anführungszeichen eintragen.
 
 DB_HOST=$DB_HOST
 DB_PORT=$DB_PORT

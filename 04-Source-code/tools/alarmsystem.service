@@ -1,3 +1,16 @@
+# =============================================================================
+# TEMPLATE / Referenz-Vorlage – NICHT unverändert kopieren!
+# =============================================================================
+# Der real installierte Service wird von tools/setup-pi.sh dynamisch erzeugt
+# (korrekter User + absolute Pfade). Diese Datei dient nur als Referenz und
+# enthält beispielhafte Pfade für /home/pi/... – bei direkter Verwendung VOR dem
+# Aktivieren anpassen:
+#   User= / Group=      -> tatsächlicher Service-User (nicht zwingend 'pi')
+#   WorkingDirectory=   -> Pfad zum Verzeichnis 04-Source-code
+#   EnvironmentFile=    -> <WorkingDirectory>/.env
+#   ExecStart=          -> <WorkingDirectory>/.venv/bin/uvicorn ...
+# Empfohlen: stattdessen ./tools/setup-pi.sh ausführen.
+# =============================================================================
 [Unit]
 Description=G2-Backend — Vereisungserkennung ANR
 After=network.target mariadb.service
