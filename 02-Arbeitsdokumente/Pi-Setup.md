@@ -225,6 +225,42 @@ Vorgehen siehe `Raspberry-Pi-Hosting-Anleitung.md` §5. Der Startbefehl im Servi
 
 ---
 
+## 10. Frontend (G3-SPA) mitservieren — optional, Same-Origin
+
+Das G3-Frontend (React/Vite) wird **vom selben G2-Backend** mit ausgeliefert: Der Browser holt die
+Oberfläche von `http://<pi>:8000/`, die API liegt unter `/v1` (gleiche Origin → **kein CORS nötig**).
+Steuert sich über die Env `G2_FRONTEND_DIR`; ist sie nicht gesetzt, läuft G2 wie bisher als reine API.
+
+**a) Build (einmalig, auf einem Rechner mit Node ≥ 20 — schneller als auf dem Pi):**
+```bash
+cd <frontend-repo>/code
+echo "VITE_API_MODE=live" > .env.production   # ⚠️ WICHTIG: ohne das zeigt die UI Mock-Daten!
+npm ci
+npm run build                                  # erzeugt code/dist/  (index.html + assets/)
+```
+
+**b) `dist/` auf den Pi kopieren** (nicht ins Git — Build-Artefakt):
+```bash
+rsync -av code/dist/ pi@icedetection.local:/home/pi/frontend_dist/
+# oder: scp -r code/dist/* pi@icedetection.local:/home/pi/frontend_dist/
+```
+
+**c) In `.env` auf dem Pi den Pfad setzen + uvicorn neu starten:**
+```
+G2_FRONTEND_DIR=/home/pi/frontend_dist
+```
+```bash
+curl -s -w "\n[%{http_code}]\n" http://127.0.0.1:8000/            # -> index.html [200]
+curl -s -w "\n[%{http_code}]\n" http://127.0.0.1:8000/dashboard   # -> index.html [200] (SPA-Fallback)
+curl -s -w "\n[%{http_code}]\n" http://127.0.0.1:8000/v1/health   # -> {"status":"ok"} [200] (API-Vorrang)
+```
+
+> Deep-Links (`/dashboard`, Reload) liefern `index.html` (React-Router übernimmt clientseitig);
+> `/v1/*` bleibt **immer** die API (auch ein 404 dort ist ein API-404, kein HTML). Ohne gesetztes
+> `G2_FRONTEND_DIR` ist der Mount ein No-op — die API verhält sich unverändert.
+
+---
+
 ## Sicherheits-Regeln (kurz)
 
 - **DB nur lokal** (`127.0.0.1`) — MariaDB nicht auf `0.0.0.0` öffnen. (NF-07)
