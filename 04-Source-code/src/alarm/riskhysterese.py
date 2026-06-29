@@ -14,15 +14,6 @@ einzige Wohnort der Rückstufungs-Zeitkonstanten (`downgrade_*`).
 Fail-safe: `UNKNOWN` (Stale/ungültig) wird IMMER sofort übernommen — Unsicherheit wird
 nie durch die Rückstufung verzögert/verdeckt. Aus `UNKNOWN` heraus wird die nächste
 gültige Stufe ebenfalls sofort übernommen (Recovery aus Unsicherheit).
-
-`uebernimm_unknown(jetzt)` ist der explizite UNKNOWN-Eintritt für Fail-safe-Pfade, die
-NICHT durch `assess_ice_risk` laufen (Stale/Fault/keine Daten im AssessmentService).
-Ohne diese Methode würde der Service die Hysterese umgehen und `displayed_risk_level`
-nur am Assessment setzen — dann verpasst die Zustandsmaschine den UNKNOWN-Durchgang,
-`_current` bleibt auf der letzten Gutfall-Stufe kleben, und das Recovery nach Stale
-greift nicht (Spezifikation Zeile 14-16: Recovery aus UNKNOWN → sofort). Der Service
-RUFT daher in jedem Fail-safe-Pfad `uebernimm_unknown` auf statt nur das Ergebnis zu
-setzen: genau ein Tick pro Poll, egal ob Gut- oder Fail-safe-Fall.
 """
 
 from __future__ import annotations
@@ -114,30 +105,6 @@ class RiskHysterese:
             self._current = streng
             self._downgrade_seit = None
             return self._current
-        return self._current
-
-    def uebernimm_unknown(self, jetzt: datetime) -> RiskLevel:
-        """Trägt UNKNOWN als angezeigte Stufe ein — Fail-safe-Tick ohne Roh-Bewertung.
-
-        Für AssessmentService-Fail-safe-Pfade (keine Daten / fault / stale), die
-        bewusst NICHT durch `assess_ice_risk` laufen. Setzt `_current=UNKNOWN` und
-        `_downgrade_seit=None` — identisch zum UNKNOWN-Zweig in `bewerten`, aber ohne
-        eine Sensorbewertung auszuführen. Der nächste Gutfall-Poll recoveryt aus
-        UNKNOWN sofort (Spezifikation: „Recovery aus Unsicherheit" — keine
-        Downgrade-Verzögerung).
-
-        Args:
-            jetzt: Bewertungszeitpunkt (konsistent mit dem `now` des Poll-Zyklus).
-                Wird hier nicht gebraucht (UNKNOWN braucht keine Stabilitätszeit), aber
-                signature-konsistent zu `bewerten` gehalten, damit der Service beide
-                Methoden einheitlich mit demselben `now` rufen kann.
-
-        Returns:
-            Immer `RiskLevel.UNKNOWN`.
-        """
-        del jetzt  # Signatur-Konsistenz zu bewerten; UNKNOWN braucht keine Zeit
-        self._current = RiskLevel.UNKNOWN
-        self._downgrade_seit = None
         return self._current
 
     def _verschoben(self, t: Thresholds) -> Thresholds:

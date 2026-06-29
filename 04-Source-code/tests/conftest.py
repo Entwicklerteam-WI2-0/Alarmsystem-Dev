@@ -15,7 +15,6 @@ from datetime import UTC, datetime
 import pytest
 
 from src.alarm.hysterese import AlarmHysterese
-from src.alarm.riskhysterese import RiskHysterese
 from src.alarm.service import AlarmGenerator
 from src.api.broadcaster import AlarmBroadcaster
 from src.assessment.service import AssessmentService
@@ -72,9 +71,7 @@ def assessment_service(
 ) -> AssessmentService:
     # Teilt sich assessment_repo/audit_repo mit den gleichnamigen Fixtures, damit ein
     # Test nach assess_reading direkt den Repo-Zustand inspizieren kann (gleiche Instanz).
-    return AssessmentService(
-        thresholds, RiskHysterese(thresholds.hysterese), assessment_repo, audit_repo
-    )
+    return AssessmentService(thresholds, assessment_repo, audit_repo)
 
 
 @pytest.fixture
