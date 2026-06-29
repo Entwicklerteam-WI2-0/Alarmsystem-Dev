@@ -11,7 +11,7 @@ Bedient exakt den von G2 konsumierten G1-Contract (`docs/api/v1/g1-consumed.open
 | Endpoint | Antwort |
 |---|---|
 | `GET /health` | `200 {"status":"ok"}` — oder `503`, wenn `health_down: true` (G1-Ausfall) |
-| `GET /current` | Snapshot: `sensor_id`, `measured_at` (ISO-UTC, `…Z`), Pflicht-Trias `surface_temp_c`/`air_temp_c`/`humidity_pct`, optional `pressure_hpa`, `status` (`ok`\|`fault`) |
+| `GET /current` | Snapshot: `sensor_id`, `measured_at` (ISO-UTC, `…Z`), Pflicht-Trias `surface_temp_c`/`air_temp_c`/`humidity_pct`, optional `pressure_hpa`, optional Wind (`wind_speed_ms`/`wind_speed__kmh`/`wind_raw`), `status` (`ok`\|`fault`) |
 
 `measured_at` wird bei jedem Request auf "jetzt" gesetzt (minus `age_s`), damit der Poll nicht
 fälschlich als Stale verworfen wird.
@@ -43,6 +43,8 @@ State-Datei (`g1_state.json`, Vorlage: `g1_state.example.json`) bearbeiten — d
 |---|---|---|
 | `surface_temp_c`/`air_temp_c`/`humidity_pct` | float | Messwerte (treiben die Ampel) |
 | `pressure_hpa` | float\|null | Kontext (optional) |
+| `wind_speed_ms` | float\|null | Windgeschwindigkeit (m/s, Kontext). **G2 konsumiert NUR dieses Feld.** Nicht bewertungsrelevant (E-44) |
+| `wind_speed__kmh` / `wind_raw` | float / str | von G1 mitgeliefert, aber von G2 **ignoriert** (nur zum Testen des „ignore others"-Pfads) |
 | `status` | `ok`\|`fault` | `fault` → G2 verwirft Reading → `unknown` |
 | `age_s` | int ≥ 0 | Sekunden, die `measured_at` zurückdatiert wird (Stale-Test). Negativ würde `measured_at` in die Zukunft setzen — nicht verwenden. |
 | `health_down` | bool | `true` → `/health` 503 → G2 pollt nicht → `unknown` |
