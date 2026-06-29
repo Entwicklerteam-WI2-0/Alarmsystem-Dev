@@ -54,6 +54,17 @@ mariadb -h127.0.0.1 -P3306 -u app -p alarmsystem < migrations/grants.sql
 > `ERROR 1142 ... command denied`. Ggf. die Host-Specifier in `grants.sql` vor dem Einspielen von
 > `localhost` → `%` anpassen.
 
+> 🔁 **Upgrade einer BESTEHENDEN DB (Schema-Änderung — z. B. neue Spalte `reading.wind_speed_ms`):**
+> `schema.sql` ist **idempotent** (`CREATE TABLE IF NOT EXISTS` + bedingte `ALTER`-Migrationen via
+> `INFORMATION_SCHEMA`). Wenn ein `git pull` das Schema ändert, `schema.sql` **vor dem Service-Neustart
+> erneut einspielen** — sonst scheitern alle `INSERT`s mit `Unknown column` und es wird **nichts
+> persistiert** (die Pipeline läuft fail-safe auf `unknown`, aber die Demo steht). Re-Apply ist gefahrlos:
+> ```bash
+> cd ~/Alarmsystem-Dev/04-Source-code
+> mariadb -h127.0.0.1 -P3306 -u app -p alarmsystem < migrations/schema.sql
+> sudo systemctl restart alarm-backend   # falls als Service (Schritt 7)
+> ```
+
 ## 4. `.env` anlegen (echte Werte — wird nie committet, NF-07)
 
 ```bash
@@ -142,6 +153,7 @@ sudo journalctl -u alarm-backend -f      # Live-Log
 1. **Dauer-`503`** → `G2_ENABLE_SCHEDULER=true` vergessen **oder** `G1_BASE_URL` falsch / G1 nicht erreichbar.
 2. **`ERROR 1142 ... denied`** → `alarm`-User als `@'localhost'` statt `@'%'` (TCP-Falle, siehe Schritt 3).
 3. **G3 sieht nichts / CORS-Fehler im Browser** → `G2_CORS_ORIGINS` fehlt/falsch, oder `--host 0.0.0.0` vergessen.
+4. **`Unknown column` / nach einem Update wird nichts mehr persistiert** → Schema-Änderung nicht eingespielt; `schema.sql` auf der bestehenden DB **erneut** ausführen (idempotent), dann Service neu starten (Schritt 3).
 
 ## Sicherheit
 

@@ -173,7 +173,14 @@ Nick) wird der Sim **nicht** gestartet — das Backend pollt jede `GET /current`
 nur die Env-Werte. Erprobt über den **STOA-Real-Test (28.06.)**.
 
 **Start-Reihenfolge:** native MariaDB → `schema.sql` → `grants.sql` → `.env` → `uvicorn` (DB-Details:
-[`dev-db-setup.md`](dev-db-setup.md)). Gegenüber dem lokalen Sim-Test ändern sich nur diese Env-Werte:
+[`dev-db-setup.md`](dev-db-setup.md)).
+
+> 🔁 **Läuft die Pi-/Live-DB schon (z. B. seit dem STOA-Real-Test)?** Nach einer Schema-Änderung
+> (neue Spalte wie `reading.wind_speed_ms`) `schema.sql` **erneut einspielen, bevor** der Scheduler scharf
+> startet — sonst `Unknown column` → keine Persistenz. `schema.sql` ist idempotent (Details:
+> [`pi-deploy.md`](pi-deploy.md), Schritt 3).
+
+Gegenüber dem lokalen Sim-Test ändern sich nur diese Env-Werte:
 
 | Env | Sim-Test (§0) | Vor-Ort / echter G1 |
 |---|---|---|
