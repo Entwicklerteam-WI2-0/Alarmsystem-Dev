@@ -158,7 +158,9 @@ if [[ -f "$PROJECT_DIR/.env" ]]; then
 fi
 
 if [[ "$REUSE_ENV" -eq 1 ]]; then
-    DB_PASSWORD=$(grep -E '^DB_PASSWORD=' "$PROJECT_DIR/.env" | head -n1 | cut -d= -f2-)
+    # `|| true`: ohne Match liefert grep Exit 1 -> mit `set -e` würde das Skript hart
+    # abbrechen, bevor der freundliche Check unten greift.
+    DB_PASSWORD=$(grep -E '^DB_PASSWORD=' "$PROJECT_DIR/.env" | head -n1 | cut -d= -f2- || true)
     if [[ -z "$DB_PASSWORD" ]]; then
         log_error "In der bestehenden .env wurde kein DB_PASSWORD gefunden."
         log_error "Bitte .env prüfen oder bei der vorigen Abfrage neu erzeugen lassen."
