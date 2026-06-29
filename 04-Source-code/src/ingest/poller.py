@@ -11,7 +11,7 @@ import json
 import logging
 import math
 import unicodedata
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import httpx
 
@@ -499,28 +499,26 @@ def _compute_dew_point(
 
 
 def _parse_iso_utc(value: object) -> datetime:
-    # ISO-8601-String mit UTC-Zeitzone erzwingen.
-    # Akzeptiert laut G1-Contract (Backend-Konzept §9.1) ausschliesslich:
-    #   - 2026-06-23T10:00:00Z
-    #   - 2026-06-23T10:00:00+00:00
-    # Andere UTC-Notationen wie -00:00 oder +0000 (ohne Doppelpunkt) werden
-    # bewusst abgelehnt, damit der Contract eng bleibt.
+    # ISO-8601-String -> UTC. Akzeptiert JEDE zeitzonenbewusste Notation (Z, +00:00,
+    # +02:00, -05:00, ...) und normalisiert eindeutig auf UTC. NAIVE (zeitzonenlose)
+    # Strings werden bewusst abgelehnt (Fail-safe, NF-01): "lokal oder UTC?" darf nicht
+    # geraten werden -- ein stiller 1-2 h-Versatz (z. B. Sommerzeit) wuerde Stale-/
+    # Zukunfts-Pruefung und Bewertung verfaelschen. Frueher nur Z/+00:00; gelockert fuer
+    # G1-Quellen mit lokalem Offset (Plan measured_at-UTC-Fix Option B). Contract §2a D
+    # (alle Zeitstempel UTC) bleibt gewahrt -- die astimezone-Konvertierung stellt das sicher.
     if not isinstance(value, str):
         raise ValueError(f"measured_at muss ein String sein, erhalten: {type(value)}")
-    # Python <3.11 akzeptiert 'Z' nicht direkt; ab 3.11 geht es.
-    # Bewusst nur ein abschliessendes Z ersetzen, nicht alle Vorkommen im String.
-    if value.endswith("Z"):
-        normalized = value[:-1] + "+00:00"
-    elif value.endswith("+00:00"):
-        normalized = value
-    else:
-        raise ValueError("measured_at muss UTC sein (Z oder +00:00)")
-    parsed = datetime.fromisoformat(normalized)
+    # 'Z' ist gueltiges ISO-8601, datetime.fromisoformat akzeptiert es erst ab Python 3.11
+    # zuverlaessig -> auf +00:00 normalisieren (nur ein abschliessendes Z, nicht alle Vorkommen).
+    normalized = value[:-1] + "+00:00" if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(
+            f"measured_at ist kein gueltiger ISO-8601-Zeitstempel: {value!r}"
+        ) from exc
     if parsed.tzinfo is None:
-        raise ValueError("measured_at muss Zeitzoneninformation enthalten (UTC)")
-    # Sicherstellen, dass der Offset wirklich 0 ist (z. B. +00:00).
-    if parsed.utcoffset() != timedelta(0):
-        raise ValueError("measured_at muss UTC sein")
+        raise ValueError("measured_at muss Zeitzoneninformation enthalten (Z oder Offset)")
     return parsed.astimezone(UTC)
 
 

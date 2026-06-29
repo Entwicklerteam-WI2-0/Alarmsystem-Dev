@@ -343,17 +343,34 @@ def test_poll_invalid_measured_at_does_not_save(
     assert "G1-Feld ungueltig" in caplog.text
 
 
-def test_poll_non_utc_measured_at_does_not_save(
+def test_poll_offset_measured_at_converted_to_utc(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # measured_at mit lokalem Offset (+02:00) wird akzeptiert UND eindeutig nach UTC
+    # konvertiert (12:00:30+02:00 -> 10:00:30Z). Frueher abgelehnt; gelockert (Plan
+    # measured_at-UTC-Fix Option B), damit G1-Quellen mit lokalem Offset ingestfaehig sind.
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T12:00:30+02:00"}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.measured_at == datetime(2026, 6, 23, 10, 0, 30, tzinfo=UTC)
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_malformed_measured_at_does_not_save(
     poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
 ) -> None:
-    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T10:00:00+02:00"}
+    # Unparsebarer Zeitstempel -> verworfen (Fail-safe, NF-01).
+    snapshot = {**valid_snapshot, "measured_at": "kein-datum"}
 
     with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
         reading = poller.poll()
 
     assert reading is None
     assert len(fake_repo.readings) == 0
-    assert "measured_at muss UTC sein" in caplog.text
+    assert "kein gueltiger ISO-8601-Zeitstempel" in caplog.text
 
 
 def test_poll_empty_sensor_id_does_not_save(
@@ -634,7 +651,7 @@ def test_poll_measured_at_without_timezone_does_not_save(
 
     assert reading is None
     assert len(fake_repo.readings) == 0
-    assert "measured_at muss UTC sein" in caplog.text
+    assert "measured_at muss Zeitzoneninformation enthalten" in caplog.text
 
 
 def test_poll_sensor_id_not_a_string_does_not_save(
