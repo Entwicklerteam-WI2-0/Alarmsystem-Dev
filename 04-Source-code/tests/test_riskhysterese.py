@@ -127,6 +127,14 @@ def test_naive_datetime_wird_abgewiesen():
         engine.bewerten(0.5, -5.0, _THR, datetime(2026, 6, 26, 12, 0, 0))  # noqa: DTZ001
 
 
+def test_uebernimm_unknown_weist_naive_datetime_ab():
+    # Spiegelt bewerten: auch der Fail-safe-Eintritt (UNKNOWN-Tick) verlangt eine
+    # tz-bewusste Zeit (Contract §2a D), damit derselbe Contract-Bruch gemeldet wird.
+    engine = _engine()
+    with pytest.raises(ValueError):
+        engine.uebernimm_unknown(datetime(2026, 6, 26, 12, 0, 0))  # noqa: DTZ001
+
+
 def test_risk_rang_deckt_alle_nicht_unknown_stufen_ab():
     # Schutz gegen stille KeyError, falls RiskLevel erweitert wird. UNKNOWN ist orthogonal
     # (Unsicherheit) und bewusst NICHT in der Rangordnung -> separat ausgenommen.

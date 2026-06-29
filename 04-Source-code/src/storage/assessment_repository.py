@@ -239,7 +239,8 @@ class MySqlAssessmentRepository(AssessmentRepository):
             # row.get, weil Legacy-Zeilen/aeltere Schemata die Spalte evtl. nicht
             # zurueckliefern; .get vermeidet KeyError statt still zu brechen.
             displayed_risk_level=(
-                None if row.get("displayed_risk_level") is None
+                None
+                if row.get("displayed_risk_level") is None
                 else RiskLevel(row["displayed_risk_level"])
             ),
         )

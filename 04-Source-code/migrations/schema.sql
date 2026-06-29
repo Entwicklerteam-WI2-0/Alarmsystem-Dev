@@ -176,3 +176,24 @@ SET @add_displayed_risk_level_col_sql = IF(
 PREPARE add_displayed_risk_level_col_stmt FROM @add_displayed_risk_level_col_sql;
 EXECUTE add_displayed_risk_level_col_stmt;
 DEALLOCATE PREPARE add_displayed_risk_level_col_stmt;
+
+-- Idempotenter CHECK-Constraint fuer migrierte assessment-Tabellen (DTB-27).
+-- CREATE TABLE legt den Constraint nur bei Neuinstallation an; fuer bereits
+-- bestehende DBs (Pi-Migration) wird er hier nachgezogen, damit der Schema-Stand
+-- zwischen Frischinstallation und Migration identisch ist (Review MEDIUM).
+-- Muster analog idx_audit_ts-Migration: INFORMATION_SCHEMA.TABLE_CONSTRAINTS pruefen.
+SELECT COUNT(*) INTO @chk_displayed_risk_exists
+FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'assessment'
+  AND CONSTRAINT_NAME = 'chk_assessment_displayed_risk';
+
+SET @add_chk_displayed_risk_sql = IF(
+    @chk_displayed_risk_exists = 0,
+    "ALTER TABLE assessment ADD CONSTRAINT chk_assessment_displayed_risk CHECK (displayed_risk_level IS NULL OR displayed_risk_level IN ('green','yellow','orange','red','unknown'))",
+    'SELECT 1'
+);
+
+PREPARE add_chk_displayed_risk_stmt FROM @add_chk_displayed_risk_sql;
+EXECUTE add_chk_displayed_risk_stmt;
+DEALLOCATE PREPARE add_chk_displayed_risk_stmt;

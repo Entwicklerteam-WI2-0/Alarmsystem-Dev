@@ -128,14 +128,18 @@ class RiskHysterese:
 
         Args:
             jetzt: Bewertungszeitpunkt (konsistent mit dem `now` des Poll-Zyklus).
-                Wird hier nicht gebraucht (UNKNOWN braucht keine Stabilitätszeit), aber
-                signature-konsistent zu `bewerten` gehalten, damit der Service beide
-                Methoden einheitlich mit demselben `now` rufen kann.
+                Wird nicht fuer die Berechnung gebraucht (UNKNOWN braucht keine
+                Stabilitaetszeit), wird aber analog zu `bewerten` validiert, damit
+                ein Aufrufer mit naivem datetime denselben Contract-Bruch meldet wie
+                `bewerten` (Review LOW: Signatur-Konsistenz ohne Functional-Kosten).
 
         Returns:
             Immer `RiskLevel.UNKNOWN`.
         """
-        del jetzt  # Signatur-Konsistenz zu bewerten; UNKNOWN braucht keine Zeit
+        if jetzt.tzinfo is None:
+            raise ValueError(
+                "jetzt muss zeitzonenbewusst (UTC) sein — naive datetime nicht erlaubt."
+            )
         self._current = RiskLevel.UNKNOWN
         self._downgrade_seit = None
         return self._current
