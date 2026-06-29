@@ -53,6 +53,14 @@ python3 --version          # muss 3.12 oder höher zeigen
 #   Raspberry Pi OS Bookworm liefert ab Werk nur Python 3.11 -> dann python3.12 nachinstallieren
 #   (z. B. via pyenv) und unten 'python3' durch 'python3.12' ersetzen. Sonst ist die >=3.12-
 #   Anforderung still NICHT erfüllt und es kracht erst später.
+#
+#   pyenv-Quickinstall (nur nötig wenn python3 < 3.12):
+#     curl https://pyenv.run | bash
+#     # danach pyenv in die Shell einbinden (.bashrc/.profile neu laden, s. pyenv-Ausgabe)
+#     exec "$SHELL"          # oder Terminal neu öffnen, damit pyenv im PATH ist
+#     pyenv install 3.12
+#     pyenv local 3.12       # legt eine .python-version im Projektordner an
+#   Ab jetzt verweist 'python3' im Ordner auf 3.12 (kein Ersetzen der Aufrufe nötig).
 
 # Virtuelle Umgebung + Abhängigkeiten:
 python3 -m venv .venv
@@ -111,7 +119,9 @@ sed "s/'alarm'@'[^']*'/'alarm'@'127.0.0.1'/g" migrations/grants.sql | sudo maria
 **Verifikation (als Admin) — Pflicht, nicht optional:**
 ```bash
 sudo mariadb -e "SHOW GRANTS FOR 'alarm'@'127.0.0.1';"
-# Muss INSERT/SELECT (+ UPDATE auf alarm) je Tabelle zeigen — KEIN 'ALL PRIVILEGES'.
+# Muss INSERT/SELECT (+ UPDATE auf Tabelle 'alarm') je Tabelle zeigen — KEIN 'ALL PRIVILEGES'.
+#   Hinweis: 'alarm' ist hier der TABELLENNAME (die Alarm-Tabelle braucht UPDATE für State-Übergänge),
+#   nicht der DB-User. DB-User und Tabelle heißen gleich — Verwechslungsgefahr.
 # Zeigt es NUR 'USAGE' (= keine Tabellen-Rechte) -> grants.sql kam nicht beim User an -> Schritt 4b prüfen.
 ```
 
@@ -223,7 +233,8 @@ Vorgehen siehe `Raspberry-Pi-Hosting-Anleitung.md` §5. Der Startbefehl im Servi
   ```
   (Alternativ den Pi nur über ein isoliertes/Test-LAN betreiben.) Die DB bleibt davon unberührt lokal (`127.0.0.1`).
 - **Passwörter nie committen.** Echte Werte im Passwort-Manager / in `.env` (gitignored). Vorlage = `.env.example`.
-- **`alarm`** darf nur `alarmsystem` und nur INSERT/SELECT(+UPDATE auf `alarm`) — append-only (NF-09).
+- **`alarm`** darf nur `alarmsystem` und nur INSERT/SELECT(+UPDATE auf Tabelle `alarm`) — append-only (NF-09).
+  *Achtung Namensgleichheit:* DB-User `alarm` und Tabelle `alarm` heißen identisch.
 - G1/G3 reden mit der **API**, nie direkt mit der DB (RB-01).
 
 ## Troubleshooting
@@ -246,6 +257,7 @@ Vorgehen siehe `Raspberry-Pi-Hosting-Anleitung.md` §5. Der Startbefehl im Servi
 | Schema einspielen | `sudo mariadb alarmsystem < migrations/schema.sql` |
 | Rechte einspielen | `sed "s/'alarm'@'[^']*'/'alarm'@'127.0.0.1'/g" migrations/grants.sql \| sudo mariadb --force alarmsystem` |
 | Rechte prüfen | `sudo mariadb -e "SHOW GRANTS FOR 'alarm'@'127.0.0.1';"` |
+| DB-Backup (Dauerbetrieb) | `mysqldump alarmsystem > backup_$(date +%F).sql` |
 | Backend starten | `.venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --env-file .env` |
 | Health-Check | `curl http://127.0.0.1:8000/v1/health` |
 
@@ -266,5 +278,6 @@ sudo systemctl enable --now mariadb
 systemctl status mariadb --no-pager        # active (running)?
 sudo mariadb-secure-installation
 #   unix_socket Y · remove anon Y · disallow root remote Y · remove test-DB Y · reload Y
+#   "Change the root password?" -> N  (sonst bricht die unix_socket-Auth, 'sudo mariadb' geht nicht mehr)
 ```
 Danach weiter bei **Schritt 3**.
