@@ -79,6 +79,13 @@ class Assessment(_Base):
     # DTB-33 (FA-06/FA-05): 30-min-T_s-Prognose, die diese Bewertung beeinflusst hat.
     # None = keine Prognose verfuegbar/eingegangen. NICHT Teil des G2->G3-Wire-Contracts.
     forecast_surface_temp_c: float | None = None
+    # DTB-27 Anzeige-Hysterese (RiskHysterese): entprellte, fuer die Ampel bestimmte
+    # Stufe. `risk_level` bleibt die rohe Kaskadenstufe (Audit/Forensik + Alarm-Gen);
+    # dieses Feld traegt das nach Hysterese gehaltene/gedebouncte Level, das die
+    # Serve-Schicht an G3 ausliefert. None = noch nicht gesetzt (Legacy-/Test-Assets
+    # vor der Hysterese-Einfuehrung). Fail-safe-Pfade (stale/fault/keine Daten)
+    # setzen UNKNOWN via RiskHysterese.uebernimm_unknown (kein State-Desync).
+    displayed_risk_level: RiskLevel | None = None
 
 
 class Alarm(_Base):
