@@ -170,3 +170,37 @@ gegen echte MariaDB 11.4.7; 785 Tests grün (siehe Journal/Save-Session 28.06.).
 - **DTB-67 — wartet auf G3 (Nick):** der Code füllt `driving_factor`/`explanation` auf `unknown` bereits („stale"); die **Abstimmung**, ob das so passt, geht nur mit G3 → morgen vor Ort. **Heute nicht lösbar.**
 - **DTB-69 — BLOCKIERT durch G1 (Nils):** braucht die finale DS18B20-Auflösung (Bit-Tiefe + echte Zappelbreite); aktueller `flatline_epsilon_c=0.15` ist ein dokumentierter Schätzwert. **Heute nicht lösbar.**
 - **DTB-36 — menschliche M3-Doku:** Gruppen-Entscheidungslogbuch konsolidieren (Abgabe-Deliverable), kein Backend-Code.
+
+---
+
+## ✏️ Update (28.06. abends, nach Tiefenverifikation + Deep Review) — orga
+
+**Vollständige Live- + DB-Verifikation durchgeführt** (erstmals mit echter lokaler MariaDB, nicht nur InMemory).
+
+**Neue Kennzahlen (gegen `origin/main` + lokaler DB):**
+- **Tests: 832 passed, 0 failed, 0 skipped** (vorher: 794 passed / 36 skipped — die 36 Skips waren die DB-Integrationstests, die jetzt alle laufen).
+- **Coverage: 98 %** (vorher 94,55 %).
+- **ruff check + format: clean.**
+- Beide Guard-Tools grün (Hardcode-Schwellen, RB-01-Aktor-Check).
+
+**Verifikationsergebnisse:**
+- **V1 vertragskonform: JA** (Subagent-Tiefenaudit). Alle 8 Routen registriert, Schemas/Enums/Status-Codes stimmen mit `API_FROZEN_v1.md`/`openapi.yaml` überein, kein RB-01-Verstoß, keine hardcodierten fachlichen Schwellen.
+- **Live-Durchstich E2E** (G1-Sim → Poller → Bewertung → DB → API → Alarm → Ack): alle Szenarien korrekt — GRÜN/ROT+CRITICAL/STALE→unknown/FAULT→unknown/Double-Ack 409. Audit-Log schreibt sauber (82 Einträge live bestätigt).
+
+**Neuer PR offen:**
+- **PR #156** (`test/vorfaelle-integration`): 2 neue Integrationstests für die dokumentierten Vorfälle auf Service-Ebene (Persistenz + Audit + ΔT-in-Explanation-Assertion). Ergänzt die vorhandenen Unit-Tests. 832 Tests grün. Wartet auf Reviewer (Arezo/Amelie).
+
+**Deep Engineering-Review (Subagent, belastbar):**
+- Note-Tendenz: **Sehr gut (1,0–1,3)** für WI-2, *sofern die mündliche Reflexion dieselbe Tiefe zeigt*.
+- 5 Schwächen, alle MEDIUM/LOW, **keine CRITICAL/HIGH**: (1) Kommentardichte, (2) `main.py` wächst (565 Zeilen), (3) `grants.sql` hardkodierter DB-Name/User, (4) kein Connection-Pooling, (5) `ack` ohne Auth (bewusst M2) + CORS `*`.
+- Reifester Pfad bis Abgabe: Kommentar punktuell konsolidieren, `main.py`-Split, Live-Demo üben, `grants.sql`/Env abstimmen.
+
+**Priorität M3 (verschiebt sich durch verifizierten Stand):**
+1. **Reflexions-/Entscheidungsdoku (40 % Einzelleistung)** — jetzt höchste Priorität, da Code verifiziert verlässlich ist. Die 5 Schwächen als bewusste Ingenieursentscheidungen aufbereiten = direkt Zahlung auf die Note.
+2. **PR #156 reviewen + mergen.**
+3. **DTB-17/23** E2E-Live-Integration G1/G3 (G1-Sim steht bereit).
+4. **DTB-54** Pi-MariaDB-Init DoD-Nachweis (lokal verifiziert, auf Pi wiederholen).
+5. **Git-Tag `api-v1.0`** setzen.
+6. Menschliche M3-Deliverables (Testprotokoll, Demo, Präsentation).
+
+*Quelle: Live-Verifikation 28.06. abends gegen `origin/main` + lokale MariaDB 11.4.7; Subagent-Tiefenaudit + Deep Review.*
