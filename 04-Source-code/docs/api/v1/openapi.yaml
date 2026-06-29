@@ -409,6 +409,12 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AuditLogEntry"
+        "400":
+          description: Ungueltiger Query-Parameter (z. B. `limit` ausserhalb 1..500).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
           description: G2 (noch) nicht lieferfaehig (Runtime nicht bereit / DB-Ausfall).
           content:
@@ -958,12 +964,16 @@ components:
             ]
         entity_type:
           type: string
+          minLength: 1
+          maxLength: 32
         entity_id:
           type: integer
           format: int64
           nullable: true
         actor:
           type: string
+          minLength: 1
+          maxLength: 128
         detail:
           type: object
           nullable: true

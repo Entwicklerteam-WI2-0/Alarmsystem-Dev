@@ -556,6 +556,10 @@ def acknowledge_alarm(
     summary="Audit-/Ereignis-Log lesen (Datenbank-Spiegel, read-only)",
     tags=["Audit"],
     responses={
+        400: {
+            "model": Error,
+            "description": "Ungueltiger Query-Parameter (z. B. limit ausserhalb 1..500).",
+        },
         503: {
             "model": Error,
             "description": "G2 (noch) nicht lieferfaehig (Runtime nicht bereit / DB-Ausfall).",

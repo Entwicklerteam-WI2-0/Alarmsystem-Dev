@@ -177,9 +177,9 @@ class AuditLogResponse(_Base):
     id: int
     ts: datetime
     event_type: AuditEventType
-    entity_type: str
+    entity_type: str = Field(min_length=1, max_length=32)
     entity_id: int | None = None
-    actor: str
+    actor: str = Field(min_length=1, max_length=128)
     detail: dict[str, Any] | None = None
 
 
