@@ -514,9 +514,7 @@ def _parse_iso_utc(value: object) -> datetime:
     try:
         parsed = datetime.fromisoformat(normalized)
     except ValueError as exc:
-        raise ValueError(
-            f"measured_at ist kein gueltiger ISO-8601-Zeitstempel: {value!r}"
-        ) from exc
+        raise ValueError(f"measured_at ist kein gueltiger ISO-8601-Zeitstempel: {value!r}") from exc
     if parsed.tzinfo is None:
         raise ValueError("measured_at muss Zeitzoneninformation enthalten (Z oder Offset)")
     return parsed.astimezone(UTC)
