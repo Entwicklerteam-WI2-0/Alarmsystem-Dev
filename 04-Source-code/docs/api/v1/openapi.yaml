@@ -807,6 +807,13 @@ components:
           type: number
           nullable: true
           description: Luftfeuchte (%).
+        forecast_surface_temp_c:
+          type: number
+          nullable: true
+          description: |
+            30-min-Prognose der Oberflaechentemperatur (°C, lineare Regression; DTB-33/FA-06,
+            additiv v1, revidiert E-36). `null` bei `risk_level=unknown` (NF-01: keine
+            Prognose auf stale/fault ausliefern).
         measured_at:
           type: string
           format: date-time
