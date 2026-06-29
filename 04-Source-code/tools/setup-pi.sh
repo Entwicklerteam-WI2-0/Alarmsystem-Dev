@@ -83,7 +83,22 @@ gen_alnum_secret() {
     if [[ "${#out}" -lt "$len" ]]; then
         out=$(head -c $(( len * 8 )) /dev/urandom | tr -dc 'a-zA-Z0-9' | cut -c1-"$len")
     fi
+    # Finale Längenprüfung: kein stilles Versagen mit zu kurzem/leerem Geheimnis.
+    # exit in der Command-Substitution -> Substitution scheitert -> set -e bricht ab.
+    if [[ "${#out}" -ne "$len" ]]; then
+        log_error "Konnte kein $len Zeichen langes Geheimnis erzeugen (openssl und /dev/urandom fehlgeschlagen)."
+        exit 1
+    fi
     printf '%s' "$out"
+}
+
+# apt update nur einmal pro Lauf ausführen (Python- und MariaDB-Block teilen sich das).
+APT_UPDATED=0
+apt_update_once() {
+    if [[ "$APT_UPDATED" -eq 0 ]]; then
+        sudo apt update
+        APT_UPDATED=1
+    fi
 }
 
 # -----------------------------------------------------------------------------
@@ -114,7 +129,7 @@ if [[ -z "$PYTHON_CMD" ]]; then
     # nur dann installieren – sonst mit klarer Meldung abbrechen.
     if prompt_yes_no "Python 3.12 jetzt via apt installieren?"; then
         check_command "apt"
-        sudo apt update
+        apt_update_once
         if apt-cache show python3.12 &>/dev/null; then
             sudo apt install -y python3.12 python3.12-venv python3.12-dev
             PYTHON_CMD="python3.12"
@@ -139,7 +154,7 @@ log_info "Schritt 2/8: MariaDB prüfen/installieren..."
 if ! command -v mariadb &>/dev/null && ! command -v mysql &>/dev/null; then
     log_warn "MariaDB nicht gefunden."
     if prompt_yes_no "MariaDB-Server installieren?"; then
-        sudo apt update
+        apt_update_once
         sudo apt install -y mariadb-server
         sudo systemctl enable mariadb
         sudo systemctl start mariadb
@@ -183,6 +198,14 @@ if [[ "$REUSE_ENV" -eq 1 ]]; then
         log_error "Bitte .env prüfen oder bei der vorigen Abfrage neu erzeugen lassen."
         exit 1
     fi
+    # Der Wert stammt aus einer u. U. von Hand bearbeiteten .env und wird unten in ein
+    # SQL-Literal interpoliert. Strikt auf [a-zA-Z0-9] begrenzen -> keine SQL-Injection
+    # über Zeichen wie ' ; -- (genau das Format, das gen_alnum_secret erzeugt).
+    if [[ ! "$DB_PASSWORD" =~ ^[a-zA-Z0-9]+$ ]]; then
+        log_error "DB_PASSWORD in der .env enthält unzulässige Zeichen (erlaubt: a-z A-Z 0-9)."
+        log_error "Bitte das Passwort in der .env auf rein alphanumerisch korrigieren."
+        exit 1
+    fi
     log_info "DB-Passwort aus bestehender .env übernommen (DB-User wird darauf gesetzt)."
 else
     DB_PASSWORD=$(gen_alnum_secret 32)
@@ -212,9 +235,9 @@ run_mysql_root() {
 }
 
 # DB_NAME/DB_USER/DB_HOST sind feste Konstanten; DB_PASSWORD ist rein alphanumerisch
-# (gen_alnum_secret bzw. aus der bestehenden .env) -> enthält kein ' " \ und ist in der
-# einfach gequoteten SQL-Form unkritisch. SQL kommt über stdin (Heredoc), nicht als
-# interpolierter Shell-String.
+# (gen_alnum_secret beim Neuanlegen, oben validiert beim Übernehmen aus der .env) ->
+# enthält kein ' " \ und ist in der einfach gequoteten SQL-Form unkritisch. SQL kommt
+# über stdin (Heredoc), nicht als interpolierter Shell-String.
 run_mysql_root <<SQL
 DROP DATABASE IF EXISTS \`$DB_NAME\`;
 CREATE DATABASE \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -262,6 +285,12 @@ if [[ ! -d ".venv" ]]; then
     "$PYTHON_CMD" -m venv .venv
 fi
 
+if [[ ! -f "requirements.txt" ]]; then
+    log_error "requirements.txt nicht gefunden in $PROJECT_DIR."
+    log_error "Bitte das Repo vollständig auschecken und Skript erneut starten."
+    exit 1
+fi
+
 .venv/bin/pip install --upgrade pip
 .venv/bin/pip install -r requirements.txt
 
@@ -280,8 +309,9 @@ if [[ "$REUSE_ENV" -eq 1 ]]; then
     log_info "Behalte bestehende .env (DB-User wurde auf das dortige DB_PASSWORD gesetzt)."
 else
     if [[ -f ".env" ]]; then
-        mv .env ".env.backup.$(date +%Y%m%d-%H%M%S)"
-        log_info "Bestehende .env gesichert."
+        # Festes Backup (kein Timestamp) -> bei wiederholtem Re-Setup akkumulieren keine Dateien.
+        mv .env ".env.backup"
+        log_info "Bestehende .env nach .env.backup gesichert (überschreibt ein vorheriges Backup)."
     fi
 
     API_KEY=$(gen_alnum_secret 48)
@@ -323,10 +353,17 @@ log_info "Schritt 7/8: Systemd-Service installieren..."
 
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
-# Service dynamisch generieren, damit WorkingDirectory/EnvFile immer passen
-SERVICE_USER="${SUDO_USER:-$USER}"
+# Service dynamisch generieren, damit WorkingDirectory/EnvFile immer passen.
+# Service-User: explizites SERVICE_USER (via `SERVICE_USER=name sudo -E ...`) gewinnt,
+# sonst der via sudo aufrufende User. Direkt als root ist nicht eindeutig -> nicht still
+# auf "pi" raten, sondern Abbruch mit Hinweis (sonst läuft der Dienst evtl. als falscher
+# User ohne Zugriff auf das Projektverzeichnis).
+SERVICE_USER="${SERVICE_USER:-${SUDO_USER:-$USER}}"
 if [[ "$SERVICE_USER" == "root" ]]; then
-    SERVICE_USER="pi"
+    log_error "Service-User nicht eindeutig (Skript direkt als root ausgeführt?)."
+    log_error "Als normaler User mit sudo starten ODER SERVICE_USER explizit setzen:"
+    log_error "  SERVICE_USER=alarm sudo -E ./tools/setup-pi.sh"
+    exit 1
 fi
 
 write_service=1
@@ -375,7 +412,11 @@ log_info "Schritt 8/8: Backend starten..."
 
 if prompt_yes_no "Backend jetzt starten?"; then
     sudo systemctl restart "$SERVICE_NAME"
-    sleep 2
+    # Robuster als ein fixes sleep: auf ausgelastetem Pi kann uvicorn länger brauchen.
+    for _ in 1 2 3 4 5; do
+        sleep 1
+        sudo systemctl is-active --quiet "$SERVICE_NAME" && break
+    done
     if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
         log_info "Backend läuft. Status: sudo systemctl status $SERVICE_NAME"
         IP=$(hostname -I | awk '{print $1}')
