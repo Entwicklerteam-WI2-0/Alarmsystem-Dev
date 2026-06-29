@@ -143,6 +143,25 @@ def test_current_happy_path_returns_200_with_assessment():
     assert body["surface_temp_c"] == 2.0
 
 
+def test_current_exposes_wind_and_moisture_on_happy_path():
+    # Contract v1.2: der aktuelle Sensor-Kontext (Wind + Oberflaechenfeuchte) erscheint im
+    # Live-Snapshot, damit G3 ihn neben der Ampel abgreifen kann. Beweist die Auslieferung
+    # bis ins JSON (nicht nur den Builder).
+    now = datetime.now(UTC)
+    reading = _reading(now).model_copy(update={"wind_speed_ms": 3.5, "surface_moisture_pct": 7.0})
+    _override_runtime(
+        assessment_repo=_FakeAssessmentRepo(_assessment(now, RiskLevel.GREEN)),
+        reading_repo=_FakeReadingRepo((reading,)),
+    )
+
+    response = client.get("/v1/assessment/current")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["wind_speed_ms"] == 3.5
+    assert body["surface_moisture_pct"] == 7.0
+
+
 def test_current_stale_returns_200_unknown_and_is_stale():
     now = datetime.now(UTC)
     stale_timeout = load_thresholds().datenqualitaet.stale_timeout_s

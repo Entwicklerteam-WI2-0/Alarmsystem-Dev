@@ -208,6 +208,11 @@ class AssessmentCurrent(_Base):
     dew_point_c: float | None = None
     delta_t: float | None = None
     humidity_pct: float | None = None
+    # G1-Kontextfelder (Contract v1.2): aktueller Wind/Oberflaechenfeuchte aus dem letzten
+    # Reading, damit G3 sie neben der Ampel anzeigen kann. NICHT bewertungsrelevant; folgen der
+    # Fail-safe-Nullung (bei unknown/stale/fault None, wie die Messwerte).
+    surface_moisture_pct: float | None = None
+    wind_speed_ms: float | None = None
     measured_at: datetime  # G1-Messzeit; auf 200 immer gesetzt
     assessed_at: datetime  # G2-Bewertungszeit
     is_stale: bool

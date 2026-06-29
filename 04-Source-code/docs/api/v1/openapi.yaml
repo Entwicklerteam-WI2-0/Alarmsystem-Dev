@@ -807,6 +807,18 @@ components:
           type: number
           nullable: true
           description: Luftfeuchte (%).
+        surface_moisture_pct:
+          type: number
+          nullable: true
+          description: >
+            Kalibrierte Oberflaechenfeuchte (%), G1-Kontext (Contract v1.2) — nur Anzeige,
+            NICHT bewertungsrelevant. Wie die Messwerte bei `risk_level=unknown` genullt.
+        wind_speed_ms:
+          type: number
+          nullable: true
+          description: >
+            Windgeschwindigkeit (m/s), G1-Kontext (Contract v1.2) — nur Anzeige, NICHT
+            bewertungsrelevant. Wie die Messwerte bei `risk_level=unknown` genullt.
         measured_at:
           type: string
           format: date-time
