@@ -107,7 +107,12 @@ sudo mariadb alarmsystem < migrations/schema.sql
 #     -> egal ob grants.sql 'localhost', '%' o.ä. nutzt, die Rechte landen beim richtigen User.
 #     Der enge Scope 'alarm'@ lässt etwaige weitere User/Host-Angaben unberührt (grants.sql
 #     enthält aktuell nur 'alarm'). migrations/grants.sql im Repo bleibt UNVERÄNDERT.
-#     --force: harmlose REVOKE-Hinweise auf frischem User überspringen.
+#     --force: hier NUR, damit die harmlosen REVOKE-Hinweise auf frischem User das Einspielen nicht
+#              abbrechen. WICHTIG: --force macht den Client bei JEDEM SQL-Fehler stumm weitermachen —
+#              auch wenn ein GRANT komplett ausbleibt (sed trifft nicht, Tabelle fehlt, Syntaxfehler).
+#              Deshalb ist der SHOW GRANTS-Pflichtcheck unten der einzig verlässliche Beweis, dass die
+#              Rechte wirklich angekommen sind. Zeigt er nur 'USAGE', ist grants.sql trotz Exit 0
+#              gescheitert -> Schritt 4b nochmal ohne --force laufen lassen, um die echte Fehlermeldung zu sehen.
 sed "s/'alarm'@'[^']*'/'alarm'@'127.0.0.1'/g" migrations/grants.sql | sudo mariadb --force alarmsystem
 ```
 
@@ -246,6 +251,7 @@ Vorgehen siehe `Raspberry-Pi-Hosting-Anleitung.md` §5. Der Startbefehl im Servi
 | `assessment/current` immer `503` | DB leer (noch keine Bewertung). Erwartet ohne Scheduler/G1 — kein Fehler. |
 | `/v1/health` vom Laptop nicht erreichbar | uvicorn mit `--host 0.0.0.0` gestartet? Pi-Firewall/Port 8000 offen? |
 | `REVOKE … ERROR 1141/1064` beim Grants-Einspielen | Harmlos auf frischem User; `--force` überspringt (Schritt 4b). |
+| App-Queries `ERROR 1142`, obwohl Grants-Einspielen „erfolgreich" | `--force` macht den Client bei **jedem** SQL-Fehler stumm — auch ein komplett ausgebliebener GRANT (sed trifft nicht, Tabelle fehlt) erzeugt keinen Abbruch. Einziger verlässlicher Beweis: `SHOW GRANTS` zeigt nur `USAGE` → Grants kamen nicht an → Schritt 4b **ohne** `--force` wiederholen, um die echte Fehlermeldung zu sehen. |
 
 ## Schnellreferenz
 
