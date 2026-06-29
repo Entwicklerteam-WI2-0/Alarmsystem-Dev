@@ -1,11 +1,25 @@
 # Persönliches Entscheidungslog — Lucas Vöhringer (G2)
-> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-28
+> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-29
 > **Autor:** Lucas Vöhringer (Systemarchitekt) · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 > Persönliches Log (Einzelleistung). Das zentrale Architektur-Logbuch des Teams ist
 > `Entscheidungslog-Lucas-Systemarchitektur.md` (ADR-Format E-xx); je Eintrag steht der Querverweis dorthin.
 
 ---
+
+## 2026-06-29 — Pi-DB-Auth: echter `grants.sql`-Fix statt `--force`-Workaround + `@localhost` als App-User-Host (MariaDB 11)
+- **Kontext/Task:** Pi-Deploy (Mo 29.06., Strang C) · Inbetriebnahme des G2-Backends auf `icedetection.local` (MariaDB 11.8.6) · DTB-54 (Grants/append-only, NF-09) · E-35 (rohes PyMySQL, native MariaDB). Blocker beim Setup: `Access denied for 'alarm'@'localhost'` — „kommt mit keinem Passwort rein". Betrifft `04-Source-code/migrations/grants.sql` und `04-Source-code/tools/setup-pi.sh`. Auslöser: das Team kam beim manuellen Pi-Setup nicht weiter.
+- **Entscheidung:**
+  1. Den seit 28.06. bekannten `grants.sql`-REVOKE-Fehler (ERROR 1064 auf MariaDB 11) **per echtem Repo-Fix** beheben statt weiter per `--force` zu kaschieren: die kombinierte Form `REVOKE ALL PRIVILEGES, GRANT OPTION ON db.* FROM user` in **zwei** Statements splitten (`REVOKE ALL PRIVILEGES ON db.* …` + `REVOKE GRANT OPTION ON db.* …`); zusätzlich `setup-pi.sh` grants.sql **mit `--force`** einspielen, damit das harmlose ERROR 1141 auf frischem User den Lauf nicht abbricht.
+  2. Der App-User wird für **`@localhost`** angelegt (nicht `@127.0.0.1`/`@%`): bei aktivem name-resolve löst MariaDB eine TCP-Verbindung zu 127.0.0.1 per Reverse-DNS zu `localhost` auf und matcht entsprechend `@localhost`.
+  3. Akut auf dem Pi: den aus dem abgebrochenen setup-Lauf verbliebenen `@localhost`-Account (mit verlorenem Zufallspasswort) droppen + mit bekanntem Passwort + Least-Privilege-Grants neu anlegen.
+- **Begründung:** Der Bug trifft jeden, der `setup-pi.sh` nutzt — der `--force`-Workaround war nur den Devs bekannt, das Setup-Script selbst nutzt ihn nicht und stürzt deshalb reproduzierbar ab (Schritt 4). Der Folgeschaden ist subtil: setup-pi.sh erzeugt in Schritt 3 ein 32-Zeichen-Zufallspasswort und legt damit `'alarm'@'localhost'` an, schreibt es aber erst in Schritt 6 in die `.env`; bricht Schritt 4 (grants.sql) ab, bleibt ein Account mit einem Passwort liegen, das niemand kennt → genau das „kein Passwort funktioniert"-Symptom. Das `@localhost`-Matching ist die zweite Falle: manuelles Neusetzen auf `@127.0.0.1`/`@%` blieb wirkungslos, weil MariaDB bei der 127.0.0.1-Verbindung den per Reverse-DNS aufgelösten `@localhost`-Account matcht.
+- **Alternativen (erwogen/verworfen):**
+  - *Beim `--force`-Workaround bleiben:* verworfen — verbirgt einen echten Syntaxfehler, der jeden Erstaufsetzer trifft und `setup-pi.sh` (ohne `--force`) weiterhin abstürzen lässt.
+  - *App-User auf `@%` (alle Hosts):* verworfen für den Pi-Standardfall — weniger restriktiv als nötig und bei aktivem name-resolve nicht der gematchte Account; `@localhost` ist der präzise, von der Verbindung tatsächlich getroffene Host.
+  - *`skip-name-resolve` setzen, damit `@127.0.0.1` matcht:* verworfen — Server-Konfigurationsänderung mit weiterreichenden Folgen, nur um einen falsch gewählten Account-Host zu retten; der saubere `@localhost`-Account löst es ohne Server-Eingriff.
+- **Bewusster Tradeoff:** Der Repo-Fix wird gegen die **aktuelle** origin/main gemacht (enthält bereits neue `setup-pi.sh` + Pi-Deploy-Skripte aus PR #170) — die lokale Arbeitskopie war 9 Commits zurück; der Fix ist gegen den Remote-Stand zu erstellen, nicht gegen die alte lokale Version.
+- **Ergebnis/Status:** Akut auf dem Pi **gelöst** (DB-Login steht, Backend startet; backend-db/Andi manuell durchbekommen). Repo-Fix (grants.sql-Split + setup-pi.sh `--force`) **noch offen** → eigener Branch/PR ab 30.06. Querverweis zentrales Log: ADR (E-xx) für den MariaDB-Grant-/Host-Fix ggf. nachtragen. —architekt
 
 ## 2026-06-28 — DTB-24: `POST /v1/alarms/{id}/ack` — auth-frei (Contract-treu), atomare Quittierung, 422 im Error-Format
 - **Kontext/Task:** P4.1 · DTB-24 (Alarm-Quittierung, FA-10) · NF-09 (append-only/Audit) · RB-01 (kein Aktor) · NF-01/Contract D (Fehler-Envelope). Baut auf eingefrorenem `openapi.yaml` (ack war bereits voll spezifiziert), `migrations/schema.sql` (`acknowledgement`-Tabelle + Grants, DTB-12/54), `Acknowledgement`/`AckRequest`-Schemas. Branch `feat/dtb-24-alarm-ack` → **PR #132**. Auslöser: ausdrücklicher Auftrag „den Endpoint bauen".
