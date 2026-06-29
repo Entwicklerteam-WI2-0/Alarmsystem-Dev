@@ -213,6 +213,10 @@ class AssessmentCurrent(_Base):
     # Fail-safe-Nullung (bei unknown/stale/fault None, wie die Messwerte).
     surface_moisture_pct: float | None = None
     wind_speed_ms: float | None = None
+    # DTB-33/FA-06 (additiv v1, revidiert E-36): 30-min-Prognose der Oberflaechentemperatur
+    # (lineare Regression, bereits berechnet + persistiert). Wie die Roh-Messwerte genullt,
+    # wenn risk_level=unknown (NF-01: keine Prognose auf stale/fault ausliefern).
+    forecast_surface_temp_c: float | None = None
     measured_at: datetime  # G1-Messzeit; auf 200 immer gesetzt
     assessed_at: datetime  # G2-Bewertungszeit
     is_stale: bool

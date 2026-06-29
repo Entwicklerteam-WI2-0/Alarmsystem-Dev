@@ -246,6 +246,40 @@ def test_current_fresh_ok_keeps_assessment(thresholds):
     assert cur.assessed_at == assessment.ts
 
 
+def test_current_serves_forecast_and_nulls_it_on_stale(thresholds):
+    # DTB-33/FA-06 (additiv v1, revidiert E-36): die persistierte 30-min-Prognose wird
+    # im Wire-Response ausgeliefert (OK-Pfad) und bei stale genullt (NF-01: keine
+    # Prognose auf veralteten Daten).
+    now = datetime.now(UTC)
+    reading = _reading(now, surface=2.0, dew=0.0)
+    assessment = Assessment(
+        ts=now,
+        risk_level=RiskLevel.GREEN,
+        surface_temp_c=2.0,
+        dew_point_c=0.0,
+        delta_t=2.0,
+        humidity_pct=80.0,
+        forecast_surface_temp_c=-0.5,
+    )
+
+    fresh = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+    assert fresh.forecast_surface_temp_c == pytest.approx(-0.5)
+
+    old = now - timedelta(seconds=thresholds.datenqualitaet.stale_timeout_s + 60)
+    stale = build_assessment_current(
+        Assessment(
+            ts=old, risk_level=RiskLevel.GREEN, surface_temp_c=2.0, forecast_surface_temp_c=-0.5
+        ),
+        _reading(old, surface=2.0, dew=0.0),
+        now,
+        thresholds.datenqualitaet.stale_timeout_s,
+    )
+    assert stale.risk_level == RiskLevel.UNKNOWN
+    assert stale.forecast_surface_temp_c is None
+
+
 def test_current_stale_forces_unknown_and_nulls_measurements(thresholds):
     now = datetime.now(UTC)
     old = now - timedelta(seconds=thresholds.datenqualitaet.stale_timeout_s + 60)

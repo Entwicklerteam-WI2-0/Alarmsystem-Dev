@@ -56,6 +56,7 @@ G2 ist hier **Client**. G1 stellt bereit, G2 pollt.
   "dew_point_c": -1.1,           // von G2 berechnet
   "delta_t": 0.7,                // T_s - T_d
   "humidity_pct": 96,
+  "forecast_surface_temp_c": -0.5,         // 30-min-T_s-Prognose (DTB-33/FA-06, additiv v1; null bei unknown)
   "measured_at": "2026-06-22T14:03:05Z",   // G1-Messzeit (UTC)
   "assessed_at": "2026-06-22T14:03:30Z",   // G2-Bewertungszeit (UTC)
   "is_stale": false,             // true + risk_level=unknown = Fail-safe griff

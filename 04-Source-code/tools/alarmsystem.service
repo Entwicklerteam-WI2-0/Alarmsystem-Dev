@@ -1,0 +1,38 @@
+# =============================================================================
+# TEMPLATE / Referenz-Vorlage – NICHT unverändert kopieren!
+# =============================================================================
+# Der real installierte Service wird von tools/setup-pi.sh dynamisch erzeugt
+# (korrekter User + absolute Pfade). Diese Datei dient nur als Referenz und
+# enthält beispielhafte Pfade für /home/pi/... – bei direkter Verwendung VOR dem
+# Aktivieren anpassen:
+#   User= / Group=      -> tatsächlicher Service-User (nicht zwingend 'pi')
+#   WorkingDirectory=   -> Pfad zum Verzeichnis 04-Source-code
+#   EnvironmentFile=    -> <WorkingDirectory>/.env
+#   ExecStart=          -> <WorkingDirectory>/.venv/bin/uvicorn ...
+# Empfohlen: stattdessen ./tools/setup-pi.sh ausführen.
+# =============================================================================
+[Unit]
+Description=G2-Backend — Vereisungserkennung ANR
+After=network.target mariadb.service
+Wants=mariadb.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/Alarmsystem-Dev/04-Source-code
+EnvironmentFile=/home/pi/Alarmsystem-Dev/04-Source-code/.env
+ExecStart=/home/pi/Alarmsystem-Dev/04-Source-code/.venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+# Härtung (moderat, prototyp-tauglich)
+# NoNewPrivileges: der Dienst braucht keine Privilegien-Eskalation.
+# ProtectSystem=full: /usr, /boot und /etc werden read-only gemountet.
+# ProtectHome bewusst NICHT gesetzt: App, venv und .env liegen unter /home/<user> –
+#   ProtectHome=true würde das WorkingDirectory unzugänglich machen und den Start verhindern.
+NoNewPrivileges=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
