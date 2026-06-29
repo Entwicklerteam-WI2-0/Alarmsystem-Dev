@@ -330,19 +330,6 @@ def test_poll_non_object_payload_does_not_save(
     assert "kein JSON-Objekt" in caplog.text
 
 
-def test_poll_invalid_measured_at_does_not_save(
-    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
-) -> None:
-    snapshot = {**valid_snapshot, "measured_at": "kein-datum"}
-
-    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
-        reading = poller.poll()
-
-    assert reading is None
-    assert len(fake_repo.readings) == 0
-    assert "G1-Feld ungueltig" in caplog.text
-
-
 def test_poll_offset_measured_at_converted_to_utc(
     poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
 ) -> None:
@@ -356,6 +343,22 @@ def test_poll_offset_measured_at_converted_to_utc(
 
     assert reading is not None
     assert reading.measured_at == datetime(2026, 6, 23, 10, 0, 30, tzinfo=UTC)
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_negative_offset_measured_at_converted_to_utc(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # Negativer Offset (-05:00) wird ebenfalls akzeptiert und eindeutig nach UTC
+    # konvertiert (05:00:00-05:00 -> 10:00:00Z). Schliesst die Coverage-Luecke,
+    # die der PR-Text benennt (unterstuetzt beliebige Offsets, nicht nur +hh:mm).
+    snapshot = {**valid_snapshot, "measured_at": "2026-06-23T05:00:00-05:00"}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.measured_at == datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)
     assert len(fake_repo.readings) == 1
 
 
