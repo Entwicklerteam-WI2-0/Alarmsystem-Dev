@@ -33,7 +33,8 @@ DB_USER="alarm"
 DB_HOST="localhost"
 DB_PORT="3306"
 SERVICE_NAME="alarmsystem"
-SERVICE_USER="pi"
+# Hinweis: SERVICE_USER wird in Schritt 7 aus ${SUDO_USER:-$USER} abgeleitet
+# (nicht hier hart auf "pi" gesetzt – das wäre toter Code).
 
 # -----------------------------------------------------------------------------
 # Hilfsfunktionen
@@ -90,14 +91,23 @@ done
 
 if [[ -z "$PYTHON_CMD" ]]; then
     log_warn "Python >= 3.12 nicht gefunden."
-    if prompt_yes_no "Python 3.12 über deadsnakes-Repository installieren?"; then
+    # Hinweis: ppa:deadsnakes ist ein Ubuntu-Launchpad-PPA und funktioniert auf
+    # Raspberry Pi OS (Debian-basiert) NICHT (add-apt-repository bricht ab).
+    # Daher: prüfen, ob python3.12 im konfigurierten apt-Repo verfügbar ist, und
+    # nur dann installieren – sonst mit klarer Meldung abbrechen.
+    if prompt_yes_no "Python 3.12 jetzt via apt installieren?"; then
         check_command "apt"
         sudo apt update
-        sudo apt install -y software-properties-common
-        sudo add-apt-repository -y ppa:deadsnakes/ppa
-        sudo apt update
-        sudo apt install -y python3.12 python3.12-venv python3.12-dev
-        PYTHON_CMD="python3.12"
+        if apt-cache show python3.12 &>/dev/null; then
+            sudo apt install -y python3.12 python3.12-venv python3.12-dev
+            PYTHON_CMD="python3.12"
+        else
+            log_error "python3.12 ist im apt-Repo dieser OS-Version nicht verfügbar."
+            log_error "Raspberry Pi OS Bookworm liefert standardmäßig Python 3.11."
+            log_error "Optionen: OS-Version mit Python 3.12 verwenden, oder Python 3.12"
+            log_error "manuell installieren (z. B. via pyenv / Source-Build) und Skript erneut starten."
+            exit 1
+        fi
     else
         log_error "Ohne Python 3.12 kann das Backend nicht laufen."
         exit 1
@@ -135,30 +145,62 @@ fi
 # -----------------------------------------------------------------------------
 log_info "Schritt 3/8: Datenbank '$DB_NAME' und User '$DB_USER' anlegen..."
 
-DB_PASSWORD=$(openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')
+# .env-Strategie VOR dem DB-Setup festlegen, damit DB-Passwort und .env nie
+# auseinanderlaufen: Wird eine bestehende .env behalten, übernimmt das DB-Setup das
+# dort hinterlegte DB_PASSWORD (CREATE USER mit demselben PW). Sonst bekäme die DB ein
+# neues PW, die alte .env behielte das alte -> Backend könnte sich nicht verbinden.
+REUSE_ENV=0
+if [[ -f "$PROJECT_DIR/.env" ]]; then
+    log_warn "Bestehende .env gefunden ($PROJECT_DIR/.env)."
+    if prompt_yes_no ".env behalten? (Nein = .env UND DB-Passwort werden neu erzeugt)"; then
+        REUSE_ENV=1
+    fi
+fi
+
+if [[ "$REUSE_ENV" -eq 1 ]]; then
+    DB_PASSWORD=$(grep -E '^DB_PASSWORD=' "$PROJECT_DIR/.env" | head -n1 | cut -d= -f2-)
+    if [[ -z "$DB_PASSWORD" ]]; then
+        log_error "In der bestehenden .env wurde kein DB_PASSWORD gefunden."
+        log_error "Bitte .env prüfen oder bei der vorigen Abfrage neu erzeugen lassen."
+        exit 1
+    fi
+    log_info "DB-Passwort aus bestehender .env übernommen (DB-User wird darauf gesetzt)."
+else
+    DB_PASSWORD=$(openssl rand -base64 32 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')
+fi
 
 echo "Bitte das MariaDB-Root-Passwort eingeben (bei frischer Installation oft leer):"
 read -rsp "MariaDB root-Passwort: " DB_ROOT_PASSWORD
- echo
+echo
 
 MYSQL="mysql"
 if command -v mariadb &>/dev/null; then
     MYSQL="mariadb"
 fi
 
-# Bei leerem Root-Passwort auf frischem Pi: -p ohne Wert -> Enter drücken
-if [[ -z "$DB_ROOT_PASSWORD" ]]; then
-    MYSQL_AUTH="-u root"
-else
-    MYSQL_AUTH="-u root -p'$DB_ROOT_PASSWORD'"
-fi
+# SQL als root ausführen. Das Root-Passwort wird über die Umgebungsvariable MYSQL_PWD
+# übergeben – NICHT als -p-Flag in einem interpolierten `bash -c`-String. Damit ist es
+# weder per Shell-Injection ausnutzbar (Passwörter mit ' " ; $(...) brechen kein Quoting
+# mehr) noch in der Prozessliste (`ps`) sichtbar. Die Inline-Zuweisung landet in der
+# Umgebung von `sudo`, das sie via --preserve-env an den mysql-Client weiterreicht (kein
+# cmdline-Leak). Bei leerem Passwort greift die unix_socket-Authentifizierung (frischer Pi).
+run_mysql_root() {
+    if [[ -n "$DB_ROOT_PASSWORD" ]]; then
+        MYSQL_PWD="$DB_ROOT_PASSWORD" sudo --preserve-env=MYSQL_PWD "$MYSQL" -u root "$@"
+    else
+        sudo "$MYSQL" -u root "$@"
+    fi
+}
 
-sudo bash -c "$MYSQL $MYSQL_AUTH -e \"
+# DB_NAME/DB_USER/DB_HOST sind feste Konstanten, DB_PASSWORD ist base64/alphanumerisch
+# (keine Quotes/Backslashes) -> in der einfach gequoteten SQL-Form unkritisch. SQL kommt
+# über stdin (Heredoc), nicht als interpolierter Shell-String.
+run_mysql_root <<SQL
 DROP DATABASE IF EXISTS \`$DB_NAME\`;
 CREATE DATABASE \`$DB_NAME\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 DROP USER IF EXISTS '$DB_USER'@'$DB_HOST';
 CREATE USER '$DB_USER'@'$DB_HOST' IDENTIFIED BY '$DB_PASSWORD';
-\""
+SQL
 
 log_info "Datenbank und User angelegt."
 
@@ -169,8 +211,17 @@ log_info "Schritt 4/8: Schema und Rechte einspielen..."
 
 cd "$PROJECT_DIR"
 
-sudo bash -c "$MYSQL $MYSQL_AUTH $DB_NAME < migrations/schema.sql"
-sudo bash -c "$MYSQL $MYSQL_AUTH $DB_NAME < migrations/grants.sql"
+# Migrations müssen vorhanden sein, sonst bricht das DB-Setup mit kryptischem Fehler ab.
+for sql_file in migrations/schema.sql migrations/grants.sql; do
+    if [[ ! -f "$sql_file" ]]; then
+        log_error "Migrations-Datei fehlt: $PROJECT_DIR/$sql_file"
+        log_error "Bitte sicherstellen, dass migrations/ im Repo vorhanden ist, und Skript erneut starten."
+        exit 1
+    fi
+done
+
+run_mysql_root "$DB_NAME" < migrations/schema.sql
+run_mysql_root "$DB_NAME" < migrations/grants.sql
 
 log_info "Schema + Rechte eingespielt."
 
@@ -203,21 +254,18 @@ log_info "Schritt 6/8: Laufzeit-Konfiguration (.env) anlegen..."
 
 cd "$PROJECT_DIR"
 
-if [[ -f ".env" ]]; then
-    log_warn "Bestehende .env gefunden."
-    if ! prompt_yes_no ".env überschreiben? (Alte Credentials gehen verloren!)"; then
-        log_info "Behalte bestehende .env."
-    else
-        mv .env ".env.backup.$(date +%Y%m%d-%H%M%S)"
-        create_env=1
-    fi
+# Die .env-Entscheidung wurde bereits in Schritt 3 getroffen (REUSE_ENV), damit DB und
+# .env konsistent bleiben. Hier nur noch entsprechend handeln – nicht erneut fragen.
+if [[ "$REUSE_ENV" -eq 1 ]]; then
+    log_info "Behalte bestehende .env (DB-User wurde auf das dortige DB_PASSWORD gesetzt)."
 else
-    create_env=1
-fi
+    if [[ -f ".env" ]]; then
+        mv .env ".env.backup.$(date +%Y%m%d-%H%M%S)"
+        log_info "Bestehende .env gesichert."
+    fi
 
-API_KEY=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')
+    API_KEY=$(openssl rand -hex 32 2>/dev/null || head -c 64 /dev/urandom | base64 | tr -dc 'a-zA-Z0-9')
 
-if [[ "${create_env:-0}" -eq 1 ]]; then
     cat > .env <<EOF
 # Automatisch generiert durch tools/setup-pi.sh am $(date -Iseconds)
 # Diese Datei gehört NICHT ins Git.
@@ -260,14 +308,17 @@ if [[ "$SERVICE_USER" == "root" ]]; then
     SERVICE_USER="pi"
 fi
 
+write_service=1
 if [[ -f "$SERVICE_FILE" ]]; then
     log_warn "Service-Datei existiert bereits."
     if ! prompt_yes_no "Systemd-Service überschreiben?"; then
+        write_service=0
         log_info "Behalte bestehende Service-Datei."
     fi
 fi
 
-sudo tee "$SERVICE_FILE" >/dev/null <<EOF
+if [[ "$write_service" -eq 1 ]]; then
+    sudo tee "$SERVICE_FILE" >/dev/null <<EOF
 [Unit]
 Description=G2-Backend — Vereisungserkennung ANR
 After=network.target mariadb.service
@@ -283,9 +334,14 @@ ExecStart=$PROJECT_DIR/.venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=5
 
+# Härtung (moderat, prototyp-tauglich; ProtectHome bewusst aus -> App liegt unter /home)
+NoNewPrivileges=true
+ProtectSystem=full
+
 [Install]
 WantedBy=multi-user.target
 EOF
+fi
 
 sudo systemctl daemon-reload
 sudo systemctl enable "$SERVICE_NAME"

@@ -13,10 +13,13 @@ ExecStart=/home/pi/Alarmsystem-Dev/04-Source-code/.venv/bin/uvicorn src.main:app
 Restart=always
 RestartSec=5
 
-# Sicherheit (optional, aber empfohlen für Prototyp)
-NoNewPrivileges=false
-ProtectSystem=false
-ProtectHome=false
+# Härtung (moderat, prototyp-tauglich)
+# NoNewPrivileges: der Dienst braucht keine Privilegien-Eskalation.
+# ProtectSystem=full: /usr, /boot und /etc werden read-only gemountet.
+# ProtectHome bewusst NICHT gesetzt: App, venv und .env liegen unter /home/<user> –
+#   ProtectHome=true würde das WorkingDirectory unzugänglich machen und den Start verhindern.
+NoNewPrivileges=true
+ProtectSystem=full
 
 [Install]
 WantedBy=multi-user.target
