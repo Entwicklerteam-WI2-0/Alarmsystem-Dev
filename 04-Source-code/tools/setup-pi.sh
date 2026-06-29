@@ -331,8 +331,8 @@ DB_CONNECT_TIMEOUT=5
 DB_AUTOCOMMIT=false
 DB_CHARSET=utf8mb4
 
-# G1-Sensor-API (anpassen, sobald G1-Adresse bekannt)
-G1_BASE_URL=http://g1-sensorik.local
+# G1-Sensor-API (echte ANR-G1; Base ohne Pfad – Poller haengt /current und /health selbst an)
+G1_BASE_URL=http://192.168.1.22
 
 # Scheduler für Live-Betrieb einschalten
 G2_ENABLE_SCHEDULER=true
