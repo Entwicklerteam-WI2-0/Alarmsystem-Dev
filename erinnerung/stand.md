@@ -1,6 +1,22 @@
 # Aktueller Stand
 
-> Stand: 2026-06-28 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+> Stand: 2026-06-29 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+
+## 2026-06-29 — Pi-Inbetriebnahme icedetection.local: DB-Auth-Blocker analysiert + manuell gelöst (architekt)
+**Was:** Pi-Deploy (Mo 29.06.). G2-Backend auf Raspberry Pi `icedetection.local` (MariaDB 11.8.6, Python 3.13).
+`git clone` + venv + deps + `schema.sql` ok; Blocker = DB-Auth (`Access denied for 'alarm'@'localhost'`).
+**Wurzel (3):** (1) `grants.sql` REVOKE-Syntax bricht auf MariaDB 11 (ERROR 1064; kombiniertes
+`REVOKE ALL PRIVILEGES, GRANT OPTION ON db.*` ist ungültig) — bekannt seit 28.06., aber `setup-pi.sh` spielt
+grants.sql ohne `--force` ein → Abbruch (Schritt 4). (2) `setup-pi.sh` legt `'alarm'@'localhost'` mit
+Zufallspasswort an, schreibt es aber erst NACH dem Crash-Punkt (Schritt 6) in die `.env` → PW verloren →
+„kein Passwort funktioniert". (3) TCP-127.0.0.1 → Reverse-DNS `localhost` → `@localhost` matcht, nicht die
+manuell reparierten `@127.0.0.1`/`@%`.
+**Lösung:** `@localhost` sauber gedroppt + mit bekanntem PW + Least-Priv-Grants neu angelegt; Andi
+(backend-db) manuell durchbekommen. Backend startet; G1 `No route to host` erwartet (Fail-safe greift).
+**Offen (Lucas, ab 30.06.):** (1) Andis Bash-History (`~/.bash_history`, Pi) + DB-Endzustand prüfen →
+fehlerhaften Befehlsblock rekonstruieren. (2) **Repo-Fix gegen aktuelle origin/main** (enthält bereits neue
+setup-pi.sh + Pi-Deploy-Skripte, PR #170): grants.sql REVOKE splitten + setup-pi.sh `--force`.
+(3) Verifizierte Setup-Schritte als `.txt` auf den Desktop. (4) G1/G3-Live-Integration.
 
 ## 2026-06-28 — DTB-34 `GET /v1/readings` umgesetzt + Overseer-FREIGABEREIF (lokal/ungepusht)
 **Was:** Messwert-Historie (T1, FA-03) fertig: `Repository.get_readings` (ABC + InMemory + PyMySQL,
