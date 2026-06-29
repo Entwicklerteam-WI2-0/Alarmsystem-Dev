@@ -49,7 +49,7 @@ class Reading(_Base):
     air_temp_c: float
     humidity_pct: float  # Luftfeuchte
     pressure_hpa: float | None = None
-    # Optionale G1-Kontextfelder (Contract v1.1, Seam-Sync mit G1 ausstehend): reine
+    # Optionale G1-Kontextfelder (Contract v1.1, Team-Sync mit G1 ausstehend): reine
     # Speicher-/Anzeigewerte, die NICHT in die Vereisungsbewertung einfliessen (analog
     # pressure_hpa). surface_moisture_pct = von G1 KALIBRIERTE Oberflaechenfeuchte (%);
     # wind_speed_ms = Windgeschwindigkeit (m/s). G2 nimmt bewusst NUR die kalibrierten
