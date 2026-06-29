@@ -278,6 +278,38 @@ MariaDB nicht killen, wenn andere Sessions sie noch nutzen.
 
 ---
 
+## 8. Vom Sim zum echten G1 (Vor-Ort / Pi-Deploy)
+
+§1–§7 testen gegen den **G1-Sim** (Fake-Sensor). Für die **Vor-Ort-Integration** (echter G1 von Nils,
+G3-Frontend von Nick) wird der Sim **nicht** gestartet — das Backend pollt jede `GET /current`-Quelle
+gleich, es ändern sich nur die Env-Werte. Der Ablauf ist über den **STOA-Real-Test (28.06.)** erprobt.
+
+**Erprobte Start-Reihenfolge:** native MariaDB → `schema.sql` → `grants.sql` → `.env` → `uvicorn`.
+DB-Setup-Details: [`dev-db-setup.md`](dev-db-setup.md) (Source of Truth). Hier nur die G1/G3-spezifischen
+Env-Umstellungen **gegenüber dem lokalen Sim-Test** (§0):
+
+| Env | Sim-Test (§0) | Vor-Ort / echter G1 |
+|---|---|---|
+| `G1_BASE_URL` | `http://127.0.0.1:9101` (Sim) | echter G1-Endpoint (Adresse per Seam-Sync; Code-Default `http://g1-sensorik.local`) |
+| `G2_CORS_ORIGINS` | ungesetzt → `*` | **Origin des G3-Frontends** setzen, z. B. `http://devpi.local:3000` — statt Wildcard |
+| `G2_API_KEY` | lokaler Dev-Key | echter Key. **Ohne** gesetzten Key lehnt G2 jeden Schreibzugriff mit `503` ab (fail-safe-closed) |
+| `G2_ENABLE_SCHEDULER` | `true` | `true` (Scheduler scharf — wie beim Sim) |
+
+> ⚠️ **Pre-Prod-HTTP-Gate:** Der Default `G1_BASE_URL=http://g1-sensorik.local` ist bewusst **HTTP** (G1 ist
+> HTTP-only, eingefrorene Naht). Für die Vor-Ort-Integration bleibt HTTP ok; **vor echtem Produktivbetrieb**
+> auf HTTPS umstellen — **per Env** (`G1_BASE_URL=https://g1-sensorik.local`), **nicht** im Code hart
+> erzwingen (würde den HTTP-only-G1 brechen). Quelle: `src/main.py` (`_DEFAULT_G1_BASE_URL`).
+
+> **Kein Sprung-Guard-Reset vor Ort:** Die DB-Leer-Prozedur aus §5 ist ein reines **Sim-Artefakt**
+> (künstliche Szenariosprünge > 5 °C/min). Echte Sensorwerte ändern sich langsam → der Sprung-Guard greift
+> im Normalbetrieb nicht; **nicht** „aus Gewohnheit" die DB leeren — im Betrieb sind `reading`/`assessment`
+> append-only (NF-09).
+
+**Verifikation vor Ort** = §3d–§3f gegen den echten G1 (statt Sim): `/v1/health` = ok,
+`/v1/assessment/current` liefert die zur realen Messlage passende Ampel, Alarm-Subsystem + Audit-Log schreiben.
+
+---
+
 ## Kurz-Checkliste für Agenten (vor „V1 funktioniert"-Behauptung)
 
 - [ ] `pytest -q` → `851 passed, 0 skipped` (mit DB+`.env`)
@@ -294,5 +326,5 @@ Erst wenn alle Haken drin sind, ist „V1 ist verifiziert" eine belastbare Aussa
 
 ---
 
-*Stand: 2026-06-28 · Lebendes Dokument. Ändert sich der Stack, eine Schwelle oder der Contract, dieses
+*Stand: 2026-06-29 · Lebendes Dokument. Ändert sich der Stack, eine Schwelle oder der Contract, dieses
 Manual nachziehen (Kopplung via `Abhaengigkeiten.md`).*

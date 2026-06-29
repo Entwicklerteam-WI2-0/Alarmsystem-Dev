@@ -166,4 +166,36 @@ Steht dort dagegen `threshold_set nicht lesbar` (WARNING), ist das ein echtes Ze
 
 ---
 
-*Stand: 2026-06-28 · Bezug: DTB-17/23 (G1/G3-Integration), G1-Sim (PR #144), NF-01, DTB-38. Lebendes Dokument — bei Schwellen-/Setup-Änderung nachziehen.*
+## 6. Vom Sim zum echten G1 (Vor-Ort / Pi-Deploy)
+
+§1–§5 testen gegen den **G1-Sim**. Für die **Vor-Ort-Integration** (echter G1 von Nils, G3-Frontend von
+Nick) wird der Sim **nicht** gestartet — das Backend pollt jede `GET /current`-Quelle gleich, es ändern sich
+nur die Env-Werte. Erprobt über den **STOA-Real-Test (28.06.)**.
+
+**Start-Reihenfolge:** native MariaDB → `schema.sql` → `grants.sql` → `.env` → `uvicorn` (DB-Details:
+[`dev-db-setup.md`](dev-db-setup.md)). Gegenüber dem lokalen Sim-Test ändern sich nur diese Env-Werte:
+
+| Env | Sim-Test (§0) | Vor-Ort / echter G1 |
+|---|---|---|
+| `G1_BASE_URL` | `http://127.0.0.1:9101` (Sim) | echter G1-Endpoint (Adresse per Seam-Sync; Code-Default `http://g1-sensorik.local`) |
+| `G2_CORS_ORIGINS` | ungesetzt → `*` | **Origin des G3-Frontends**, z. B. `http://devpi.local:3000` — statt Wildcard |
+| `G2_API_KEY` | lokaler Dev-Key | echter Key. **Ohne** Key → jeder Schreibzugriff `503` (fail-safe-closed) |
+| `G2_ENABLE_SCHEDULER` | `true` | `true` (Scheduler scharf — wie beim Sim) |
+
+> ⚠️ **Pre-Prod-HTTP-Gate:** Der Default `G1_BASE_URL=http://g1-sensorik.local` ist bewusst **HTTP** (G1 ist
+> HTTP-only, eingefrorene Naht). Vor-Ort bleibt HTTP ok; **vor echtem Produktivbetrieb** auf HTTPS umstellen —
+> **per Env** (`G1_BASE_URL=https://g1-sensorik.local`), **nicht** im Code hart erzwingen (würde den
+> HTTP-only-G1 brechen). Quelle: `src/main.py` (`_DEFAULT_G1_BASE_URL`).
+
+> **Kein Sprung-Guard-Reset vor Ort:** Das DB-Leeren aus §5 ist ein reines **Sim-Artefakt** (künstliche
+> Szenariosprünge > 5 °C/min). Echte Sensorwerte ändern sich langsam → der Sprung-Guard greift im
+> Normalbetrieb nicht; **nicht** „aus Gewohnheit" die DB leeren — im Betrieb sind `reading`/`assessment`
+> append-only (NF-09).
+
+**Verifikation vor Ort:** `/v1/health` = ok, `/v1/assessment/current` zeigt die zur realen Messlage passende
+Ampel; Alarm-Subsystem + Audit-Log schreiben. Detaillierte Agenten-Checks:
+[`agent-live-test-manual.md`](agent-live-test-manual.md) §3/§8.
+
+---
+
+*Stand: 2026-06-29 · Bezug: DTB-17/23 (G1/G3-Integration), G1-Sim (PR #144), NF-01, DTB-38. Lebendes Dokument — bei Schwellen-/Setup-Änderung nachziehen.*
