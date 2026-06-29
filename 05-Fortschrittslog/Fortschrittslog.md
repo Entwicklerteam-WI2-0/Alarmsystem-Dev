@@ -39,6 +39,7 @@
 
 | Datum | PR / Commit | Inhalt |
 |---|---|---|
+| 2026-06-29 | (lokal, uncommitted) | **DTB-27 Anzeige-Hysterese verdrahtet** — `RiskHysterese` in den Live-Pfad integriert; `displayed_risk_level`-Feld (Schema + DB + Repo + Service); `uebernimm_unknown()`-Tick für Fail-safe-Pfade (State-Desync nach Stale behoben); Serve-Pfad liefert entprellte Stufe an G3; `derive_explanation` erklärt angezeigte Stufe (Blocker 2); Alarm-Gen bleibt auf rohem `risk_level`. 2 neue Testdateien (Recovery-nach-Stale, Serve entprellt, Persistenz). **824 Tests grün, 100 % Coverage auf `assessment/` + `alarm/riskhysterese`.** |
 | 2026-06-23 | #37 (`d24ee92`) | DTB-12 Datenmodell — 6 Pydantic-Modelle + Enums + `schema.sql`, kein ORM (E-35); 8 Tests grün *(in Review)* |
 | 2026-06-23 | `5000baa` | E-35: Wechsel auf rohes PyMySQL, SQLAlchemy/Alembic entfernt |
 | 2026-06-23 | `5c09857` | Stack-Entscheidung P0.1 (Stack-Blatt) |

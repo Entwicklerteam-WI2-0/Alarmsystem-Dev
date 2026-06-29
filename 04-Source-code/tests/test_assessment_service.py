@@ -13,6 +13,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from src.alarm.riskhysterese import RiskHysterese
 from src.assessment.service import AssessmentService, build_assessment_current
 from src.config.loader import load_thresholds
 from src.model.enums import AuditEventType, RiskLevel, SensorStatus
@@ -55,7 +56,12 @@ def _reading(
 
 def _make_service(thresholds) -> AssessmentService:
     """Service mit frischen In-Memory-Repos (fuer Tests ohne Repo-Inspektion)."""
-    return AssessmentService(thresholds, InMemoryAssessmentRepository(), InMemoryAuditRepository())
+    return AssessmentService(
+        thresholds,
+        RiskHysterese(thresholds.hysterese),
+        InMemoryAssessmentRepository(),
+        InMemoryAuditRepository(),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -67,7 +73,7 @@ def test_forecast_loest_gelb_aus_und_wird_persistiert(thresholds):
     # DTB-33 / FA-06: T_s=2.0 + trocken -> ohne Prognose GRUEN; Prognose -1.0 (<= 0)
     # -> GELB-Vorwarnung. Der Prognosewert muss im Snapshot persistiert werden (FA-05).
     arepo, audit = InMemoryAssessmentRepository(), InMemoryAuditRepository()
-    service = AssessmentService(thresholds, arepo, audit)
+    service = AssessmentService(thresholds, RiskHysterese(thresholds.hysterese), arepo, audit)
     now = datetime.now(UTC)
 
     result = service.assess_reading(
@@ -95,7 +101,7 @@ def test_ohne_forecast_bleibt_gruen_und_feld_none(thresholds):
 def test_healthy_reading_is_assessed_persisted_and_audited(thresholds):
     # Arrange
     arepo, audit = InMemoryAssessmentRepository(), InMemoryAuditRepository()
-    service = AssessmentService(thresholds, arepo, audit)
+    service = AssessmentService(thresholds, RiskHysterese(thresholds.hysterese), arepo, audit)
     now = datetime.now(UTC)
 
     # Act — T_s=2.0 (>1.0), Taupunkt 0 -> trocken -> GRUEN
@@ -117,7 +123,7 @@ def test_negative_delta_t_assesses_ice_risk_not_green(thresholds):
     # persistierten Risk-Level ab (assess_ice_risk-Kern, Schwellenwerte.md §2:
     # T_s<=Gefrierpunkt UND delta_t<=Kondensation -> ROT).
     arepo, audit = InMemoryAssessmentRepository(), InMemoryAuditRepository()
-    service = AssessmentService(thresholds, arepo, audit)
+    service = AssessmentService(thresholds, RiskHysterese(thresholds.hysterese), arepo, audit)
     now = datetime.now(UTC)
 
     # Act — T_s=-0.5 (<=Gefrierpunkt 0.0) UND delta_t=-1.5 (<=Kondensation 0.0) -> ROT
@@ -197,7 +203,9 @@ def test_audit_failure_does_not_break_cycle(thresholds):
     # Arrange — Audit wirft IMMER; der Bewertungszyklus muss trotzdem durchlaufen
     # (NF-01 vor NF-09: ein Audit-Fehler darf den Sicherheits-Output nie blockieren).
     arepo = InMemoryAssessmentRepository()
-    service = AssessmentService(thresholds, arepo, _ThrowingAuditRepository())
+    service = AssessmentService(
+        thresholds, RiskHysterese(thresholds.hysterese), arepo, _ThrowingAuditRepository()
+    )
     now = datetime.now(UTC)
 
     # Act — gesunder Wert (waere GRUEN); kein raise trotz Audit-Fehler erwartet.
@@ -632,7 +640,13 @@ def test_dtb65_threshold_set_id_wird_auf_assessment_gestempelt(thresholds):
     # DTB-65 / NF-05: der aktive threshold_set wird auf JEDES Assessment gestempelt
     # (Gutfall UND Fail-safe), damit nachvollziehbar bleibt, welcher Schwellensatz galt.
     arepo = InMemoryAssessmentRepository()
-    service = AssessmentService(thresholds, arepo, InMemoryAuditRepository(), threshold_set_id=42)
+    service = AssessmentService(
+        thresholds,
+        RiskHysterese(thresholds.hysterese),
+        arepo,
+        InMemoryAuditRepository(),
+        threshold_set_id=42,
+    )
     now = datetime.now(UTC)
     good = service.assess_reading(_reading(now), now)
     unknown = service.assess_reading(None, now)

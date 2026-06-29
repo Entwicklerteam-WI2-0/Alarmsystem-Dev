@@ -105,9 +105,9 @@ class MySqlAssessmentRepository(AssessmentRepository):
             ts, reading_id, threshold_set_id, risk_level,
             driving_factor, explanation,
             surface_temp_c, dew_point_c, delta_t, humidity_pct,
-            forecast_surface_temp_c
+            forecast_surface_temp_c, displayed_risk_level
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
     """
 
@@ -118,7 +118,7 @@ class MySqlAssessmentRepository(AssessmentRepository):
             id, ts, reading_id, threshold_set_id, risk_level,
             driving_factor, explanation,
             surface_temp_c, dew_point_c, delta_t, humidity_pct,
-            forecast_surface_temp_c
+            forecast_surface_temp_c, displayed_risk_level
         FROM assessment
         ORDER BY ts DESC, id DESC
         LIMIT 1
@@ -140,6 +140,11 @@ class MySqlAssessmentRepository(AssessmentRepository):
         self._connection = connection
 
     def save(self, assessment: Assessment) -> int:
+        # None-safe: displayed_risk_level ist optional (Legacy-/Test-Assets). str(None)
+        # wuerde den String "None" persistieren -> CHECK-Verletzung -> RepositoryError.
+        # Daher None durchschleifen, sonst .value (StrEnum-Wertstring).
+        displayed = assessment.displayed_risk_level
+        displayed_db = None if displayed is None else displayed.value
         params = (
             assessment.ts,
             assessment.reading_id,
@@ -152,6 +157,7 @@ class MySqlAssessmentRepository(AssessmentRepository):
             assessment.delta_t,
             assessment.humidity_pct,
             assessment.forecast_surface_temp_c,
+            displayed_db,
         )
         try:
             if self._connection is not None:
@@ -229,4 +235,12 @@ class MySqlAssessmentRepository(AssessmentRepository):
             delta_t=row["delta_t"],
             humidity_pct=row["humidity_pct"],
             forecast_surface_temp_c=row["forecast_surface_temp_c"],
+            # None-safe + explizite Enum-Konvertierung (konsistent zu risk_level oben):
+            # row.get, weil Legacy-Zeilen/aeltere Schemata die Spalte evtl. nicht
+            # zurueckliefern; .get vermeidet KeyError statt still zu brechen.
+            displayed_risk_level=(
+                None
+                if row.get("displayed_risk_level") is None
+                else RiskLevel(row["displayed_risk_level"])
+            ),
         )

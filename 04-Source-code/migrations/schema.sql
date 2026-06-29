@@ -47,9 +47,11 @@ CREATE TABLE IF NOT EXISTS assessment (
   delta_t          DOUBLE       NULL,
   humidity_pct     DOUBLE       NULL,
   forecast_surface_temp_c DOUBLE NULL,                 -- DTB-33/FA-06: 30-min-Prognose-T_s (Nachvollziehbarkeit FA-05)
+  displayed_risk_level VARCHAR(8) NULL,                 -- DTB-27 Anzeige-Hysterese: entprellte Stufe fuer die Ampel (Serve)
   PRIMARY KEY (id),
   KEY idx_assessment_ts (ts),
   CONSTRAINT chk_assessment_risk CHECK (risk_level IN ('green','yellow','orange','red','unknown')),
+  CONSTRAINT chk_assessment_displayed_risk CHECK (displayed_risk_level IS NULL OR displayed_risk_level IN ('green','yellow','orange','red','unknown')),
   CONSTRAINT fk_assessment_reading FOREIGN KEY (reading_id) REFERENCES reading(id) ON DELETE SET NULL,
   CONSTRAINT fk_assessment_threshold FOREIGN KEY (threshold_set_id) REFERENCES threshold_set(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -154,3 +156,44 @@ SET @add_forecast_surface_temp_col_sql = IF(
 PREPARE add_forecast_surface_temp_col_stmt FROM @add_forecast_surface_temp_col_sql;
 EXECUTE add_forecast_surface_temp_col_stmt;
 DEALLOCATE PREPARE add_forecast_surface_temp_col_stmt;
+
+-- Idempotente Spalten-Migration fuer bestehende assessment-Tabellen (DTB-27 Anzeige-
+-- Hysterese). displayed_risk_level traegt die entprellte Stufe (RiskHysterese), die
+-- die Serve-Schicht an G3 ausliefert; risk_level bleibt die rohe Kaskadenstufe.
+-- Muster analog forecast_surface_temp_c (oben): INFORMATION_SCHEMA-Check -> ALTER.
+SELECT COUNT(*) INTO @displayed_risk_level_col_exists
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'assessment'
+  AND COLUMN_NAME = 'displayed_risk_level';
+
+SET @add_displayed_risk_level_col_sql = IF(
+    @displayed_risk_level_col_exists = 0,
+    'ALTER TABLE assessment ADD COLUMN displayed_risk_level VARCHAR(8) NULL AFTER forecast_surface_temp_c',
+    'SELECT 1'
+);
+
+PREPARE add_displayed_risk_level_col_stmt FROM @add_displayed_risk_level_col_sql;
+EXECUTE add_displayed_risk_level_col_stmt;
+DEALLOCATE PREPARE add_displayed_risk_level_col_stmt;
+
+-- Idempotenter CHECK-Constraint fuer migrierte assessment-Tabellen (DTB-27).
+-- CREATE TABLE legt den Constraint nur bei Neuinstallation an; fuer bereits
+-- bestehende DBs (Pi-Migration) wird er hier nachgezogen, damit der Schema-Stand
+-- zwischen Frischinstallation und Migration identisch ist (Review MEDIUM).
+-- Muster analog idx_audit_ts-Migration: INFORMATION_SCHEMA.TABLE_CONSTRAINTS pruefen.
+SELECT COUNT(*) INTO @chk_displayed_risk_exists
+FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'assessment'
+  AND CONSTRAINT_NAME = 'chk_assessment_displayed_risk';
+
+SET @add_chk_displayed_risk_sql = IF(
+    @chk_displayed_risk_exists = 0,
+    "ALTER TABLE assessment ADD CONSTRAINT chk_assessment_displayed_risk CHECK (displayed_risk_level IS NULL OR displayed_risk_level IN ('green','yellow','orange','red','unknown'))",
+    'SELECT 1'
+);
+
+PREPARE add_chk_displayed_risk_stmt FROM @add_chk_displayed_risk_sql;
+EXECUTE add_chk_displayed_risk_stmt;
+DEALLOCATE PREPARE add_chk_displayed_risk_stmt;

@@ -14,6 +14,15 @@ einzige Wohnort der Rückstufungs-Zeitkonstanten (`downgrade_*`).
 Fail-safe: `UNKNOWN` (Stale/ungültig) wird IMMER sofort übernommen — Unsicherheit wird
 nie durch die Rückstufung verzögert/verdeckt. Aus `UNKNOWN` heraus wird die nächste
 gültige Stufe ebenfalls sofort übernommen (Recovery aus Unsicherheit).
+
+`uebernimm_unknown(jetzt)` ist der explizite UNKNOWN-Eintritt für Fail-safe-Pfade, die
+NICHT durch `assess_ice_risk` laufen (Stale/Fault/keine Daten im AssessmentService).
+Ohne diese Methode würde der Service die Hysterese umgehen und `displayed_risk_level`
+nur am Assessment setzen — dann verpasst die Zustandsmaschine den UNKNOWN-Durchgang,
+`_current` bleibt auf der letzten Gutfall-Stufe kleben, und das Recovery nach Stale
+greift nicht (Spezifikation Zeile 14-16: Recovery aus UNKNOWN → sofort). Der Service
+RUFT daher in jedem Fail-safe-Pfad `uebernimm_unknown` auf statt nur das Ergebnis zu
+setzen: genau ein Tick pro Poll, egal ob Gut- oder Fail-safe-Fall.
 """
 
 from __future__ import annotations
@@ -35,6 +44,18 @@ _RISK_RANG: dict[RiskLevel, int] = {
 }
 
 
+def _erzwinge_utc(jetzt: datetime) -> datetime:
+    """Validiert tz-Bewusstheit (Contract §2a D) und normalisiert auf UTC.
+
+    Gemeinsame Vorbedingung der zeitabhängigen RiskHysterese-Eintritte: `bewerten`
+    und `uebernimm_unknown` melden so bei naiver Zeit denselben Contract-Bruch und
+    rechnen auf identisch normalisierter UTC-Zeit — keine Divergenz zwischen beiden.
+    """
+    if jetzt.tzinfo is None:
+        raise ValueError("jetzt muss zeitzonenbewusst (UTC) sein — naive datetime nicht erlaubt.")
+    return jetzt.astimezone(UTC)
+
+
 class RiskHysterese:
     """Entprellt die gemeldete Risikostufe: hoch sofort, runter mit Deadband + Stabilität."""
 
@@ -52,20 +73,32 @@ class RiskHysterese:
         thresholds: Thresholds,
         jetzt: datetime,
         forecast_surface_temp_c: float | None = None,
+        roh_stufe: RiskLevel | None = None,
     ) -> RiskLevel:
         """Liefert die gedebouncte Risikostufe für `jetzt`.
+
+        Args:
+            roh_stufe: Optional bereits vom Aufrufer berechnete Roh-Stufe
+                (= assess_ice_risk(surface_temp_c, dew_point_c, thresholds,
+                forecast_surface_temp_c)). Wird sie übergeben, entfällt die interne
+                Neuberechnung — der Service braucht die Roh-Stufe ohnehin als
+                risk_level, so läuft die pure function pro Poll nur einmal statt
+                doppelt (Review MEDIUM). None -> intern berechnen (Standalone-Nutzung).
 
         Raises:
             ValueError: wenn `jetzt` nicht zeitzonenbewusst ist (Contract §2a D: UTC).
             Der Aufrufer muss monoton steigende Zeit liefern (Poll-Schicht).
         """
-        if jetzt.tzinfo is None:
-            raise ValueError(
-                "jetzt muss zeitzonenbewusst (UTC) sein — naive datetime nicht erlaubt."
-            )
-        jetzt = jetzt.astimezone(UTC)
+        jetzt = _erzwinge_utc(jetzt)
 
-        roh = assess_ice_risk(surface_temp_c, dew_point_c, thresholds, forecast_surface_temp_c)
+        # Roh-Stufe wiederverwenden statt neu zu berechnen, wenn der Aufrufer sie liefert.
+        # Die Deadband-Stufe `streng` unten bleibt intern (verschobene Schwellen) — sie
+        # ist NICHT mit `roh_stufe` identisch und wird nur im Herabstufungs-Pfad gebraucht.
+        roh = (
+            roh_stufe
+            if roh_stufe is not None
+            else assess_ice_risk(surface_temp_c, dew_point_c, thresholds, forecast_surface_temp_c)
+        )
 
         # Sofort übernehmen: Erstaufruf · UNKNOWN (Unsicherheit nie verzögern) · Recovery aus
         # UNKNOWN · Hochstufung oder gleiche Stufe. Nur eine ECHTE Herabstufung wird entprellt.
@@ -105,6 +138,34 @@ class RiskHysterese:
             self._current = streng
             self._downgrade_seit = None
             return self._current
+        return self._current
+
+    def uebernimm_unknown(self, jetzt: datetime) -> RiskLevel:
+        """Trägt UNKNOWN als angezeigte Stufe ein — Fail-safe-Tick ohne Roh-Bewertung.
+
+        Für AssessmentService-Fail-safe-Pfade (keine Daten / fault / stale), die
+        bewusst NICHT durch `assess_ice_risk` laufen. Setzt `_current=UNKNOWN` und
+        `_downgrade_seit=None` — identisch zum UNKNOWN-Zweig in `bewerten`, aber ohne
+        eine Sensorbewertung auszuführen. Der nächste Gutfall-Poll recoveryt aus
+        UNKNOWN sofort (Spezifikation: „Recovery aus Unsicherheit" — keine
+        Downgrade-Verzögerung).
+
+        Args:
+            jetzt: Bewertungszeitpunkt (konsistent mit dem `now` des Poll-Zyklus).
+                Wird nicht fuer die Berechnung gebraucht (UNKNOWN braucht keine
+                Stabilitaetszeit), durchlaeuft aber `_erzwinge_utc` wie `bewerten`,
+                damit ein Aufrufer mit naivem datetime denselben Contract-Bruch
+                (§2a D: UTC) meldet — gemeinsame Validierung, keine Divergenz.
+
+        Returns:
+            Immer `RiskLevel.UNKNOWN`.
+        """
+        # Gleiche Validierung/UTC-Normalisierung wie `bewerten` (gemeinsamer Helper).
+        # Der normalisierte Wert wird nicht zurückgehalten: der UNKNOWN-Tick speichert
+        # keinen Zeitstempel (kein Stabilitäts-Timer) -> kein ungenutztes Binding.
+        _erzwinge_utc(jetzt)
+        self._current = RiskLevel.UNKNOWN
+        self._downgrade_seit = None
         return self._current
 
     def _verschoben(self, t: Thresholds) -> Thresholds:

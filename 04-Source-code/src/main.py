@@ -41,6 +41,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import Scope
 
 from src.alarm.hysterese import AlarmHysterese
+from src.alarm.riskhysterese import RiskHysterese
 from src.alarm.service import AlarmGenerator, AuditError
 from src.api.broadcaster import AlarmBroadcaster
 from src.api.exceptions import (
@@ -113,7 +114,13 @@ def build_runtime() -> Runtime:
         data_quality_thresholds=thresholds.datenqualitaet,
         plausibility_thresholds=thresholds.plausibilitaet,
     )
-    service = AssessmentService(thresholds, assessment_repo, audit_repo, active_threshold_set_id)
+    service = AssessmentService(
+        thresholds,
+        RiskHysterese(thresholds.hysterese),
+        assessment_repo,
+        audit_repo,
+        active_threshold_set_id,
+    )
     # DTB-27/DTB-31: EINE Alarm-Repository-Instanz pro laufende Instanz -- geteilt zwischen
     # AlarmGenerator (Schreiben beim Ausloesen) und GET /v1/alarms (Resync-Lesen ueber
     # runtime.alarm_repo). Ein gemeinsames Repository statt zweier Instanzen.
