@@ -31,12 +31,12 @@ SIM_EXAMPLE="$SIM_DIR/g1_state.example.json"
 SIM_PORT=9101
 BACKEND_PORT="${1:-8000}"
 
+log() { echo -e "\n[testrun] $*"; }
+err() { echo -e "\n[testrun][ERROR] $*" >&2; }
+
 # Port muss eine Ganzzahl sein, sonst scheitert uvicorn erst tief im Stack mit
 # kryptischer Meldung. Frueh-Check -> klare Fehlermeldung.
 [[ "${BACKEND_PORT}" =~ ^[0-9]+$ ]] || { err "BACKEND_PORT muss eine Zahl sein: $BACKEND_PORT"; exit 1; }
-
-log() { echo -e "\n[testrun] $*"; }
-err() { echo -e "\n[testrun][ERROR] $*" >&2; }
 
 # --- Vorbedingungen -----------------------------------------------------------
 if [[ ! -f "$ENV_FILE" ]]; then
@@ -79,6 +79,14 @@ if [[ ! -f "$SIM_STATE" && -f "$SIM_EXAMPLE" ]]; then
     cp "$SIM_EXAMPLE" "$SIM_STATE"
     log "g1_state.json aus Vorlage angelegt."
 fi
+# PIDs vorab leer initialisieren -- die EXIT-Trap (s. u.) greift ab ihrer
+# Registrierung, BACKEND_PID/SIM_PID werden aber erst spaeter gesetzt. Feuert
+# die Trap vorzeitig (z. B. Sim-Start schlaegt fehl -> set -e), wuerde ein
+# ungebundener Zugriff unter set -u die cleanup selbst abstuerzen lassen und
+# den Simulator als Waiseprozess auf :9101 zuruecklassen.
+BACKEND_PID=""
+SIM_PID=""
+
 log "Starte G1-Simulator auf :$SIM_PORT  (State: $SIM_STATE)"
 # g1_sim.py muss existieren (fehlendes Unterverzeichnis z.B. nach unvollstaendigem Clone
 # fuehrt sonst zu einem kryptischen Python-Fehler statt einer klaren Meldung).
@@ -86,11 +94,12 @@ log "Starte G1-Simulator auf :$SIM_PORT  (State: $SIM_STATE)"
 "$VENV_PY" "$SIM_DIR/g1_sim.py" --port "$SIM_PORT" --state "$SIM_STATE" &
 SIM_PID=$!
 
-# Sim beim Beenden (Strg+C / exit) sauber stoppen.
+# Backend + Sim beim Beenden (Strg+C / exit / Crash) sauber stoppen.
+# ${VAR:-} schuetzt gegen den Fall, dass die Trap feuert, bevor eine PID gesetzt ist.
 cleanup() {
-    log "Stoppe G2-Backend (PID $BACKEND_PID) und G1-Simulator (PID $SIM_PID)."
-    kill "$BACKEND_PID" 2>/dev/null || true
-    kill "$SIM_PID" 2>/dev/null || true
+    log "Stoppe G2-Backend (PID ${BACKEND_PID:-unset}) und G1-Simulator (PID ${SIM_PID:-unset})."
+    [[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null || true
+    [[ -n "${SIM_PID:-}" ]] && kill "$SIM_PID" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
@@ -104,6 +113,8 @@ cd "$SRC_ROOT"
 # EXIT-Trap zerstoeren. Bei uvicorn-Crash/SIGTERM wuerde g1_sim.py als Waiseprozess
 # auf :9101 bleiben. Stattdessen: im Hintergrund starten, PID merken, warten -- so
 # feuert cleanup() bei Ctrl+C/Crash/SIGTERM verlaesslich.
-"$VENV_PY" -m uvicorn src.main:app --host 0.0.0.0 --port "$BACKEND_PORT" &
+# --host 127.0.0.1 (nicht 0.0.0.0): reiner lokaler Testrun gegen den G1-Simulator --
+# keine Exposition gegenueber dem LAN. Fuer LAN-Zugriff separat konfigurieren.
+"$VENV_PY" -m uvicorn src.main:app --host 127.0.0.1 --port "$BACKEND_PORT" &
 BACKEND_PID=$!
 wait "$BACKEND_PID"
