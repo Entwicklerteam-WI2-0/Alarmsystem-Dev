@@ -208,6 +208,11 @@ class AssessmentCurrent(_Base):
     dew_point_c: float | None = None
     delta_t: float | None = None
     humidity_pct: float | None = None
+    # G1-Kontextfelder (Contract v1.2): aktueller Wind/Oberflaechenfeuchte aus dem letzten
+    # Reading, damit G3 sie neben der Ampel anzeigen kann. NICHT bewertungsrelevant; folgen der
+    # Fail-safe-Nullung (bei unknown/stale/fault None, wie die Messwerte).
+    surface_moisture_pct: float | None = None
+    wind_speed_ms: float | None = None
     # DTB-33/FA-06 (additiv v1, revidiert E-36): 30-min-Prognose der Oberflaechentemperatur
     # (lineare Regression, bereits berechnet + persistiert). Wie die Roh-Messwerte genullt,
     # wenn risk_level=unknown (NF-01: keine Prognose auf stale/fault ausliefern).

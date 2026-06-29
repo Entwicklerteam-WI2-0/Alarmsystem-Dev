@@ -340,6 +340,71 @@ def test_current_none_reading_raises(thresholds):
 
 
 # ---------------------------------------------------------------------------
+# Contract v1.2: Kontextfelder (Wind + Oberflaechenfeuchte) im Live-Snapshot
+# ---------------------------------------------------------------------------
+
+
+def test_current_fresh_ok_exposes_wind_and_moisture(thresholds):
+    # Gut-Pfad: der aktuelle Sensor-Kontext (aus dem letzten Reading) wird im Live-Snapshot
+    # ausgeliefert, damit G3 Wind/Feuchte neben der Ampel zeigen kann (analog /v1/readings).
+    now = datetime.now(UTC)
+    reading = _reading(now, surface=2.0, dew=0.0).model_copy(
+        update={"wind_speed_ms": 3.5, "surface_moisture_pct": 7.0}
+    )
+    assessment = Assessment(
+        ts=now,
+        risk_level=RiskLevel.GREEN,
+        surface_temp_c=2.0,
+        dew_point_c=0.0,
+        delta_t=2.0,
+        humidity_pct=80.0,
+    )
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    assert cur.wind_speed_ms == 3.5
+    assert cur.surface_moisture_pct == 7.0
+
+
+def test_current_stale_nulls_wind_and_moisture(thresholds):
+    # Fail-safe (NF-01): bei Stale -> unknown werden auch die Kontextfelder genullt,
+    # exakt wie die Messwerte (keine veralteten Kontextwerte am Live-Snapshot).
+    now = datetime.now(UTC)
+    old = now - timedelta(seconds=thresholds.datenqualitaet.stale_timeout_s + 60)
+    reading = _reading(old, surface=2.0, dew=0.0).model_copy(
+        update={"wind_speed_ms": 3.5, "surface_moisture_pct": 7.0}
+    )
+    assessment = Assessment(ts=old, risk_level=RiskLevel.GREEN, surface_temp_c=2.0)
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    assert cur.risk_level == RiskLevel.UNKNOWN
+    assert cur.wind_speed_ms is None
+    assert cur.surface_moisture_pct is None
+
+
+def test_current_fault_nulls_wind_and_moisture(thresholds):
+    # Fail-safe (NF-01): Sensor fault -> unknown nullt auch die Kontextfelder.
+    now = datetime.now(UTC)
+    reading = _reading(now, status=SensorStatus.FAULT).model_copy(
+        update={"wind_speed_ms": 3.5, "surface_moisture_pct": 7.0}
+    )
+    assessment = Assessment(ts=now, risk_level=RiskLevel.GREEN, surface_temp_c=2.0)
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    assert cur.risk_level == RiskLevel.UNKNOWN
+    assert cur.wind_speed_ms is None
+    assert cur.surface_moisture_pct is None
+
+
+# ---------------------------------------------------------------------------
 # DTB-66: driving_factor + explanation je Risikostufe (Assess-Zeit)
 # ---------------------------------------------------------------------------
 

@@ -88,6 +88,10 @@ G2 ist hier **Client**. G1 stellt bereit, G2 pollt.
     `min_points`, `max_readings_limit` (E-41). `t_s_grenz_c`/`trend_window_min`/`horizon_min` =
     G3-Kalibrierwerte; `min_points`/`max_readings_limit` = **interne** Tuning-/DB-Last-Knöpfe
     (kein Kalibrierwert fürs G3-Menü). Non-breaking — G3 ignoriert unbekannte Felder.
+- **Contract v1.2 — Kontextfelder im Live-Snapshot:** `GET /v1/assessment/current` liefert additiv
+  `surface_moisture_pct` (%) und `wind_speed_ms` (m/s) aus dem aktuellen Reading, damit G3 sie neben der
+  Ampel anzeigen kann (analog `/v1/readings`). **Nicht bewertungsrelevant**; folgen der Fail-safe-Nullung
+  (bei `risk_level=unknown` `null`, wie die Messwerte). Non-breaking — G3 ignoriert unbekannte Felder.
 
 ## 4. Messintervall + Stale (NF-02, final)
 
