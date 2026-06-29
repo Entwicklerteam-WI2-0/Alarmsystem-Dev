@@ -55,6 +55,8 @@ def sample_reading() -> Reading:
         air_temp_c=1.2,
         humidity_pct=96.0,
         pressure_hpa=1013.0,
+        surface_moisture_pct=7.0,
+        wind_speed_ms=3.5,
         dew_point_c=0.63,
         source=Source.REAL,
         status=SensorStatus.OK,
@@ -126,6 +128,8 @@ def test_save_and_get_latest_roundtrip(
     assert stored.air_temp_c == pytest.approx(1.2)
     assert stored.humidity_pct == pytest.approx(96.0)
     assert stored.pressure_hpa == pytest.approx(1013.0)
+    assert stored.surface_moisture_pct == pytest.approx(7.0)
+    assert stored.wind_speed_ms == pytest.approx(3.5)
     assert stored.dew_point_c == pytest.approx(0.63)
     assert stored.source is Source.REAL
     assert stored.status is SensorStatus.OK
@@ -589,6 +593,8 @@ def test_row_to_reading_makes_naive_datetimes_utc_aware() -> None:
         "air_temp_c": 1.2,
         "humidity_pct": 96.0,
         "pressure_hpa": 1013.0,
+        "surface_moisture_pct": 7.0,
+        "wind_speed_ms": 3.5,
         "dew_point_c": 0.63,
         "source": "real",
         "status": "ok",

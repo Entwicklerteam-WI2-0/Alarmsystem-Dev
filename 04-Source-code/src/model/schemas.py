@@ -49,6 +49,14 @@ class Reading(_Base):
     air_temp_c: float
     humidity_pct: float  # Luftfeuchte
     pressure_hpa: float | None = None
+    # Optionale G1-Kontextfelder (Contract v1.1, Team-Sync mit G1 ausstehend): reine
+    # Speicher-/Anzeigewerte, die NICHT in die Vereisungsbewertung einfliessen (analog
+    # pressure_hpa). surface_moisture_pct = von G1 KALIBRIERTE Oberflaechenfeuchte (%);
+    # wind_speed_ms = Windgeschwindigkeit (m/s). G2 nimmt bewusst NUR die kalibrierten
+    # Werte -- die Rohwerte (surface_moisture_raw, wind_speed_kmh, wind_raw) NICHT, weil
+    # die Sensor-Kalibrierung G1-Hoheit ist (entkoppelt G2 vom G1-Hardware-Tausch).
+    surface_moisture_pct: float | None = None
+    wind_speed_ms: float | None = None
     status: SensorStatus = SensorStatus.OK
     # --- von G2 gesetzt/berechnet ---
     received_at: datetime  # UTC, Poll-Zeit
@@ -147,6 +155,8 @@ class ReadingResponse(_Base):
     air_temp_c: float
     humidity_pct: float
     pressure_hpa: float | None = None
+    surface_moisture_pct: float | None = None  # G1-Kontext (Contract v1.1), nur Speicher/Anzeige
+    wind_speed_ms: float | None = None  # G1-Kontext (Contract v1.1), nur Speicher/Anzeige
     status: SensorStatus
     received_at: datetime
     dew_point_c: float | None = None

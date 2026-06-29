@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS reading (
   air_temp_c     DOUBLE       NOT NULL,
   humidity_pct   DOUBLE       NOT NULL,                 -- Luftfeuchte
   pressure_hpa   DOUBLE       NULL,
+  surface_moisture_pct DOUBLE NULL,                     -- G1-Kontext (Contract v1.1): kalibrierte Oberflaechenfeuchte (%), nur Speicher/Anzeige
+  wind_speed_ms        DOUBLE NULL,                     -- G1-Kontext (Contract v1.1): Windgeschwindigkeit (m/s), nur Speicher/Anzeige
   dew_point_c    DOUBLE       NULL,                     -- berechnet (Magnus)
   source         VARCHAR(8)   NOT NULL DEFAULT 'real',
   status         VARCHAR(8)   NOT NULL DEFAULT 'ok',
@@ -197,3 +199,41 @@ SET @add_chk_displayed_risk_sql = IF(
 PREPARE add_chk_displayed_risk_stmt FROM @add_chk_displayed_risk_sql;
 EXECUTE add_chk_displayed_risk_stmt;
 DEALLOCATE PREPARE add_chk_displayed_risk_stmt;
+
+-- Idempotente Spalten-Migration fuer bestehende reading-Tabellen (Contract v1.1, G1-Kontextfelder).
+-- CREATE TABLE IF NOT EXISTS oben legt die Spalten nur bei Neuinstallation an; fuer bereits
+-- existierende DBs (z. B. Pi-Deploy) werden surface_moisture_pct und wind_speed_ms hier nachgezogen,
+-- sonst schlaegt der reading-INSERT (ReadingRepository) mit "Unknown column" fehl (-> RepositoryError,
+-- NF-01). Muster analog forecast_surface_temp_c/displayed_risk_level oben: INFORMATION_SCHEMA-Check
+-- -> ALTER nur bei fehlender Spalte (MariaDB- UND MySQL-kompatibel, kein ADD COLUMN IF NOT EXISTS).
+SELECT COUNT(*) INTO @surface_moisture_pct_col_exists
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'reading'
+  AND COLUMN_NAME = 'surface_moisture_pct';
+
+SET @add_surface_moisture_pct_col_sql = IF(
+    @surface_moisture_pct_col_exists = 0,
+    'ALTER TABLE reading ADD COLUMN surface_moisture_pct DOUBLE NULL AFTER pressure_hpa',
+    'SELECT 1'
+);
+
+PREPARE add_surface_moisture_pct_col_stmt FROM @add_surface_moisture_pct_col_sql;
+EXECUTE add_surface_moisture_pct_col_stmt;
+DEALLOCATE PREPARE add_surface_moisture_pct_col_stmt;
+
+SELECT COUNT(*) INTO @wind_speed_ms_col_exists
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'reading'
+  AND COLUMN_NAME = 'wind_speed_ms';
+
+SET @add_wind_speed_ms_col_sql = IF(
+    @wind_speed_ms_col_exists = 0,
+    'ALTER TABLE reading ADD COLUMN wind_speed_ms DOUBLE NULL AFTER surface_moisture_pct',
+    'SELECT 1'
+);
+
+PREPARE add_wind_speed_ms_col_stmt FROM @add_wind_speed_ms_col_sql;
+EXECUTE add_wind_speed_ms_col_stmt;
+DEALLOCATE PREPARE add_wind_speed_ms_col_stmt;

@@ -254,9 +254,10 @@ class ReadingRepository(Repository):
         INSERT INTO reading (
             sensor_id, measured_at, received_at,
             surface_temp_c, air_temp_c, humidity_pct,
-            pressure_hpa, dew_point_c, source, status
+            pressure_hpa, surface_moisture_pct, wind_speed_ms,
+            dew_point_c, source, status
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
     """
 
@@ -264,7 +265,8 @@ class ReadingRepository(Repository):
         SELECT
             id, sensor_id, measured_at, received_at,
             surface_temp_c, air_temp_c, humidity_pct,
-            pressure_hpa, dew_point_c, source, status
+            pressure_hpa, surface_moisture_pct, wind_speed_ms,
+            dew_point_c, source, status
         FROM reading
         WHERE sensor_id = %s
         ORDER BY measured_at DESC, id DESC
@@ -282,7 +284,8 @@ class ReadingRepository(Repository):
             SELECT
                 id, sensor_id, measured_at, received_at,
                 surface_temp_c, air_temp_c, humidity_pct,
-                pressure_hpa, dew_point_c, source, status
+                pressure_hpa, surface_moisture_pct, wind_speed_ms,
+                dew_point_c, source, status
             FROM reading
             WHERE sensor_id = %s AND measured_at >= %s
             ORDER BY measured_at DESC, id DESC
@@ -295,7 +298,8 @@ class ReadingRepository(Repository):
         SELECT
             id, sensor_id, measured_at, received_at,
             surface_temp_c, air_temp_c, humidity_pct,
-            pressure_hpa, dew_point_c, source, status
+            pressure_hpa, surface_moisture_pct, wind_speed_ms,
+            dew_point_c, source, status
         FROM reading
     """
 
@@ -328,6 +332,8 @@ class ReadingRepository(Repository):
             reading.air_temp_c,
             reading.humidity_pct,
             reading.pressure_hpa,
+            reading.surface_moisture_pct,
+            reading.wind_speed_ms,
             reading.dew_point_c,
             str(reading.source),
             str(reading.status),
@@ -492,6 +498,8 @@ class ReadingRepository(Repository):
             air_temp_c=row["air_temp_c"],
             humidity_pct=row["humidity_pct"],
             pressure_hpa=row["pressure_hpa"],
+            surface_moisture_pct=row["surface_moisture_pct"],
+            wind_speed_ms=row["wind_speed_ms"],
             dew_point_c=row["dew_point_c"],
             source=Source(row["source"]),
             status=SensorStatus(row["status"]),
