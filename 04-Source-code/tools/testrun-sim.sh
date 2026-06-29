@@ -31,6 +31,10 @@ SIM_EXAMPLE="$SIM_DIR/g1_state.example.json"
 SIM_PORT=9101
 BACKEND_PORT="${1:-8000}"
 
+# Port muss eine Ganzzahl sein, sonst scheitert uvicorn erst tief im Stack mit
+# kryptischer Meldung. Frueh-Check -> klare Fehlermeldung.
+[[ "${BACKEND_PORT}" =~ ^[0-9]+$ ]] || { err "BACKEND_PORT muss eine Zahl sein: $BACKEND_PORT"; exit 1; }
+
 log() { echo -e "\n[testrun] $*"; }
 err() { echo -e "\n[testrun][ERROR] $*" >&2; }
 
@@ -76,12 +80,16 @@ if [[ ! -f "$SIM_STATE" && -f "$SIM_EXAMPLE" ]]; then
     log "g1_state.json aus Vorlage angelegt."
 fi
 log "Starte G1-Simulator auf :$SIM_PORT  (State: $SIM_STATE)"
+# g1_sim.py muss existieren (fehlendes Unterverzeichnis z.B. nach unvollstaendigem Clone
+# fuehrt sonst zu einem kryptischen Python-Fehler statt einer klaren Meldung).
+[[ ! -f "$SIM_DIR/g1_sim.py" ]] && { err "g1_sim.py fehlt ($SIM_DIR/g1_sim.py). Simulator nicht verfuegbar."; exit 1; }
 "$VENV_PY" "$SIM_DIR/g1_sim.py" --port "$SIM_PORT" --state "$SIM_STATE" &
 SIM_PID=$!
 
 # Sim beim Beenden (Strg+C / exit) sauber stoppen.
 cleanup() {
-    log "Stoppe G1-Simulator (PID $SIM_PID)."
+    log "Stoppe G2-Backend (PID $BACKEND_PID) und G1-Simulator (PID $SIM_PID)."
+    kill "$BACKEND_PID" 2>/dev/null || true
     kill "$SIM_PID" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
@@ -92,4 +100,10 @@ log "G2-Backend startet auf :$BACKEND_PORT  (DB_HOST=${DB_HOST:-?}, G1=$G1_BASE_
 log "Pruefen:           curl http://127.0.0.1:$BACKEND_PORT/v1/assessment/current"
 log "Szenario wechseln: $SIM_STATE editieren (Sim liest pro Request neu; Sprung-Guard beachten)."
 cd "$SRC_ROOT"
-exec "$VENV_PY" -m uvicorn src.main:app --host 0.0.0.0 --port "$BACKEND_PORT"
+# WICHTIG: KEIN exec -- exec wuerde die bash-Shell durch uvicorn ersetzen und die
+# EXIT-Trap zerstoeren. Bei uvicorn-Crash/SIGTERM wuerde g1_sim.py als Waiseprozess
+# auf :9101 bleiben. Stattdessen: im Hintergrund starten, PID merken, warten -- so
+# feuert cleanup() bei Ctrl+C/Crash/SIGTERM verlaesslich.
+"$VENV_PY" -m uvicorn src.main:app --host 0.0.0.0 --port "$BACKEND_PORT" &
+BACKEND_PID=$!
+wait "$BACKEND_PID"

@@ -22,6 +22,7 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVICE_NAME="alarmsystem"
 DB_NAME="alarmsystem"
 SCHEMA_FILE="migrations/schema.sql"
+GRANTS_FILE="migrations/grants.sql"
 REQ_FILE="requirements.txt"
 VENV_PIP="$PROJECT_DIR/.venv/bin/pip"
 
@@ -44,6 +45,7 @@ hash_of() { sha256sum "$1" 2>/dev/null | awk '{print $1}' || echo "absent"; }
 # --- 1) Stand der versionierten Inputs VOR dem Pull merken -------------------
 req_before=$(hash_of "$REQ_FILE")
 schema_before=$(hash_of "$SCHEMA_FILE")
+grants_before=$(hash_of "$GRANTS_FILE")
 
 # --- 2) Code holen (alle Code-Aenderungen) ----------------------------------
 log "Hole neuesten Code (git pull --ff-only) ..."
@@ -55,6 +57,7 @@ fi
 
 req_after=$(hash_of "$REQ_FILE")
 schema_after=$(hash_of "$SCHEMA_FILE")
+grants_after=$(hash_of "$GRANTS_FILE")
 
 # --- 3) Abhaengigkeiten nur bei Bedarf aktualisieren ------------------------
 if [[ "$req_before" != "$req_after" ]]; then
@@ -64,7 +67,11 @@ else
     log "requirements.txt unveraendert -> kein pip-Lauf noetig."
 fi
 
-# --- 4) DB-Schema nur bei Bedarf nachziehen (idempotent, NICHT-destruktiv) ---
+# --- 4) DB-Schema + Rechte nur bei Bedarf nachziehen (idempotent, NICHT-destruktiv) ---
+# schema.sql und grants.sql werden gemeinsam behandelt: aendert sich schema.sql,
+# muss grants.sql zwingend neu laufen (DTB-54 -- neue Tabellen brauchen Rechte,
+# sonst scheitert die App mit "Access denied"). grants.sql allein (ohne schema-
+# Aenderung) wird separat gezogen. Beide Skripte sind idempotent.
 if [[ "$schema_before" != "$schema_after" ]]; then
     log "schema.sql hat sich geaendert -> wird idempotent nachgezogen (Daten bleiben erhalten)."
     # schema.sql ist idempotent (CREATE TABLE IF NOT EXISTS + INFORMATION_SCHEMA-Checks).
@@ -74,8 +81,22 @@ if [[ "$schema_before" != "$schema_after" ]]; then
         err "Manuell nachziehen:  sudo $MYSQL $DB_NAME < $SCHEMA_FILE   (ggf. -p fuer Root-PW)"
         exit 1
     fi
+    # Neue Tabellen -> Rechte fuer den App-User fehlen sonst. grants.sql ist idempotent.
+    log "schema.sql geaendert -> grants.sql neu einspielen (App-User-Rechte, DTB-54)."
+    if ! sudo "$MYSQL" "$DB_NAME" < "$GRANTS_FILE"; then
+        err "GRANT-Refresh fehlgeschlagen (Root-DB-Zugang noetig?)."
+        err "Manuell:  sudo $MYSQL $DB_NAME < $GRANTS_FILE   (ggf. -p fuer Root-PW)"
+        exit 1
+    fi
+elif [[ "$grants_before" != "$grants_after" ]]; then
+    log "grants.sql hat sich geaendert -> Rechte-Matrix wird neu eingespielt (idempotent)."
+    if ! sudo "$MYSQL" "$DB_NAME" < "$GRANTS_FILE"; then
+        err "GRANT-Refresh fehlgeschlagen (Root-DB-Zugang noetig?)."
+        err "Manuell:  sudo $MYSQL $DB_NAME < $GRANTS_FILE   (ggf. -p fuer Root-PW)"
+        exit 1
+    fi
 else
-    log "schema.sql unveraendert -> keine DB-Migration noetig."
+    log "schema.sql + grants.sql unveraendert -> keine DB-Migration noetig."
 fi
 
 # --- 5) Service neu starten + Health-Check ----------------------------------
