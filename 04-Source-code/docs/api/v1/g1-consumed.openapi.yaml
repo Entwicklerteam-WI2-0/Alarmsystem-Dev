@@ -113,6 +113,14 @@ components:
           type: number
           nullable: true
           description: Luftdruck (hPa), optional/Kontext.
+        wind_speed_ms:
+          type: number
+          nullable: true
+          description: >
+            Windgeschwindigkeit (m/s), optional/Kontext. G1 bietet daneben `wind_speed__kmh`
+            (km/h) und `wind_raw` an; G2 konsumiert per Team-Sync (DTB-26) AUSSCHLIESSLICH m/s
+            und ignoriert die beiden anderen Felder. NICHT bewertungsrelevant (kein
+            Vereisungsfaktor) — wird nur gespeichert/angezeigt.
         status:
           type: string
           # Muss mit SensorStatus in openapi.yaml synchron bleiben (getrennte Specs -> kein $ref moeglich).

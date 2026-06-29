@@ -1586,3 +1586,156 @@ def test_flatline_span_including_is_never_negative(
     for temp in (-0.5, -0.4, -10.0, 5.0, 0.0):
         reading = sample.model_copy(update={"surface_temp_c": temp})
         assert poller._flatline_span_including(reading) >= 0.0
+
+
+# -----------------------------------------------------------------------------
+# Wind (optionales Kontext-Feld, m/s) — G1 Windmesser
+# Analog pressure_hpa: optional, nicht bewertungsrelevant, darf die Pflicht-Trias
+# nie blockieren. G1 bietet wind_speed_ms / wind_speed__kmh / wind_raw an; G2
+# konsumiert NUR wind_speed_ms (m/s, Team-Entscheidung Lucas + Johannes).
+# -----------------------------------------------------------------------------
+def test_poll_valid_wind_speed_is_saved(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    snapshot = {**valid_snapshot, "wind_speed_ms": 7.5}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.wind_speed_ms == 7.5
+    assert len(fake_repo.readings) == 1
+    assert fake_repo.readings[0].wind_speed_ms == 7.5
+
+
+def test_poll_missing_wind_speed_is_none(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # valid_snapshot enthaelt kein wind_speed_ms -> fehlend ist erlaubt (optional).
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.wind_speed_ms is None
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_null_wind_speed_is_none(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    snapshot = {**valid_snapshot, "wind_speed_ms": None}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.wind_speed_ms is None
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_negative_wind_speed_is_set_to_none(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Negative Windgeschwindigkeit ist physikalisch unmoeglich -> auf None, Reading bleibt.
+    snapshot = {**valid_snapshot, "wind_speed_ms": -3.0}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.wind_speed_ms is None
+    assert len(fake_repo.readings) == 1
+    assert "wind_speed_ms ausserhalb des gueltigen Bereichs" in caplog.text
+
+
+def test_poll_wind_speed_over_max_is_set_to_none(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # Ueber dem Sanity-Deckel (120 m/s) -> auf None, Reading bleibt (Fail-safe, nicht-blockierend).
+    snapshot = {**valid_snapshot, "wind_speed_ms": 200.0}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.wind_speed_ms is None
+    assert len(fake_repo.readings) == 1
+    assert "wind_speed_ms ausserhalb des gueltigen Bereichs" in caplog.text
+
+
+@pytest.mark.parametrize("value", [0.0, 120.0])
+def test_poll_wind_speed_at_boundaries_saves(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, value: float
+) -> None:
+    snapshot = {**valid_snapshot, "wind_speed_ms": value}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None, f"wind_speed_ms={value} sollte am Grenzwert akzeptiert werden"
+    assert reading.wind_speed_ms == value
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_non_numeric_wind_speed_is_set_to_none(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    snapshot = {**valid_snapshot, "wind_speed_ms": "stark"}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.wind_speed_ms is None
+    assert len(fake_repo.readings) == 1
+    assert "wind_speed_ms muss eine Zahl sein, erhalten: <class 'str'>" in caplog.text
+
+
+def test_poll_bool_wind_speed_is_set_to_none(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, caplog
+) -> None:
+    # bool ist ein int-Subtyp -> auch hier ablehnen (wuerde sonst stumm zu 0.0/1.0).
+    snapshot = {**valid_snapshot, "wind_speed_ms": True}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.wind_speed_ms is None
+    assert len(fake_repo.readings) == 1
+    assert "bool" in caplog.text
+
+
+@pytest.mark.parametrize("bad_value", [math.nan, math.inf, -math.inf])
+def test_poll_non_finite_wind_speed_is_set_to_none(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict, bad_value: float
+) -> None:
+    snapshot = {**valid_snapshot, "wind_speed_ms": bad_value}
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.wind_speed_ms is None
+    assert len(fake_repo.readings) == 1
+
+
+def test_poll_ignores_other_g1_wind_fields(
+    poller: Poller, fake_repo: FakeRepository, valid_snapshot: dict
+) -> None:
+    # G1 liefert drei Wind-Felder; G2 konsumiert NUR wind_speed_ms. Die anderen beiden
+    # (km/h, raw) werden ignoriert und duerfen weder crashen noch das Reading beeinflussen
+    # (der Poller liest gezielte Keys, kein extra=forbid auf dem Roh-JSON).
+    snapshot = {
+        **valid_snapshot,
+        "wind_speed_ms": 5.0,
+        "wind_speed__kmh": 18.0,
+        "wind_raw": "0x3F",
+    }
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller.poll()
+
+    assert reading is not None
+    assert reading.wind_speed_ms == 5.0
+    assert len(fake_repo.readings) == 1

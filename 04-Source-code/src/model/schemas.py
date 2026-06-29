@@ -49,6 +49,10 @@ class Reading(_Base):
     air_temp_c: float
     humidity_pct: float  # Luftfeuchte
     pressure_hpa: float | None = None
+    # Optionales Kontextfeld (m/s) aus G1s Windmesser. NICHT bewertungsrelevant
+    # (kein Faktor der Vereisungskaskade) — wie pressure_hpa nur gespeichert/angezeigt.
+    # G1 bietet wind_speed_ms / wind_speed__kmh / wind_raw; G2 konsumiert nur m/s.
+    wind_speed_ms: float | None = None
     status: SensorStatus = SensorStatus.OK
     # --- von G2 gesetzt/berechnet ---
     received_at: datetime  # UTC, Poll-Zeit
@@ -147,6 +151,8 @@ class ReadingResponse(_Base):
     air_temp_c: float
     humidity_pct: float
     pressure_hpa: float | None = None
+    # Additiv (G1-Windmesser): optionales Kontextfeld m/s, an G3 durchgereicht.
+    wind_speed_ms: float | None = None
     status: SensorStatus
     received_at: datetime
     dew_point_c: float | None = None

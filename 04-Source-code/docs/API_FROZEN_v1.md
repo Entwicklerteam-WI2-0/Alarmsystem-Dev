@@ -35,7 +35,15 @@ G2 ist hier **Client**. G1 stellt bereit, G2 pollt.
   | `air_temp_c` | number (°C) | ja | Lufttemperatur `T_a` (Kontext + Taupunkt-Berechnung) |
   | `humidity_pct` | number (%) | ja | **Luftfeuchte** (von G1 zu bestätigen) |
   | `pressure_hpa` | number (hPa) | nein | Luftdruck (Kontext) |
+  | `wind_speed_ms` | number (m/s) | nein | Windgeschwindigkeit (Kontext, G1-Windmesser) — **additiv**, s. u. |
   | `status` | enum `ok` \| `fault` | ja | Sensor-/Lieferstatus |
+
+  > **Additive Erweiterung `wind_speed_ms` (m/s, G1-Windmesser, Team-Sync DTB-26):** G1 bietet
+  > `wind_speed_ms`, `wind_speed__kmh` und `wind_raw` an; G2 konsumiert **ausschließlich m/s** und
+  > ignoriert die beiden anderen. Optionales **Kontextfeld** — **NICHT bewertungsrelevant** (kein
+  > Vereisungsfaktor, beeinflusst `risk_level` nicht). Wird gespeichert und additiv über
+  > `GET /v1/readings` (`Reading`-Schema) an G3 ausgeliefert. Rückwärtskompatibel (kein Breaking
+  > Change, kein `/v2/`); G3-Sign-off (Nick) erforderlich.
 
 - **G1 liefert NICHT:** keinen `ice_indicator`, keinen Taupunkt, kein `ΔT`. G2 berechnet `dew_point_c`
   (Magnus aus `air_temp_c` + `humidity_pct`) und `ΔT = surface_temp_c − dew_point_c` selbst. Die

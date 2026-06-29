@@ -54,6 +54,17 @@ _UNSAFE_STRING_CATEGORIES = frozenset({"Cc", "Cf", "Zl", "Zp", "Zs"})
 # Bewertungs-/Fail-safe-Verhalten aendert). 10 Polls = 5 min bei 30-s-Polling.
 _FLATLINE_WARN_AFTER_N = 10
 
+# Physikalischer Sanity-Deckel fuer die optionale Windgeschwindigkeit (m/s). Bewusst eine
+# Modul-Konstante, KEINE config/thresholds.json-Schwelle (NF-05): wind_speed_ms ist ein reines
+# Kontextfeld und beeinflusst die Vereisungsbewertung NICHT — es ist also keine Sicherheits-/
+# Bewertungsschwelle. 120 m/s liegt ueber dem hoechsten je gemessenen Oberflaechenwind (~113 m/s);
+# der Deckel faengt nur grob defekte/unsinnige Werte ab (analog der pressure_hpa-Plausibilitaet,
+# aber ohne Config-Pflichtfeld-Ripple). Untergrenze 0.0 (negative Geschwindigkeit ist unmoeglich).
+# Beide als benannte Konstanten (nicht als bare Literale im Vergleich), damit der Sanity-Check
+# keine Schwellen-Hartcodierung im Sinne von check_hardcoded_thresholds darstellt (NF-05).
+_WIND_SPEED_MIN_MS = 0.0
+_WIND_SPEED_MAX_MS = 120.0
+
 
 def _now() -> datetime:
     # In eine Helper-Funktion gekapselt, damit Tests die Uhr deterministisch patchen koennen
@@ -364,6 +375,24 @@ class Poller:
             logger.error("pressure_hpa ausserhalb des gueltigen Bereichs: %s", pressure_hpa)
             pressure_hpa = None
 
+        # Optionales wind_speed_ms (m/s) — analog pressure_hpa nicht-blockierend: ein defekter
+        # oder unplausibler Wert wird geloggt und auf None gesetzt, das Reading bleibt erhalten
+        # (Kontextfeld darf die Pflicht-Trias nicht blockieren). Sanity gegen die Modul-Konstante
+        # (kein NF-05-Config-Feld, da Wind nicht bewertungsrelevant ist). G1 liefert daneben
+        # wind_speed__kmh und wind_raw; beide werden bewusst ignoriert (nur m/s konsumiert).
+        wind_speed_ms: float | None = None
+        try:
+            wind_speed_ms = _optional_float(data.get("wind_speed_ms"), "wind_speed_ms")
+        except ValueError as exc:
+            logger.error("G1-Feld ungueltig: %s", exc)
+            wind_speed_ms = None
+
+        if wind_speed_ms is not None and not (
+            _WIND_SPEED_MIN_MS <= wind_speed_ms <= _WIND_SPEED_MAX_MS
+        ):
+            logger.error("wind_speed_ms ausserhalb des gueltigen Bereichs: %s", wind_speed_ms)
+            wind_speed_ms = None
+
         # Sensor meldet selbst einen Defekt -> Reading ablehnen (Fail-safe, NF-01).
         if status is SensorStatus.FAULT:
             logger.error("G1-Sensor meldet status=fault, Reading wird verworfen")
@@ -434,6 +463,7 @@ class Poller:
             humidity_pct=humidity_pct,
             dew_point_c=dew_point_c,
             pressure_hpa=pressure_hpa,
+            wind_speed_ms=wind_speed_ms,
             status=status,
             received_at=received_at,
             source=Source.REAL,

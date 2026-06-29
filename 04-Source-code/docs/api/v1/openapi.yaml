@@ -855,6 +855,13 @@ components:
           type: number
           nullable: true
           description: Luftdruck (hPa), optional.
+        wind_speed_ms:
+          type: number
+          nullable: true
+          description: >
+            Windgeschwindigkeit (m/s), optionales Kontextfeld aus G1s Windmesser. Additiv zum
+            Contract v1 (rueckwaertskompatibel). NICHT bewertungsrelevant — beeinflusst die
+            Ampel/`risk_level` nicht; rein informativ.
         status:
           $ref: "#/components/schemas/SensorStatus"
         received_at:

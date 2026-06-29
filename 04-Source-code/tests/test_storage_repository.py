@@ -589,6 +589,7 @@ def test_row_to_reading_makes_naive_datetimes_utc_aware() -> None:
         "air_temp_c": 1.2,
         "humidity_pct": 96.0,
         "pressure_hpa": 1013.0,
+        "wind_speed_ms": 5.0,
         "dew_point_c": 0.63,
         "source": "real",
         "status": "ok",
@@ -596,6 +597,7 @@ def test_row_to_reading_makes_naive_datetimes_utc_aware() -> None:
 
     reading = ReadingRepository._row_to_reading(row)
 
+    assert reading.wind_speed_ms == 5.0
     assert reading.measured_at.tzinfo is UTC
     assert reading.received_at.tzinfo is UTC
     assert reading.measured_at == datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC)

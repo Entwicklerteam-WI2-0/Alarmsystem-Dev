@@ -94,6 +94,34 @@ def test_get_readings_filters_by_time_window(
     assert body[0]["surface_temp_c"] == pytest.approx(2.0)
 
 
+def test_get_readings_exposes_wind_speed_ms(
+    reading_repo: InMemoryReadingRepository,
+) -> None:
+    # G3-Sichtbarkeit (additiv): wind_speed_ms wird ueber GET /v1/readings ausgeliefert,
+    # wenn gesetzt, und ist null, wenn nicht gesetzt (optionales Kontext-Feld).
+    mit_wind = Reading(
+        sensor_id="anr-rwy-01",
+        measured_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+        received_at=datetime(2026, 6, 23, 10, 0, 0, tzinfo=UTC),
+        surface_temp_c=0.0,
+        air_temp_c=1.0,
+        humidity_pct=80.0,
+        wind_speed_ms=7.5,
+        source=Source.REAL,
+        status=SensorStatus.OK,
+    )
+    reading_repo.save(mit_wind)
+    reading_repo.save(_make_reading("anr-rwy-01", datetime(2026, 6, 23, 10, 5, 0, tzinfo=UTC), 2.0))
+    app.dependency_overrides[get_runtime] = lambda: SimpleNamespace(reading_repo=reading_repo)
+
+    resp = client.get("/v1/readings", params={"order": "asc"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body[0]["wind_speed_ms"] == pytest.approx(7.5)
+    assert body[1]["wind_speed_ms"] is None
+
+
 def test_get_readings_ascending_order(
     reading_repo: InMemoryReadingRepository,
 ) -> None:

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS reading (
   air_temp_c     DOUBLE       NOT NULL,
   humidity_pct   DOUBLE       NOT NULL,                 -- Luftfeuchte
   pressure_hpa   DOUBLE       NULL,
+  wind_speed_ms  DOUBLE       NULL,                     -- optionales Kontextfeld (m/s, G1-Windmesser), nicht bewertungsrelevant
   dew_point_c    DOUBLE       NULL,                     -- berechnet (Magnus)
   source         VARCHAR(8)   NOT NULL DEFAULT 'real',
   status         VARCHAR(8)   NOT NULL DEFAULT 'ok',
@@ -197,3 +198,25 @@ SET @add_chk_displayed_risk_sql = IF(
 PREPARE add_chk_displayed_risk_stmt FROM @add_chk_displayed_risk_sql;
 EXECUTE add_chk_displayed_risk_stmt;
 DEALLOCATE PREPARE add_chk_displayed_risk_stmt;
+
+-- Idempotente Spalten-Migration fuer bestehende reading-Tabellen (G1-Windmesser).
+-- wind_speed_ms ist ein optionales Kontextfeld (m/s) aus G1s GET /current; es ist NICHT
+-- bewertungsrelevant (kein Faktor der Vereisungskaskade), wird aber gespeichert und an G3
+-- ausgeliefert. CREATE TABLE oben legt die Spalte nur bei Neuinstallation an; bestehende DBs
+-- (Pi-Migration) ziehen sie hier nach, sonst schlaegt der ReadingRepository-INSERT mit
+-- "Unknown column" fehl. Muster analog forecast_surface_temp_c.
+SELECT COUNT(*) INTO @wind_speed_ms_col_exists
+FROM INFORMATION_SCHEMA.COLUMNS
+WHERE TABLE_SCHEMA = DATABASE()
+  AND TABLE_NAME = 'reading'
+  AND COLUMN_NAME = 'wind_speed_ms';
+
+SET @add_wind_speed_ms_col_sql = IF(
+    @wind_speed_ms_col_exists = 0,
+    'ALTER TABLE reading ADD COLUMN wind_speed_ms DOUBLE NULL AFTER pressure_hpa',
+    'SELECT 1'
+);
+
+PREPARE add_wind_speed_ms_col_stmt FROM @add_wind_speed_ms_col_sql;
+EXECUTE add_wind_speed_ms_col_stmt;
+DEALLOCATE PREPARE add_wind_speed_ms_col_stmt;
