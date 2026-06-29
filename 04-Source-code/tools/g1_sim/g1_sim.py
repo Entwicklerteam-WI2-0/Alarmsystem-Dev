@@ -32,6 +32,12 @@ _DEFAULT_STATE: dict = {
     "air_temp_c": 16.0,
     "humidity_pct": 40.0,
     "pressure_hpa": 1013.0,
+    # G1-Windmesser: G1 bietet drei Repraesentationen an; G2 konsumiert NUR wind_speed_ms (m/s),
+    # wind_speed__kmh und wind_raw werden ignoriert (E-44). Der Sim emittiert alle drei, damit der
+    # "ignore others"-Pfad live geprueft wird. Optionales Kontextfeld -> Default gruen-realistisch.
+    "wind_speed_ms": 5.0,
+    "wind_speed__kmh": 18.0,
+    "wind_raw": "0x05",
     "status": "ok",
     "age_s": 0,
     "health_down": False,
@@ -128,6 +134,10 @@ def current() -> dict:
         "sensor_id": state["sensor_id"],
         "measured_at": measured.isoformat().replace("+00:00", "Z"),
         "pressure_hpa": state.get("pressure_hpa"),
+        # Wind optional durchreichen; G2 konsumiert nur wind_speed_ms, ignoriert km/h+raw (E-44).
+        "wind_speed_ms": state.get("wind_speed_ms"),
+        "wind_speed__kmh": state.get("wind_speed__kmh"),
+        "wind_raw": state.get("wind_raw"),
         "status": state["status"],
     }
     for field in ("surface_temp_c", "air_temp_c", "humidity_pct"):
