@@ -170,3 +170,21 @@ gegen echte MariaDB 11.4.7; 785 Tests grün (siehe Journal/Save-Session 28.06.).
 - **DTB-67 — wartet auf G3 (Nick):** der Code füllt `driving_factor`/`explanation` auf `unknown` bereits („stale"); die **Abstimmung**, ob das so passt, geht nur mit G3 → morgen vor Ort. **Heute nicht lösbar.**
 - **DTB-69 — BLOCKIERT durch G1 (Nils):** braucht die finale DS18B20-Auflösung (Bit-Tiefe + echte Zappelbreite); aktueller `flatline_epsilon_c=0.15` ist ein dokumentierter Schätzwert. **Heute nicht lösbar.**
 - **DTB-36 — menschliche M3-Doku:** Gruppen-Entscheidungslogbuch konsolidieren (Abgabe-Deliverable), kein Backend-Code.
+
+---
+
+## 🖥️ Update (29.06., vor Ort) — Frontend-Hosting durch G2 (architekt/Vöhringer)
+
+**Neue Aufgabe (vor Ort erhalten):** G2 hostet das **G3-Frontend** mit. G3 liefert eine React/Vite-SPA
+(`frontendTESS26-main`); diese wird **Same-Origin** über das G2-FastAPI mitausgeliefert (Browser: `/`,
+API: `/v1` → **kein CORS**). Bewusst **kein Jira-Ticket**, nur dieser Hinweis.
+
+- **Umgesetzt** — Branch `feat/frontend-static-hosting` (isolierter Worktree wegen Parallel-Arbeit an
+  `feat/riskhysterese-…` im Hauptverzeichnis): `src/main.py` → `_mount_frontend(app)` + `_SPAStaticFiles`
+  (SPA-Fallback auf `index.html`, `/v1`-Vorrang/Ausschluss), **Env-gated** über `G2_FRONTEND_DIR`
+  (No-op ohne → API-Betrieb unverändert). Test `tests/test_frontend_hosting.py` (7 Fälle) grün,
+  ruff clean, Regressions-Smoke (CORS/Health/Lifespan/Frontend) 21 grün.
+- **Deploy:** Build mit `VITE_API_MODE=live` (sonst Mock-Daten!) → `dist/` auf den Pi →
+  `G2_FRONTEND_DIR` setzen. Schritt-für-Schritt: `Pi-Setup.md` §10; Aktivierung in `.env.example`.
+- **Offen:** PR + Merge nach `main` (Freigabe Lucas); `dist/`-Transfer auf den Pi vor Ort; Abstimmung
+  mit G3/Nick, ob G2 die Hoheit über das Frontend-Deployment dauerhaft übernimmt (AE-01-nah).

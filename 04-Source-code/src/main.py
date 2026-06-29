@@ -36,6 +36,9 @@ from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.types import Scope
 
 from src.alarm.hysterese import AlarmHysterese
 from src.alarm.service import AlarmGenerator, AuditError
@@ -374,6 +377,52 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await task
 
 
+class _SPAStaticFiles(StaticFiles):
+    """Serviert das gebaute G3-Frontend (Vite-``dist/``) und faengt Client-Routing ab.
+
+    Ein 404 auf einem Pfad, der KEINE Datei ist und NICHT mit ``v1`` beginnt, liefert
+    ``index.html`` zurueck -> der React-Router uebernimmt das Routing clientseitig (Deep-Links
+    wie ``/dashboard``, Reload). ``/v1/*`` wird NIE auf ``index.html`` umgebogen, damit ein
+    API-404 ein API-404 bleibt (Contract-Fehlerformat) und nicht still als HTML-Seite endet.
+    """
+
+    async def get_response(self, path: str, scope: Scope) -> Response:
+        # StaticFiles signalisiert "nicht gefunden" je nach Starlette-Version als geworfene
+        # HTTPException ODER als 404-Response -> BEIDE Wege abfangen und fuer Nicht-/v1-Pfade
+        # auf index.html umlenken (SPA-Client-Routing). /v1 bleibt ein echter 404 (Contract).
+        try:
+            response = await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404 or path.startswith("v1"):
+                raise
+            return await super().get_response("index.html", scope)
+        if response.status_code == 404 and not path.startswith("v1"):
+            return await super().get_response("index.html", scope)
+        return response
+
+
+def _mount_frontend(application: FastAPI) -> None:
+    """Mountet das statische G3-Frontend am Root, falls ``G2_FRONTEND_DIR`` gesetzt ist.
+
+    Quelle ist der gebaute Vite-``dist/``-Ordner (Pfad via Env ``G2_FRONTEND_DIR``, NF-05:
+    keine Hardcodes). Nicht gesetzt / leer / kein Verzeichnis -> KEIN Mount (No-op), damit
+    Tests/CI und ein reiner API-Betrieb ohne Frontend unveraendert laufen. MUSS nach allen
+    ``/v1``-Routen aufgerufen werden: der Mount am '/' faengt nur Requests, die keine fruehere
+    Route trafen -> die API behaelt Vorrang. Same-Origin -> das Frontend spricht die API
+    relativ ueber '/v1' an (kein CORS noetig).
+    """
+    frontend_dir = os.environ.get("G2_FRONTEND_DIR", "").strip()
+    if not frontend_dir:
+        return
+    if not os.path.isdir(frontend_dir):
+        logger.warning(
+            "G2_FRONTEND_DIR=%r ist kein Verzeichnis -> Frontend nicht gemountet.", frontend_dir
+        )
+        return
+    application.mount("/", _SPAStaticFiles(directory=frontend_dir, html=True), name="frontend")
+    logger.info("Frontend gemountet aus %s (Serving auf '/').", frontend_dir)
+
+
 app = FastAPI(
     title="Alarmsystem-Backend G2 — Vereisungserkennung ANR",
     version="0.1.0",
@@ -563,3 +612,9 @@ def assessment_current(
         # konform als 503 melden statt rohem 500 mit {detail}; Detail nur server-seitig.
         logger.exception("assessment/current: Bewertung konnte nicht aufbereitet werden")
         return service_unavailable("G2 momentan nicht lieferfaehig.")
+
+
+# Frontend-Serving (G3-SPA) ganz am Ende verdrahten: MUSS nach allen /v1-Routen stehen, damit
+# der Root-Mount nur greift, was keine API-Route traf (die API behaelt Vorrang). No-op, solange
+# G2_FRONTEND_DIR nicht auf einen gebauten dist/-Ordner zeigt.
+_mount_frontend(app)
