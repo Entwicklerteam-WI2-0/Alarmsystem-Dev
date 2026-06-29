@@ -103,6 +103,23 @@ Test vom PC: `http://devpi.local:<port>` im Browser.
 
 ---
 
+## 6. Frontend (G3-SPA) mitservieren
+
+Das G3-Frontend (React/Vite) wird **vom selben G2-Backend** ausgeliefert (Same-Origin → **kein CORS**):
+Der Browser holt die UI von `http://<pi>:<port>/`, die API liegt unter `/v1`. Es ist eine statische SPA —
+**kein eigener Node-Dienst** auf dem Pi nötig, nur die gebauten Dateien.
+
+1. **Bauen** (auf einem Rechner mit Node ≥ 20, nicht zwingend dem Pi):
+   `cd code && echo "VITE_API_MODE=live" > .env.production && npm ci && npm run build` → erzeugt `code/dist/`.
+   ⚠️ Ohne `VITE_API_MODE=live` zeigt die UI **Mock-Daten**.
+2. **Kopieren:** `rsync -av code/dist/ <user>@<pi>:/home/pi/frontend_dist/` (Build-Artefakt, **nicht** ins Git).
+3. **Aktivieren:** in der Backend-`.env` `G2_FRONTEND_DIR=/home/pi/frontend_dist` setzen, Dienst neu starten.
+
+Ist `G2_FRONTEND_DIR` nicht gesetzt, läuft das Backend als reine API (kein Mount). **Vollständige Schritte +
+Troubleshooting:** `Frontend-Hosting-Manual.md` · Pi-spezifisch `Pi-Setup.md` §10.
+
+---
+
 ## Vor der Umsetzung klären
 
 Diese drei Punkte entscheiden, ob der Plan so trägt:
@@ -132,4 +149,5 @@ Diese drei Punkte entscheiden, ob der Plan so trägt:
 | VS Code | Extension „Remote - SSH" → Connect to Host |
 | Code holen | `git clone <repo-url>` (auf dem Pi) |
 | Dauerbetrieb | systemd / `pm2` (kein Docker, E-35) |
+| Frontend mitservieren | `npm run build` (mit `VITE_API_MODE=live`) → `dist/` auf den Pi → `G2_FRONTEND_DIR` setzen (§6 / `Frontend-Hosting-Manual.md`) |
 | Erreichbarkeit | lokal: `http://devpi.local:<port>` · extern: Tailscale / Cloudflare Tunnel |
