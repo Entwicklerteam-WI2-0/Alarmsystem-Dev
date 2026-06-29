@@ -163,6 +163,26 @@ class ReadingResponse(_Base):
     source: Source
 
 
+class AuditLogResponse(_Base):
+    """Wire-Schema fuer GET /v1/audit (DB-Spiegel/Live-Ereignis-Log, read-only).
+
+    Spiegelt das interne AuditLogEntry, erzwingt aber eine gueltige id (DB-Eintraege
+    haben immer eine). title="AuditLogEntry" fuer das frozen openapi.yaml-Schema,
+    analog ReadingResponse/AlarmResponse. Rein lesend -- NF-09 (append-only) bleibt
+    durch das fehlende Schreib-Schema und die DB-Grants gewahrt.
+    """
+
+    model_config = ConfigDict(extra="forbid", title="AuditLogEntry")
+
+    id: int
+    ts: datetime
+    event_type: AuditEventType
+    entity_type: str
+    entity_id: int | None = None
+    actor: str
+    detail: dict[str, Any] | None = None
+
+
 class ThresholdSet(_Base):
     """Versionierter Satz parametrierbarer Schwellenwerte (NF-05)."""
 

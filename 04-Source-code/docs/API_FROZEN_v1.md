@@ -92,6 +92,11 @@ G2 ist hier **Client**. G1 stellt bereit, G2 pollt.
   `surface_moisture_pct` (%) und `wind_speed_ms` (m/s) aus dem aktuellen Reading, damit G3 sie neben der
   Ampel anzeigen kann (analog `/v1/readings`). **Nicht bewertungsrelevant**; folgen der Fail-safe-Nullung
   (bei `risk_level=unknown` `null`, wie die Messwerte). Non-breaking — G3 ignoriert unbekannte Felder.
+- **`GET /v1/audit`** (DB-Spiegel / Live-Ereignis-Log, read-only): liefert die neuesten
+  Audit-Log-Einträge (NF-09-Trail: `assessment_made` / `alarm_raised` / `alarm_acknowledged` /
+  `threshold_changed` …) mit `id`, `ts`, `event_type`, `entity_type`, `entity_id`, `actor`, `detail`.
+  Query `limit` (1–500, Default 50). Rein lesend, RB-01-neutral; ändert das append-only Audit-Log
+  NICHT (nur SELECT). Additiv, non-breaking.
 
 ## 4. Messintervall + Stale (NF-02, final)
 

@@ -36,6 +36,9 @@ class _FailingAuditRepo(AuditRepository):
     def append(self, entry: AuditLogEntry) -> int:
         raise RepositoryError("audit kaputt")
 
+    def get_recent(self, limit: int = 50) -> list[AuditLogEntry]:
+        return []  # ungenutzt in diesen Tests (nur der append/AuditError-Pfad wird geprueft)
+
 
 def test_kein_alarm_keine_persistenz():
     alarm_repo, audit_repo = InMemoryAlarmRepository(), InMemoryAuditRepository()
@@ -140,6 +143,9 @@ def test_unerwarteter_audit_fehler_wird_auditerror():
     class _BuggyAuditRepo(AuditRepository):
         def append(self, entry: AuditLogEntry) -> int:
             raise RuntimeError("unerwarteter Bug im Audit-Repo")
+
+        def get_recent(self, limit: int = 50) -> list[AuditLogEntry]:
+            return []  # Lesepfad in diesem Schreibpfad-Test ungenutzt (ABC-Pflicht)
 
     engine = _engine()
     alarm_repo = InMemoryAlarmRepository()

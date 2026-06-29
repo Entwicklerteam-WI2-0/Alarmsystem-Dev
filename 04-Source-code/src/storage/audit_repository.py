@@ -11,15 +11,18 @@ DTB-28/DTB-55. Diese Datei haelt die DB-agnostische Naht + ein In-Memory-Double.
 
 import json
 from abc import ABC, abstractmethod
+from datetime import UTC
 
 import pymysql
 from pymysql.cursors import Cursor
 
+from src.model.enums import AuditEventType
 from src.model.schemas import AuditLogEntry
 from src.storage.database import (
     DatabaseConfig,
     DatabaseConfigError,
     DatabaseConnectionError,
+    get_connection,
     transaction,
 )
 from src.storage.repository import RepositoryError
@@ -33,6 +36,37 @@ _INSERT_SQL = (
     "INSERT INTO audit_log (ts, event_type, entity_type, entity_id, actor, detail) "
     "VALUES (%s, %s, %s, %s, %s, %s)"
 )
+
+# Lese-Query (DB-Spiegel/Live-Log): neueste Eintraege zuerst (id DESC = chronologisch
+# absteigend, da AUTO_INCREMENT monoton). Parametrisiertes LIMIT (Injection-Schutz).
+_SELECT_RECENT_SQL = (
+    "SELECT id, ts, event_type, entity_type, entity_id, actor, detail "
+    "FROM audit_log ORDER BY id DESC LIMIT %s"
+)
+
+
+def _row_to_audit_entry(row: dict) -> AuditLogEntry:
+    """Mappt eine audit_log-DB-Zeile auf AuditLogEntry (read-only Spiegel).
+
+    PyMySQL liefert DATETIME naiv -> tzinfo=UTC setzen (DB speichert nur UTC),
+    sonst wirft die UTC-Erzwingung des Schemas. `detail` ist als JSON-Text
+    gespeichert (longtext) -> zurueck zu dict parsen; None bleibt None.
+    """
+    ts = row["ts"]
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    detail = row["detail"]
+    if isinstance(detail, str):
+        detail = json.loads(detail)
+    return AuditLogEntry(
+        id=row["id"],
+        ts=ts,
+        event_type=AuditEventType(row["event_type"]),
+        entity_type=row["entity_type"],
+        entity_id=row["entity_id"],
+        actor=row["actor"],
+        detail=detail,
+    )
 
 
 def _serialize_detail(detail: object | None) -> str | None:
@@ -96,6 +130,22 @@ class AuditRepository(ABC):
         """
         ...
 
+    @abstractmethod
+    def get_recent(self, limit: int = 50) -> list[AuditLogEntry]:
+        """Liest die neuesten Audit-Eintraege (read-only, neueste zuerst).
+
+        Reiner LESE-Pfad fuer den DB-Spiegel/Live-Log (G3) -- aendert das
+        append-only-Tagebuch NICHT (NF-09: kein update/delete).
+
+        Args:
+            limit: Maximale Anzahl Eintraege (neueste zuerst).
+
+        Raises:
+            ValueError: Wenn limit nicht positiv ist.
+            RepositoryError: Bei Datenbankfehlern.
+        """
+        ...
+
 
 class InMemoryAuditRepository(AuditRepository):
     """In-Memory-Double fuer Tests und lokale Laeufe (keine DB noetig).
@@ -121,6 +171,12 @@ class InMemoryAuditRepository(AuditRepository):
         echten Read-Use-Case (YAGNI), kein Teil des Append-only-Vertrags.
         """
         return list(self._entries)
+
+    def get_recent(self, limit: int = 50) -> list[AuditLogEntry]:
+        """Neueste Eintraege zuerst, auf `limit` begrenzt (read-only)."""
+        if limit <= 0:
+            raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
+        return list(reversed(self._entries))[:limit]
 
 
 class MySqlAuditRepository(AuditRepository):
@@ -153,3 +209,24 @@ class MySqlAuditRepository(AuditRepository):
             # Domaenenfehler statt TypeError aus int(None).
             raise RepositoryError("Audit-Eintrag wurde ohne vergebene ID gespeichert")
         return int(row_id)
+
+    def get_recent(self, limit: int = 50) -> list[AuditLogEntry]:
+        """Liest die neuesten Audit-Eintraege (read-only Spiegel; NF-09 unberuehrt).
+
+        Reiner SELECT ueber get_connection (kein transaction/commit -- es wird nichts
+        geschrieben). Der append-only Write-Pfad bleibt unangetastet; der App-User
+        hat per grants.sql SELECT-Recht auf audit_log.
+        """
+        if limit <= 0:
+            raise ValueError(f"limit muss positiv sein, erhalten: {limit}")
+        try:
+            with get_connection(self._config) as conn, conn.cursor() as cursor:
+                cursor.execute(_SELECT_RECENT_SQL, (limit,))
+                rows = cursor.fetchall()
+            return [_row_to_audit_entry(row) for row in rows]
+        except (DatabaseConnectionError, DatabaseConfigError, pymysql.Error) as exc:
+            raise RepositoryError("Audit-Log konnte nicht gelesen werden") from exc
+        except (ValueError, KeyError, TypeError, AttributeError) as exc:
+            # Mapping-Fehler bei Schema-Drift/Korruption -> fail-safe als RepositoryError
+            # (Interface-Vertrag), analog ReadingRepository._fetch.
+            raise RepositoryError(f"Audit-Log-Zeile nicht lesbar: {exc}") from exc
