@@ -1,7 +1,61 @@
 # Persönliches Entscheidungslog — Andi (G2)
-> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-28
+> **Erstellt am:** 2026-06-23 · **Letzte Bearbeitung:** 2026-06-30
 > **Autor:** Andi · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
+
+---
+
+## 2026-06-30 — DTB-33: Physikalische Untergrenze für die 30-min-Prognose (Clamp)
+
+- **Kontext/Task:** Blind-Spot-Nebenbefund: Die lineare 30-min-Trendextrapolation
+  lieferte bei einer künstlich steilen Testrampe `forecast_surface_temp_c = -50.2 °C`.
+  Echte Sensoren ändern sich langsam genug, dass der Fall nicht auftritt, aber die
+  Prognose hatte keine physikalische Untergrenze. Ziel: Fehlerquelle fürs echte
+  System beseitigen, ohne die GELB-Vorwarnung (fail-safe) auszuhebeln.
+
+- **Entscheidung:**
+  - Neue parametrierbare Schwelle `prognose.min_forecast_temp_c` (Default `-50.0 °C`,
+    deckungsgleich mit `plausibilitaet.min_temp_c`) in `src/config/loader.py`.
+  - `forecast_surface_temp()` in `src/forecast/trend.py` clamt die extrapolierte
+    Prognose nach unten auf `min_forecast_temp_c`.
+  - `compute_forecast_for_cycle()` in `src/forecast/bridge.py` reicht die Schwelle
+    aus der geladenen Config an den reinen Producer weiter.
+  - Validierung: `min_forecast_temp_c` muss endlich und im physikalisch plausiblen
+    Bereich `[-50, 50] °C` liegen; sonst lauter `ConfigError` (NF-01-Geist).
+  - Bei `NaN/inf` als Clamp-Grenze liefert die Prognose `None` (keine Prognose),
+    statt mit unklarem Wert weiterzurechnen.
+  - `docs/api/v1/openapi.yaml` ergaenzt: `prognose.min_forecast_temp_c` als required
+    Feld + Beispielwert, damit der G2->G3-Contract konsistent bleibt.
+  - Tests: Default-Wert, Validierung, Clamp bei steiler Rampe, kein Clamp bei
+    normalem Trend, defekte Untergrenze -> `None`.
+
+- **Begründung:**
+  Eine lineare Regression über unbegrenzte Zeit kann bei steilen Eingangsrampen
+  physikalisch unsinnige Werte produzieren. Weil die Prognose aber ausschließlich
+  die GELB-Vorwarnung ergänzt (kein Under-Alarm), ist ein Clamp nach unten
+  konservativ: Die Prognose bleibt <= `t_s_grenz_c` und hält die Vorwarnung aufrecht,
+  anstatt einen unrealistischen Wert wie -50.2 °C an G3 zu melden. Die Schwelle
+  wird über `config/thresholds.json` parametriert (NF-05), damit G1 die finalen
+  Sensor-Werte ohne Code-Änderung einspielen kann. Der Default `-50.0 °C` orientiert
+  sich an der bestehenden Plausibilitätsuntergrenze für `surface_temp_c`.
+
+- **Alternativen:**
+  - **Kein Clamp, sondern `None` bei Unterschreitung der Plausibilitätsgrenze** —
+    verworfen, weil dann die GELB-Vorwarnung bei steilem Abfall still ausfiele;
+    der Clamp bleibt fail-safe, indem er die Vorwarnung beibehält.
+  - **Hartcodierte Untergrenze in `trend.py`** — verworfen, weil alle Schwellen
+    parametrierbar sein müssen (NF-05, DUMMY-Werte aus G1 noch ausstehend).
+  - **Clamp in `assess_ice_risk()` statt in der Prognose** — verworfen, weil der
+    API-Response-Wert `forecast_surface_temp_c` dann weiterhin unrealistische Werte
+    tragen würde; der Clamp gehört an die Quelle der Extrapolation.
+  - **Obergrenze ebenfalls einführen** — verworfen, weil keine konkrete Fehlerquelle
+    bekannt ist und eine zusätzliche Obergrenze die GELB-Vorwarnung nicht verbessert;
+    bei Bedarf nachträglich ergänzbar.
+
+- **Ergebnis/Status:** Umgesetzt. 838 Tests grün, 35 skipped (DB-Integration),
+  1 Integrationstest fehlgeschlagen, weil keine lokale MariaDB auf 127.0.0.1:3306
+  läuft (`test_storage_database.py::test_integration_load_config_and_ping_from_env`).
+  ruff sauber. —database-engineer
 
 ---
 

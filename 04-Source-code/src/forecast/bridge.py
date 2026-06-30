@@ -35,11 +35,13 @@ def compute_forecast_for_cycle(
         reading: Das frisch gepollte Reading (liefert die sensor_id) oder None bei
             fehlgeschlagenem Poll -> dann keine Prognose (Fail-safe).
         reading_repo: Repository fuer die Reading-Historie (get_since).
-        prognose: Geladene Prognose-Schwellen (Fenster, Horizont, min_points).
+        prognose: Geladene Prognose-Schwellen (Fenster, Horizont, min_points,
+            physikalische Untergrenze).
         now: Bezugszeitpunkt (UTC, zeitzonenbewusst).
 
     Returns:
-        Die extrapolierte Oberflaechentemperatur oder None (keine belastbare Prognose).
+        Die extrapolierte (und nach unten geclampfte) Oberflächentemperatur oder
+        None (keine belastbare Prognose).
 
     Raises:
         ValueError: Wenn `now` naiv (nicht zeitzonenbewusst) ist. Ein naives `now`
@@ -70,12 +72,13 @@ def compute_forecast_for_cycle(
     # `reading.measured_at`. Beide sind zeitzonenbewusst — `now` per ValueError-Guard in
     # trend.py, `measured_at` weil das Pydantic-`Reading`-Schema UTC-aware erzwingt. Faellt
     # diese Schema-Invariante je weg, wuerde die Subtraktion einen TypeError werfen; der bleibt
-    # bewusst sichtbar (Programmier-/Contract-Fehler), statt als "keine Prognose" maskiert zu
-    # werden. Nur transiente Datenlayer-Fehler (RepositoryError) sind fail-safe.
+    # bewusst sichtbar (Programmier-/Contract-Fehler), statt als "keine Prognose" maskiert
+    # zu werden. Nur transiente Datenlayer-Fehler (RepositoryError) sind fail-safe.
     return forecast_surface_temp(
         readings,
         now,
         horizon_min=prognose.horizon_min,
         window_min=prognose.trend_window_min,
         min_points=prognose.min_points,
+        min_forecast_temp_c=prognose.min_forecast_temp_c,
     )

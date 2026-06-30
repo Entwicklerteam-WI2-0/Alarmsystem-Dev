@@ -30,6 +30,8 @@ def test_default_config_laedt_kaskaden_schwellen_aus_schwellenwerte_md():
     assert thresholds.prognose.horizon_min == 30.0
     assert thresholds.prognose.min_points == 3
     assert thresholds.prognose.max_readings_limit == 1000
+    # DTB-33: physikalische Untergrenze der Prognose (Clamp gegen unplausible Werte).
+    assert thresholds.prognose.min_forecast_temp_c == -50.0
     assert thresholds.datenqualitaet.stale_timeout_s == 120.0
     assert thresholds.datenqualitaet.max_temp_jump_c_per_min == 5.0
     assert thresholds.datenqualitaet.flatline_timeout_min == 15.0
@@ -558,6 +560,7 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "horizon_min": 30.0,
             "min_points": 3,
             "max_readings_limit": 1000,
+            "min_forecast_temp_c": -50.0,
         },
         "hysterese": {
             "on_delay_s": 60.0,
@@ -601,6 +604,8 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
         ("max_readings_limit", 1000.0),  # keine Ganzzahl
         ("t_s_grenz_c", -100.0),  # ausserhalb plausibler Oberflaechentemp -> Vorwarnung tot
         ("t_s_grenz_c", 100.0),  # ausserhalb plausibler Oberflaechentemp -> Vorwarnung tot
+        ("min_forecast_temp_c", -100.0),  # unterhalb physikalisch plausibler Grenze
+        ("min_forecast_temp_c", 100.0),  # oberhalb physikalisch plausibler Grenze
     ],
 )
 def test_prognose_grenzwert_unplausibel_scheitert_laut(tmp_path, feld: str, wert: float):

@@ -54,6 +54,11 @@ class PrognoseSchwellen:
     horizon_min: float  # Prognosehorizont in Minuten (FA-06: 30)
     min_points: int  # Mindestanzahl Stuetzstellen fuer eine Regression (>= 2)
     max_readings_limit: int  # Obergrenze fuer gelesene Historien-Readings (DB-Last)
+    # DTB-33 (FA-06): physikalische Untergrenze der Prognose. Lineare Extrapolation
+    # kann bei steilen/kuenstlichen Rampen unter den realen Messbereich laufen
+    # (z. B. -50.2 °C). Der Clamp begrenzt die Prognose nach unten, ohne die
+    # GELB-Vorwarnung zu deaktivieren (fail-safe; G1 liefert langsame Aenderungen).
+    min_forecast_temp_c: float  # °C, physikalische Untergrenze der 30-min-Prognose
 
 
 @dataclass(frozen=True)
@@ -408,6 +413,18 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
         raise ConfigError(
             f"prognose.t_s_grenz_c muss zwischen {_MIN_PLAUSIBLE_SURFACE_TEMP_C} und "
             f"{_MAX_PLAUSIBLE_SURFACE_TEMP_C} °C liegen, ist aber {schwellen.t_s_grenz_c!r}"
+        )
+    # Physikalische Untergrenze der Prognose: muss endlich sein und darf nicht unter
+    # den zulaessigen Messbereich rutschen (NF-01). Ein Wert wie -300 °C wuerde die
+    # lineare Extrapolation zwar kappen, aber die Operatorenanzeige unplausibel machen.
+    if not (
+        _MIN_PLAUSIBLE_SURFACE_TEMP_C
+        <= schwellen.min_forecast_temp_c
+        <= _MAX_PLAUSIBLE_SURFACE_TEMP_C
+    ):
+        raise ConfigError(
+            f"prognose.min_forecast_temp_c muss zwischen {_MIN_PLAUSIBLE_SURFACE_TEMP_C} und "
+            f"{_MAX_PLAUSIBLE_SURFACE_TEMP_C} °C liegen, ist aber {schwellen.min_forecast_temp_c!r}"
         )
     _require_positive(schwellen.trend_window_min, "prognose.trend_window_min", upper=1_440)
     _require_positive(schwellen.horizon_min, "prognose.horizon_min", upper=1_440)

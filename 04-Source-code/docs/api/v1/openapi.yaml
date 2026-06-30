@@ -124,6 +124,7 @@ paths:
                   horizon_min: 30.0
                   min_points: 3
                   max_readings_limit: 1000
+                  min_forecast_temp_c: -50.0
                 datenqualitaet:
                   stale_timeout_s: 120
                   max_temp_jump_c_per_min: 5.0
@@ -382,46 +383,6 @@ paths:
                 code: SERVICE_UNAVAILABLE
                 message: "G2 momentan nicht lieferfaehig."
 
-  /v1/audit:
-    get:
-      tags: [Audit]
-      operationId: listAudit
-      summary: Audit-/Ereignis-Log lesen (Datenbank-Spiegel, read-only)
-      description: |
-        Neueste Audit-Log-Eintraege (DB-Spiegel / Live-Ereignis-Log, NF-09-Trail) fuer G3.
-        Read-only, RB-01-neutral; aendert das append-only Audit-Log NICHT (nur SELECT).
-      parameters:
-        - name: limit
-          in: query
-          required: false
-          description: Maximale Anzahl Eintraege (neueste zuerst).
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 500
-            default: 50
-      responses:
-        "200":
-          description: Liste der Audit-Eintraege (neueste zuerst).
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/AuditLogEntry"
-        "400":
-          description: Ungueltiger Query-Parameter (z. B. `limit` ausserhalb 1..500).
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-        "503":
-          description: G2 (noch) nicht lieferfaehig (Runtime nicht bereit / DB-Ausfall).
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
   /v1/alarms:
     get:
       tags: [Alarms]
@@ -675,7 +636,7 @@ components:
               description: ΔT-Schwelle "Feuchte vorhanden" (K).
         prognose:
           type: object
-          required: [t_s_grenz_c, trend_window_min, horizon_min, min_points, max_readings_limit]
+          required: [t_s_grenz_c, trend_window_min, horizon_min, min_points, max_readings_limit, min_forecast_temp_c]
           properties:
             t_s_grenz_c:
               type: number
@@ -694,6 +655,12 @@ components:
               description: |
                 Obergrenze gelesener Historien-Readings je Zyklus. Interner DB-Last-Cap
                 (kein Kalibrierwert fuer das G3-Menue) — Spiegel der internen Config.
+            min_forecast_temp_c:
+              type: number
+              description: |
+                Physikalische Untergrenze der 30-min-Prognose (°C). Lineare
+                Extrapolationen ueber steile Rampen werden nach unten auf diesen
+                Wert geclampt, um unplausible Werte zu vermeiden (DTB-33).
         datenqualitaet:
           type: object
           required:
@@ -847,25 +814,6 @@ components:
           type: number
           nullable: true
           description: Luftfeuchte (%).
-        surface_moisture_pct:
-          type: number
-          nullable: true
-          description: >
-            Kalibrierte Oberflaechenfeuchte (%), G1-Kontext (Contract v1.2) — nur Anzeige,
-            NICHT bewertungsrelevant. Wie die Messwerte bei `risk_level=unknown` genullt.
-        wind_speed_ms:
-          type: number
-          nullable: true
-          description: >
-            Windgeschwindigkeit (m/s), G1-Kontext (Contract v1.2) — nur Anzeige, NICHT
-            bewertungsrelevant. Wie die Messwerte bei `risk_level=unknown` genullt.
-        forecast_surface_temp_c:
-          type: number
-          nullable: true
-          description: |
-            30-min-Prognose der Oberflaechentemperatur (°C, lineare Regression; DTB-33/FA-06,
-            additiv v1, revidiert E-36). `null` bei `risk_level=unknown` (NF-01: keine
-            Prognose auf stale/fault ausliefern).
         measured_at:
           type: string
           format: date-time
@@ -914,14 +862,6 @@ components:
           type: number
           nullable: true
           description: Luftdruck (hPa), optional.
-        surface_moisture_pct:
-          type: number
-          nullable: true
-          description: Kalibrierte Oberflaechenfeuchte (%), optional/Kontext (Contract v1.1), nur Speicher/Anzeige.
-        wind_speed_ms:
-          type: number
-          nullable: true
-          description: Windgeschwindigkeit (m/s), optional/Kontext (Contract v1.1), nur Speicher/Anzeige.
         status:
           $ref: "#/components/schemas/SensorStatus"
         received_at:
@@ -936,49 +876,6 @@ components:
           $ref: "#/components/schemas/Source"
 
     # --- Alarm ---
-    AuditLogEntry:
-      type: object
-      description: |
-        Append-only Audit-/Ereignis-Eintrag (NF-09). Read-only ueber GET /v1/audit
-        (DB-Spiegel); nie ueber die API geaendert/geloescht.
-      required: [id, ts, event_type, entity_type, actor]
-      properties:
-        id:
-          type: integer
-          format: int64
-          readOnly: true
-        ts:
-          type: string
-          format: date-time
-          description: Ereigniszeitpunkt (UTC).
-        event_type:
-          type: string
-          enum:
-            [
-              reading_ingested,
-              assessment_made,
-              alarm_raised,
-              alarm_acknowledged,
-              threshold_changed,
-              sensor_fault,
-            ]
-        entity_type:
-          type: string
-          minLength: 1
-          maxLength: 32
-        entity_id:
-          type: integer
-          format: int64
-          nullable: true
-        actor:
-          type: string
-          minLength: 1
-          maxLength: 128
-        detail:
-          type: object
-          nullable: true
-          additionalProperties: true
-
     Alarm:
       type: object
       description: Aus einer Bewertung erzeugter Alarm (kein Aktor, RB-01).

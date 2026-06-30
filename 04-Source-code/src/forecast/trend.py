@@ -36,6 +36,7 @@ def forecast_surface_temp(
     horizon_min: float,
     window_min: float,
     min_points: int,
+    min_forecast_temp_c: float,
 ) -> float | None:
     """Projiziert T_s per linearer Regression `horizon_min` Minuten voraus.
 
@@ -46,23 +47,31 @@ def forecast_surface_temp(
         window_min: Trendfenster in Minuten; nur Readings mit
             `now - window_min <= measured_at <= now` gehen ein.
         min_points: Mindestanzahl gueltiger (endlicher) Stuetzstellen.
+        min_forecast_temp_c: Physikalische Untergrenze fuer die Prognose (°C).
+            Eine lineare Extrapolation ueber steile/kuenstliche Rampen kann sonst
+            unter den realen Messbereich laufen (z. B. -50.2 °C). Der Wert wird
+            nach unten geclampt, ohne die GELB-Vorwarnung zu deaktivieren.
 
     Returns:
-        Die extrapolierte Oberflaechentemperatur (float) oder `None`, wenn kein
-        belastbarer Trend bestimmbar ist (zu wenige Punkte, keine Zeitvarianz,
-        nicht-endliches Ergebnis).
+        Die extrapolierte (und nach unten geclampfte) Oberflächentemperatur
+        (float) oder `None`, wenn kein belastbarer Trend bestimmbar ist (zu
+        wenige Punkte, keine Zeitvarianz, nicht-endliches Ergebnis).
 
     Raises:
         ValueError: Wenn `now` nicht zeitzonenbewusst ist (UTC).
     """
     if now.tzinfo is None:
         raise ValueError("now muss zeitzonenbewusst sein (UTC)")
+    if not math.isfinite(min_forecast_temp_c):
+        # Defekte Untergrenze -> keine Prognose liefern (NF-01), statt mit
+        # unklarem Clamp weiterzurechnen.
+        return None
 
     points = _collect_points(readings, now, window_min)
     if len(points) < min_points:
         return None
 
-    return _project(points, horizon_min)
+    return _project(points, horizon_min, min_forecast_temp_c)
 
 
 def _collect_points(
@@ -92,7 +101,9 @@ def _collect_points(
     return points
 
 
-def _project(points: list[tuple[float, float]], horizon_min: float) -> float | None:
+def _project(
+    points: list[tuple[float, float]], horizon_min: float, min_forecast_temp_c: float
+) -> float | None:
     """Least-squares-Gerade durch die Punkte, ausgewertet bei x = +horizon_min."""
     n = len(points)
     mean_x = sum(x for x, _ in points) / n
@@ -110,4 +121,7 @@ def _project(points: list[tuple[float, float]], horizon_min: float) -> float | N
     forecast = intercept + slope * horizon_min  # x = +horizon_min (now + horizon)
     if not math.isfinite(forecast):
         return None
-    return forecast
+    # Physikalische Untergrenze: bei steilen/kuenstlichen Rampen (z. B. Test-
+    # Datensaetze) kann die Gerade unter den realen Messbereich laufen. Nach
+    # unten clampln statt unplausible Werte durchzureichen (FA-06/NF-01).
+    return max(forecast, min_forecast_temp_c)
