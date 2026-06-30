@@ -30,6 +30,9 @@ def test_default_config_laedt_kaskaden_schwellen_aus_schwellenwerte_md():
     assert thresholds.prognose.horizon_min == 30.0
     assert thresholds.prognose.min_points == 3
     assert thresholds.prognose.max_readings_limit == 1000
+    # Blind-Spot-Nebenbefund: physikalischer Clamp fuer Prognose-Extrapolation.
+    assert thresholds.prognose.min_forecast_temp_c == -50.0
+    assert thresholds.prognose.max_forecast_temp_c == 50.0
     assert thresholds.datenqualitaet.stale_timeout_s == 120.0
     assert thresholds.datenqualitaet.max_temp_jump_c_per_min == 5.0
     assert thresholds.datenqualitaet.flatline_timeout_min == 15.0
@@ -558,6 +561,8 @@ def _minimal_config(t_s_gefrierpunkt: float = 0.0) -> dict:
             "horizon_min": 30.0,
             "min_points": 3,
             "max_readings_limit": 1000,
+            "min_forecast_temp_c": -50.0,
+            "max_forecast_temp_c": 50.0,
         },
         "hysterese": {
             "on_delay_s": 60.0,
@@ -637,6 +642,41 @@ def test_t_s_grenz_gleich_gefrierpunkt_ist_erlaubt(tmp_path):
 
     thresholds = load_thresholds(datei)
     assert thresholds.prognose.t_s_grenz_c == daten["vereisung"]["t_s_gefrierpunkt_c"]
+
+
+@pytest.mark.parametrize(
+    "feld, wert",
+    [
+        ("min_forecast_temp_c", -100.1),  # unterhalb physikalisch plausiblen Bereichs
+        ("min_forecast_temp_c", 100.1),  # oberhalb physikalisch plausiblen Bereichs
+        ("max_forecast_temp_c", -100.1),
+        ("max_forecast_temp_c", 100.1),
+    ],
+)
+def test_forecast_clamp_ausserhalb_plausiblen_bereichs_scheitert_laut(
+    tmp_path, feld: str, wert: float
+):
+    # Blind-Spot-Nebenbefund: Clamp-Grenzen muessen physikalisch plausibel bleiben,
+    # sonst wuerden sie die Prognose-Vorwarnung verfaelschen (NF-01).
+    daten = _minimal_config()
+    daten["prognose"][feld] = wert
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
+def test_forecast_min_ungleich_max_scheitert_laut(tmp_path):
+    # min_forecast_temp_c >= max_forecast_temp_c wuerde den Clamp invertieren.
+    daten = _minimal_config()
+    daten["prognose"]["min_forecast_temp_c"] = 50.0
+    daten["prognose"]["max_forecast_temp_c"] = -50.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
 
 
 # -----------------------------------------------------------------------------

@@ -78,4 +78,6 @@ def compute_forecast_for_cycle(
         horizon_min=prognose.horizon_min,
         window_min=prognose.trend_window_min,
         min_points=prognose.min_points,
+        min_temp_c=prognose.min_forecast_temp_c,
+        max_temp_c=prognose.max_forecast_temp_c,
     )

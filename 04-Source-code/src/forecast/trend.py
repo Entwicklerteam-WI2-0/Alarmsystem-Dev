@@ -36,6 +36,8 @@ def forecast_surface_temp(
     horizon_min: float,
     window_min: float,
     min_points: int,
+    min_temp_c: float,
+    max_temp_c: float,
 ) -> float | None:
     """Projiziert T_s per linearer Regression `horizon_min` Minuten voraus.
 
@@ -46,11 +48,16 @@ def forecast_surface_temp(
         window_min: Trendfenster in Minuten; nur Readings mit
             `now - window_min <= measured_at <= now` gehen ein.
         min_points: Mindestanzahl gueltiger (endlicher) Stuetzstellen.
+        min_temp_c: Physikalische Untergrenze fuer die Prognose (°C); das
+            Ergebnis wird auf diesen Wert begrenzt (Clamp, NF-05).
+        max_temp_c: Physikalische Obergrenze fuer die Prognose (°C); das
+            Ergebnis wird auf diesen Wert begrenzt (Clamp, NF-05).
 
     Returns:
-        Die extrapolierte Oberflaechentemperatur (float) oder `None`, wenn kein
-        belastbarer Trend bestimmbar ist (zu wenige Punkte, keine Zeitvarianz,
-        nicht-endliches Ergebnis).
+        Die extrapolierte Oberflaechentemperatur (float, auf [min_temp_c,
+        max_temp_c] geclamped) oder `None`, wenn kein belastbarer Trend
+        bestimmbar ist (zu wenige Punkte, keine Zeitvarianz, nicht-endliches
+        Ergebnis).
 
     Raises:
         ValueError: Wenn `now` nicht zeitzonenbewusst ist (UTC).
@@ -62,7 +69,7 @@ def forecast_surface_temp(
     if len(points) < min_points:
         return None
 
-    return _project(points, horizon_min)
+    return _project(points, horizon_min, min_temp_c, max_temp_c)
 
 
 def _collect_points(
@@ -92,8 +99,19 @@ def _collect_points(
     return points
 
 
-def _project(points: list[tuple[float, float]], horizon_min: float) -> float | None:
-    """Least-squares-Gerade durch die Punkte, ausgewertet bei x = +horizon_min."""
+def _project(
+    points: list[tuple[float, float]],
+    horizon_min: float,
+    min_temp_c: float,
+    max_temp_c: float,
+) -> float | None:
+    """Least-squares-Gerade durch die Punkte, ausgewertet bei x = +horizon_min.
+
+    Das Ergebnis wird auf den physikalisch plausiblen Bereich [min_temp_c,
+    max_temp_c] geclamped. Das verhindert Blind-Spot-Extrapolationen wie
+    -50.2 °C bei einer kuenstlich steilen Testrampe, ohne die Vorwarnung
+    still auf None zu degradieren (Fail-safe: Clamp statt Fantasiewert).
+    """
     n = len(points)
     mean_x = sum(x for x, _ in points) / n
     mean_y = sum(y for _, y in points) / n
@@ -110,4 +128,7 @@ def _project(points: list[tuple[float, float]], horizon_min: float) -> float | N
     forecast = intercept + slope * horizon_min  # x = +horizon_min (now + horizon)
     if not math.isfinite(forecast):
         return None
-    return forecast
+    # Physikalischer Clamp (NF-05): absurde Extrapolationen (z. B. Testrampen)
+    # auf den konfigurierten Messbereich begrenzen. Echte Sensoren aendern sich
+    # langsam; bei realen Daten greift der Clamp nicht ein.
+    return max(min_temp_c, min(max_temp_c, forecast))
