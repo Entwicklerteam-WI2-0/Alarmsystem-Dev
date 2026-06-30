@@ -190,6 +190,8 @@ G1 stellt eine **einzelne Sensor-API** bereit. G2 pollt sie im selbst gewählten
   "air_temp_c": 1.2,
   "humidity_pct": 96,
   "pressure_hpa": 1013,
+  "surface_moisture_pct": 7.0,
+  "wind_speed_ms": 3.5,
   "status": "ok"
 }
 ```
@@ -198,6 +200,7 @@ G1 stellt eine **einzelne Sensor-API** bereit. G2 pollt sie im selbst gewählten
 - **`sensor_id`**: **PFLICHT** — eindeutige Sensor-Identifikation.
 - **`surface_temp_c`**, **`air_temp_c`**, **`humidity_pct`**: **PFLICHT** — Trias für die Vereisungsbewertung.
 - **`pressure_hpa`**: optional/Kontext.
+- **`surface_moisture_pct`** / **`wind_speed_ms`**: optional/Kontext (Contract v1.1) — kalibrierte Oberflächenfeuchte (%) bzw. Windgeschwindigkeit (m/s). G2 konsumiert nur die kalibrierten/SI-Werte (Rohwerte nicht). **Nicht bewertungsrelevant**; gespeichert und an G3 ausgeliefert über `GET /v1/readings` (Historie) und `GET /v1/assessment/current` (Live-Snapshot, Contract v1.2). Details: **E-44**.
 - **`status`**: Sensor-Lebenszeichen (`ok` | `fault`).
 
 **`GET /health`** — Verfügbarkeits-Check der G1-API:

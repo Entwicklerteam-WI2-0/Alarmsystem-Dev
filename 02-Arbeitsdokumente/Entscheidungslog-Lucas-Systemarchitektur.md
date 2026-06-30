@@ -196,6 +196,14 @@
 - *Bezug:* NF-01; FA-04; R1–R5 (Wartbarkeit/Ausfall); RB-01; E-31; E-36; E-40 (Schichten 1/2/6); E-42; DTB-43/DTB-49/DTB-64.
 - *Nachtrag (28.06., DTB-67 geklärt):* G3 liest `explanation` nicht aus; `driving_factor=null` auf `unknown` ist ok (strukturierte Strings = nicht-blockierender Bonus). → Variante C von „empfohlen" auf **konditional** herabgestuft — Umsetzung nur, falls ein G3-Render-Pfad es konsumiert (YAGNI; Fault/Stale steht bereits in Server-Logs + Audit). Für M3 keine Änderung. Volltext: ADR-E43-Nachtrag.
 
+**E-44 — G1-Kontextfelder (Oberflächenfeuchte + Wind): Kontextfelder (v1.1) + Live-Auslieferung (v1.2), nicht bewertungsrelevant**
+- *Status:* Beschlossen (2026-06-29). **Volltext als eigenständiges ADR-Dokument:** [`ADR-E44-G1-Kontextfelder.md`](ADR-E44-G1-Kontextfelder.md).
+- *Kurz:* G1 liefert neu `surface_moisture_pct` (kalibrierte Oberflächenfeuchte, %) und `wind_speed_ms` (m/s). G2 nimmt beide als optionale Kontextfelder auf — gespeichert + an G3 ausgeliefert, **ohne Einfluss auf `risk_level`/Ampel/Alarme** (analog `pressure_hpa`). Defekt/fehlend → `null`, blockiert nie die Pflicht-Trias.
+- *Entscheidung (2 additive Stufen, kein `/v2/`):* **v1.1** = Ingest + Persistenz + Historie `GET /v1/readings` (umgesetzt/gemergt via **PR #164**). **v1.2** = zusätzlich im Live-Snapshot `GET /v1/assessment/current` (aus dem aktuellen Reading; Fail-safe genullt bei `unknown`) — damit G3 Wind/Feuchte neben der Ampel zeigen kann, ohne die Historie zu pollen. Nur kalibrierte/SI-Werte konsumiert (m/s; Rohwerte `*_raw`/`wind_speed_kmh` bewusst nicht).
+- *Alternativen (verworfen):* Rohwerte/km/h konsumieren; in die Bewertung aufnehmen (keine Schwelle, Scope, analog E-32); Config-Plausibilitätsschwelle (NF-05-Ripple ohne Sicherheitsbezug); nur Historie ohne Live-Snapshot; Kontextwerte bei `unknown` aus letztem gutem Reading zeigen (statt nullen — NF-01-inkonsistent).
+- *Zuschreibung:* v1.1 = Team/PR #164 (m/s-Wahl Lucas + Johannes bestätigt); v1.2 = Johannes. Dieser Eintrag schließt die zuvor fehlende Doku zu PR #164 mit.
+- *Bezug:* FA-03; NF-01 (unberührt); NF-05; RB-01 (unberührt); E-31; E-32; E-36; DTB-26 (Seam-Sync G1 + G3-Sign-off Nick); DTB-35; PR #164 (v1.1); PR #169 (v1.2).
+
 **E-11 — 4-Stufen-Risikomodell (🟢🟡🟠🔴) mit konkreten Schwellen + Hysterese/Entprellung**
 - *Begründung:* Klare, parametrierbare Kategorien statt eines unscharfen Einzelwerts; Hysterese verhindert Alarm-Flattern (ISA-18.2). Beide Vorfälle werden korrekt aufgelöst.
 

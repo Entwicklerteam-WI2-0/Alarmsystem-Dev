@@ -1,6 +1,23 @@
 # Aktueller Stand
 
-> Stand: 2026-06-29 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+> Stand: 2026-06-30 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+
+## 2026-06-30 — G1-Kontextfelder Wind+Feuchte: Live-Snapshot (Contract v1.2) gemergt + Doku konsolidiert (architekt/Petzold)
+**Was:** `GET /v1/assessment/current` liefert jetzt additiv `wind_speed_ms` + `surface_moisture_pct` aus dem
+aktuellen Reading (Fail-safe genullt bei `unknown`, NF-01) — Umsetzung minimal-invasiv in
+`build_assessment_current`, kein Eingriff in Assessment-Modell/DB/Persistenz. **PR #169 gemergt** in `main`
+(mit Konfliktauflösung gegen den parallelen Wire-Change #168), in `origin/main` verifiziert. Damit ist
+**Sensor → G2 → Frontend** für beide Kontextfelder end-to-end: Ingest + Persistenz + Historie `/v1/readings`
+via **#164 (Contract v1.1)**, Live-Snapshot via **#169 (Contract v1.2)**. Nicht bewertungsrelevant; RB-01/NF-01 unberührt.
+**Doppelarbeit bereinigt:** Mein zuerst gebauter `feat/wind-speed-context-field` war redundant (Wind+Moisture
+lagen via #164 schon in `main`) → verworfen; nur der echte Live-Snapshot-Gap gebaut.
+**Doku:** E-44 konsolidiert auf `docs/g1-kontextfelder-entscheidung` (ADR + zentrales Logbuch + Backend-Konzept §9.1) —
+füllt die zu #164 fehlende Entscheidungsdoku; Branch auf aktuelles `main` nachgezogen, mergebar, doc-only.
+Persönlicher `Petzold-Entscheidungslog`: 2 Einträge (v1.2-Design + Doppelarbeits-Lesson).
+**Offen:** (1) Doku-PR `docs/g1-kontextfelder-entscheidung` mergen. (2) 2 tote Branches löschen
+(`feat/wind-speed-context-field`, `docs/wind-entscheidungslog-adr`) — Safety-Classifier blockte die Remote-
+Löschung, braucht expliziten User-Lauf. (3) G3-Sign-off (Nick) für v1.2 — `.txt` auf dem Desktop.
+—architekt/Petzold
 
 ## 2026-06-29 — Pi-Inbetriebnahme icedetection.local: DB-Auth-Blocker analysiert + manuell gelöst (architekt)
 **Was:** Pi-Deploy (Mo 29.06.). G2-Backend auf Raspberry Pi `icedetection.local` (MariaDB 11.8.6, Python 3.13).
