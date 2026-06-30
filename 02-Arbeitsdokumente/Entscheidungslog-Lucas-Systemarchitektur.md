@@ -202,7 +202,7 @@
 - *Entscheidung (2 additive Stufen, kein `/v2/`):* **v1.1** = Ingest + Persistenz + Historie `GET /v1/readings` (umgesetzt/gemergt via **PR #164**). **v1.2** = zusätzlich im Live-Snapshot `GET /v1/assessment/current` (aus dem aktuellen Reading; Fail-safe genullt bei `unknown`) — damit G3 Wind/Feuchte neben der Ampel zeigen kann, ohne die Historie zu pollen. Nur kalibrierte/SI-Werte konsumiert (m/s; Rohwerte `*_raw`/`wind_speed_kmh` bewusst nicht).
 - *Alternativen (verworfen):* Rohwerte/km/h konsumieren; in die Bewertung aufnehmen (keine Schwelle, Scope, analog E-32); Config-Plausibilitätsschwelle (NF-05-Ripple ohne Sicherheitsbezug); nur Historie ohne Live-Snapshot; Kontextwerte bei `unknown` aus letztem gutem Reading zeigen (statt nullen — NF-01-inkonsistent).
 - *Zuschreibung:* v1.1 = Team/PR #164 (m/s-Wahl Lucas + Johannes bestätigt); v1.2 = Johannes. Dieser Eintrag schließt die zuvor fehlende Doku zu PR #164 mit.
-- *Bezug:* FA-03; NF-01 (unberührt); NF-05; RB-01 (unberührt); E-31; E-32; E-36; DTB-26 (Seam-Sync G1 + G3-Sign-off Nick); DTB-35; PR #164.
+- *Bezug:* FA-03; NF-01 (unberührt); NF-05; RB-01 (unberührt); E-31; E-32; E-36; DTB-26 (Seam-Sync G1 + G3-Sign-off Nick); DTB-35; PR #164 (v1.1); PR #169 (v1.2).
 
 **E-11 — 4-Stufen-Risikomodell (🟢🟡🟠🔴) mit konkreten Schwellen + Hysterese/Entprellung**
 - *Begründung:* Klare, parametrierbare Kategorien statt eines unscharfen Einzelwerts; Hysterese verhindert Alarm-Flattern (ISA-18.2). Beide Vorfälle werden korrekt aufgelöst.
