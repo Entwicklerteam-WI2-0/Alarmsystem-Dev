@@ -1,6 +1,6 @@
 # ADR E-44 — G1-Kontextfelder (Oberflächenfeuchte + Wind): Aufnahme (v1.1) + Live-Auslieferung (v1.2)
 
-> **ID:** E-44 · **Status:** Beschlossen + umgesetzt (v1.1 via PR #164, v1.2 via PR #169 — beide in `main`) · **Datum:** 2026-06-30 (v1.2; v1.1 zuvor via PR #164)
+> **ID:** E-44 · **Status:** Beschlossen + umgesetzt (v1.1 via PR #164, v1.2 via PR #169 — beide in `main`) · **Datum:** 2026-06-29 (Entscheidung; Doku/Commits 2026-06-30)
 > **Index:** Kurzeintrag im zentralen Logbuch [`Entscheidungslog-Lucas-Systemarchitektur.md`](Entscheidungslog-Lucas-Systemarchitektur.md) (E-44) verweist hierher.
 > **Bezug:** FA-03 · NF-01 · NF-05 · RB-01 · E-31 · E-32 · E-36 · DTB-26 · DTB-35 · PR #164 (v1.1) · PR #169 (v1.2)
 
