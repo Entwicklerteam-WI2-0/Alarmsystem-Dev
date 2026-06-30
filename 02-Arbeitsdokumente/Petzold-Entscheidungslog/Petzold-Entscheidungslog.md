@@ -1,5 +1,5 @@
 # Persönliches Entscheidungslog — Johannes Petzold (G2)
-> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-28  ·  **Zeitraum:** 2026-06-22 bis 2026-06-28
+> **Erstellt am:** 2026-06-22 · **Letzte Bearbeitung:** 2026-06-30  ·  **Zeitraum:** 2026-06-22 bis 2026-06-30
 > **Autor:** Johannes Petzold · **Status:** laufend gepflegt
 > Eigene technische Entscheidungen + Begründung. **Bewertungsrelevant** (Nachvollziehbarkeit, 40 % Einzelleistung).
 
@@ -428,3 +428,22 @@
   - *Variante C jetzt oder fest post-M3 einplanen:* verworfen — kein Konsument, Information redundant zu Logs/Audit, Eingriff am kritischen Pfad ohne Nutzen.
   - *Feld „auf Vorrat" mit strukturiertem Code füllen:* verworfen — spekulativ; G3 müsste es ohnehin erst mappen, und `null` ist abgenickt.
 - **Ergebnis/Status:** DTB-67 → Erledigt (mit Kommentar, der G3-Antwort + Folgerung festhält); ADR-E43 + zentrales Logbuch um den Nachtrag ergänzt. Keine Code-Änderung.
+
+## 2026-06-30 — G1-Kontextfelder im Live-Snapshot über reading-Durchreichung statt Assessment-Snapshot (Contract v1.2)
+- **Kontext/Task:** G1-Kontextfelder `wind_speed_ms` + `surface_moisture_pct` (E-44). Lucas' Anforderung: die Daten sollen von den Sensoren bis ins Frontend durchlaufen. Ingest/Persistenz/Historie (`/v1/readings`) waren über PR #164 bereits in `main`; der Live-Snapshot `GET /v1/assessment/current` — den G3 für die Ampel pollt — enthielt die zwei Felder aber **nicht**. · FA-03 · NF-01.
+- **Entscheidung:** Beide Felder additiv in `AssessmentCurrent` aufnehmen und in `build_assessment_current` aus dem **bereits übergebenen `reading`** befüllen (Gut-Pfad); im Fail-safe-Zweig (`stale`/`fault` → `unknown`) genau wie die Messwerte **nullen**. **Kein** Eingriff in das `Assessment`-Modell, die DB oder die Persistenz.
+- **Begründung:** Der Builder bekommt das aktuelle `reading` ohnehin als Parameter — daraus die beiden Werte zu ziehen ist der minimal-invasive Weg, ganz ohne neue DB-Spalte oder Snapshot-Persistenz. Wichtig war mir die Fail-safe-Konsistenz: bei grauer Ampel (`unknown`) dürfen keine veralteten Wind-/Feuchtewerte stehen bleiben, sonst suggeriert die Anzeige Aktualität, die es nicht gibt — also `null`, exakt wie `surface_temp_c`/`dew_point_c`. Und da die Felder **nicht** bewertungsrelevant sind, bleibt der `assessment/`-Kern (Kaskade/Risk-Level) bewusst unberührt — ich wollte den kritischen Pfad für ein reines Anzeigefeld nicht anfassen.
+- **Alternativen (erwogen/verworfen):**
+  - *Wind/Feuchte in den `Assessment`-Snapshot + eine DB-Spalte persistieren* (wie `surface_temp_c` etc.): „self-contained", aber invasiv (Modell + DDL + Persistenzzyklus) für null Mehrwert, da der Builder das `reading` schon hat. Verworfen.
+  - *Bei v1.1 stehen bleiben (nur Historie `/v1/readings`):* G3 müsste für den aktuellen Wert die Historie pollen und den jüngsten Eintrag nehmen — umständlich. Verworfen zugunsten des natürlichen Live-Endpoints.
+  - *Kontextwerte im `unknown`-Fall aus dem letzten guten Reading zeigen (statt nullen):* widerspräche der Messwert-Nullung und wäre NF-01-inkonsistent. Verworfen.
+- **Ergebnis/Status:** umgesetzt (TDD: 3 Unit + 1 Endpoint-Test), gemergt via **PR #169** (mit einer Konfliktauflösung gegen den parallelen Wire-Change #168). In `main` verifiziert; Suite grün. Dokumentiert in **E-44** (ADR + zentrales Logbuch).
+
+## 2026-06-30 — Doppelarbeit erkannt: redundanten Wind-Branch verworfen statt gemergt (Lesson)
+- **Kontext/Task:** Ich hatte `wind_speed_ms` als Kontextfeld eigenständig implementiert (Branch + Doku, inkl. Review-Loop). Beim Push/Abgleich mit `main` zeigte sich, dass das Team dasselbe Feld — plus `surface_moisture_pct` — bereits über **PR #164 (Contract v1.1)** gebaut und gemergt hatte. Mein Branch überlappte in fast allen Dateien.
+- **Entscheidung:** Den redundanten Code-Branch **nicht** als PR weiterführen/mergen, sondern verwerfen. Stattdessen nur den **echten, in `main` fehlenden** Teil sauber bauen (Live-Snapshot v1.2) und die zu #164 **fehlende** Entscheidungsdoku (E-44) konsolidiert nachziehen.
+- **Begründung:** Einen zweiten, konfliktreichen PR zu mergen, der eine schon vorhandene Funktion dupliziert, schadet mehr als es nutzt — also habe ich die redundante Arbeit konsequent fallen lassen, statt sie „weil schon gebaut" durchzudrücken. Ehrlich ist auch der Auslöser: die Projektregel sagt, vor der Arbeit offene PRs/Jira gegen den Task zu prüfen; beim Branchen lag mein `main` weit zurück, und ich habe die Parallelarbeit erst spät bemerkt. Den größten realen Mehrwert hatte am Ende nicht der Code, sondern (a) der **Live-Snapshot-Gap**, den #164 offen ließ, und (b) die **fehlende Entscheidungsdoku** zu #164 — beides habe ich geliefert.
+- **Alternativen (erwogen/verworfen):**
+  - *Alles verwerfen (Code + Doku):* verworfen — der Live-Snapshot-Gap und die undokumentierte #164-Entscheidung waren echter, fehlender Mehrwert.
+  - *Redundanten Branch trotzdem als PR:* verworfen — massiver Konflikt mit `main` + Doppeleinführung derselben Funktion.
+- **Ergebnis/Status:** redundanter Branch zur Löschung vorgesehen; v1.2 gemergt (#169); E-44 konsolidiert (schließt auch die #164-Doku-Lücke). **Lesson für mich:** vor Implementierungsstart konsequent offene PRs/Live-Jira gegen den Task prüfen — gerade wenn das lokale `main` älter ist.
