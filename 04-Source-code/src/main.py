@@ -113,6 +113,9 @@ def build_runtime() -> Runtime:
         repository=reading_repo,
         data_quality_thresholds=thresholds.datenqualitaet,
         plausibility_thresholds=thresholds.plausibilitaet,
+        # FA-12/NF-09 (Tiefenaudit 2026-06-30 F11): geteiltes audit_repo -> der Poller
+        # schreibt reading_ingested (je Save) und sensor_fault (bei G1-status=fault).
+        audit_repo=audit_repo,
     )
     service = AssessmentService(
         thresholds,

@@ -18,8 +18,9 @@ import httpx
 from src.assessment.failsafe import check_flatline, check_plausibility
 from src.assessment.utils import calculate_dew_point
 from src.config.loader import DatenqualitaetSchwellen, PlausibilitaetSchwellen
-from src.model.enums import SensorStatus, Source
-from src.model.schemas import Reading
+from src.model.enums import AuditEventType, SensorStatus, Source
+from src.model.schemas import AuditLogEntry, Reading
+from src.storage.audit_repository import AuditRepository
 from src.storage.repository import Repository, RepositoryError
 
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ class Poller:
         repository: Repository,
         data_quality_thresholds: DatenqualitaetSchwellen,
         plausibility_thresholds: PlausibilitaetSchwellen,
+        audit_repo: AuditRepository | None = None,
         timeout: float = 10.0,
     ) -> None:
         # Base-URL ohne abschliessenden Slash, damit /current sauber angehaengt wird.
@@ -82,6 +84,11 @@ class Poller:
         # wird und keine Schwellen im Poller hardgecoded sind.
         self.data_quality_thresholds = data_quality_thresholds
         self.plausibility_thresholds = plausibility_thresholds
+        # Optionales Audit-Repo (FA-12/NF-09, Tiefenaudit 2026-06-30 F11): nach erfolgreichem
+        # Save wird ein reading_ingested-Event geschrieben, bei G1-status=fault ein
+        # sensor_fault-Event. Best-effort (NF-01 vor NF-09): None -> kein Audit; ein
+        # Audit-Fehler blockt den Ingest nie (s. _append_audit).
+        self._audit_repo = audit_repo
         # Timeout fuer den HTTP-Request (Netzwerk/Sensor-Ausfall).
         self.timeout = timeout
         # Letztes erfolgreich gespeichertes (plausibles) Reading desselben Sensors —
@@ -104,6 +111,19 @@ class Poller:
         # erfolgreichen Save zurueckgesetzt; erreicht er _FLATLINE_WARN_AFTER_N, geht einmalig
         # eine WARN-Zeile raus (Eskalations-/Monitoring-Signal, kein Verhaltenswechsel).
         self._consecutive_flatline_rejections: int = 0
+
+    def _append_audit(self, entry: AuditLogEntry) -> None:
+        """Best-effort Audit-Append (FA-12/NF-09): schreibt EIN Event, ohne den Ingest zu
+        blocken (NF-01 vor NF-09). Kein audit_repo -> No-op. Ein Persistenzfehler wird nur
+        geloggt, nie weitergeworfen — ein gespeichertes Reading darf nie an einem fehlenden
+        Audit-Eintrag scheitern (analog AssessmentService._write_audit).
+        """
+        if self._audit_repo is None:
+            return
+        try:
+            self._audit_repo.append(entry)
+        except RepositoryError as exc:
+            logger.error("Audit-Eintrag (%s) fehlgeschlagen: %s", entry.event_type.value, exc)
 
     def poll(self) -> Reading | None:
         """Holt Snapshot von G1, validiert ihn und speichert ein Reading.
@@ -233,6 +253,21 @@ class Poller:
             reading_id,
             reading.sensor_id,
             reading.measured_at.isoformat(),
+        )
+        # FA-12/NF-09 (Tiefenaudit 2026-06-30 F11): den ingestierten Messwert ins Audit-Log
+        # schreiben (FA-12: "Protokolliert MESSWERTE ..."). Best-effort -> ein Audit-Fehler
+        # blockt den bereits erfolgten Save nicht. ts = received_at (G2-Ingest-Zeit).
+        self._append_audit(
+            AuditLogEntry(
+                ts=reading.received_at,
+                event_type=AuditEventType.READING_INGESTED,
+                entity_type="reading",
+                entity_id=reading_id,
+                detail={
+                    "sensor_id": reading.sensor_id,
+                    "measured_at": reading.measured_at.isoformat(),
+                },
+            )
         )
         # Reading MIT vergebener id zurueckgeben (copy-on-write, keine Mutation): der
         # Scheduler reicht diese Rueckgabe direkt an assess_reading weiter, das auf dem
@@ -386,6 +421,21 @@ class Poller:
         # Sensor meldet selbst einen Defekt -> Reading ablehnen (Fail-safe, NF-01).
         if status is SensorStatus.FAULT:
             logger.error("G1-Sensor meldet status=fault, Reading wird verworfen")
+            # FA-12/NF-09 (Tiefenaudit 2026-06-30 F11): den Sensor-Fault als Audit-Event
+            # festhalten (Observability). NUR Audit -- der Wire (sensor_status) und das
+            # Assessment bleiben unberuehrt, E-43 (Fault-vs-Stale-Diagnose) bleibt deferred.
+            self._append_audit(
+                AuditLogEntry(
+                    ts=_now(),
+                    event_type=AuditEventType.SENSOR_FAULT,
+                    entity_type="sensor",
+                    entity_id=None,
+                    detail={
+                        "sensor_id": sensor_id,
+                        "measured_at": measured_at.isoformat(),
+                    },
+                )
+            )
             return None
 
         # Stale-Erkennung (FA-04, NF-01): zu alte Snapshots fail-safe verwerfen, damit kein

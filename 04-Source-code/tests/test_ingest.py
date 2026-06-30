@@ -17,8 +17,9 @@ import pytest
 
 from src.config.loader import DatenqualitaetSchwellen, PlausibilitaetSchwellen
 from src.ingest.poller import Poller
-from src.model.enums import SensorStatus, Source
+from src.model.enums import AuditEventType, SensorStatus, Source
 from src.model.schemas import Reading
+from src.storage.audit_repository import InMemoryAuditRepository
 from src.storage.repository import Repository, RepositoryError
 
 # Poll-Intervall der Flatline-Integrationstests (s). Die Tests pollen einen eingefrorenen
@@ -142,6 +143,29 @@ def poller(
 
 
 @pytest.fixture
+def audit_repo() -> InMemoryAuditRepository:
+    return InMemoryAuditRepository()
+
+
+@pytest.fixture
+def poller_with_audit(
+    fake_repo: FakeRepository,
+    quality_thresholds: DatenqualitaetSchwellen,
+    plausibility_thresholds: PlausibilitaetSchwellen,
+    audit_repo: InMemoryAuditRepository,
+) -> Poller:
+    # Wie die `poller`-Fixture, aber MIT Audit-Repo -> poll() schreibt reading_ingested bzw.
+    # sensor_fault (FA-12/NF-09). Teilt sich fake_repo + audit_repo mit den Einzelfixtures.
+    return Poller(
+        base_url="http://g1.test",
+        repository=fake_repo,
+        data_quality_thresholds=quality_thresholds,
+        plausibility_thresholds=plausibility_thresholds,
+        audit_repo=audit_repo,
+    )
+
+
+@pytest.fixture
 def valid_snapshot() -> dict:
     """Gueltiger G1-Snapshot als Ausgangsbasis fuer Mutationstests."""
     return {
@@ -220,6 +244,75 @@ def test_poll_valid_snapshot_saves_reading(
     assert len(fake_repo.readings) == 1
     assert fake_repo.readings[0].sensor_id == "anr-rwy-01"
     assert mock_get.call_count == 2
+
+
+def test_poll_valid_snapshot_appends_reading_ingested_audit(
+    poller_with_audit: Poller,
+    fake_repo: FakeRepository,
+    audit_repo: InMemoryAuditRepository,
+    valid_snapshot: dict,
+) -> None:
+    """Erfolgreich gespeichertes Reading -> reading_ingested-Audit (FA-12/NF-09).
+
+    Schliesst die Tiefenaudit-Luecke 2026-06-30 F11: der Poller protokollierte Messwerte
+    bisher gar nicht im Audit-Log (FA-12 verlangt 'MESSWERTE ... protokollieren').
+    """
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
+        reading = poller_with_audit.poll()
+
+    assert reading is not None
+    entries = audit_repo.all()
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.event_type is AuditEventType.READING_INGESTED
+    assert entry.entity_type == "reading"
+    assert entry.entity_id == reading.id
+    assert entry.detail is not None
+    assert entry.detail["sensor_id"] == "anr-rwy-01"
+
+
+def test_poll_sensor_fault_appends_sensor_fault_audit(
+    poller_with_audit: Poller,
+    fake_repo: FakeRepository,
+    audit_repo: InMemoryAuditRepository,
+    valid_snapshot: dict,
+) -> None:
+    """G1 meldet status=fault -> kein Reading gespeichert, aber sensor_fault-Audit (NF-09).
+
+    Nur ein Audit-Event (Observability) -- der Wire (sensor_status) und das Assessment
+    bleiben unberuehrt (E-43 bleibt deferred).
+    """
+    snapshot = {**valid_snapshot, "status": "fault"}
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(snapshot)):
+        reading = poller_with_audit.poll()
+
+    assert reading is None
+    assert len(fake_repo.readings) == 0
+    entries = audit_repo.all()
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry.event_type is AuditEventType.SENSOR_FAULT
+    assert entry.entity_type == "sensor"
+    assert entry.detail is not None
+    assert entry.detail["sensor_id"] == "anr-rwy-01"
+
+
+def test_poll_audit_failure_does_not_block_save(
+    poller_with_audit: Poller,
+    fake_repo: FakeRepository,
+    audit_repo: InMemoryAuditRepository,
+    valid_snapshot: dict,
+    caplog,
+) -> None:
+    """Best-effort (NF-01 vor NF-09): ein Audit-Fehler darf das Speichern nicht blocken."""
+    audit_repo.append = Mock(side_effect=RepositoryError("Audit weg"))  # type: ignore[method-assign]
+
+    with patch("src.ingest.poller.httpx.get", _mock_get_for(valid_snapshot)):
+        reading = poller_with_audit.poll()
+
+    assert reading is not None
+    assert len(fake_repo.readings) == 1
+    assert "Audit-Eintrag" in caplog.text
 
 
 def test_poll_missing_required_field_does_not_save(
