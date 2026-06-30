@@ -1,8 +1,8 @@
 # ADR E-44 — G1-Kontextfelder (Oberflächenfeuchte + Wind): Aufnahme (v1.1) + Live-Auslieferung (v1.2)
 
-> **ID:** E-44 · **Status:** Beschlossen · **Datum:** 2026-06-29
+> **ID:** E-44 · **Status:** Beschlossen + umgesetzt (v1.1 via PR #164, v1.2 via PR #169 — beide in `main`) · **Datum:** 2026-06-29
 > **Index:** Kurzeintrag im zentralen Logbuch [`Entscheidungslog-Lucas-Systemarchitektur.md`](Entscheidungslog-Lucas-Systemarchitektur.md) (E-44) verweist hierher.
-> **Bezug:** FA-03 · NF-01 · NF-05 · RB-01 · E-31 · E-32 · E-36 · DTB-26 · DTB-35 · PR #164
+> **Bezug:** FA-03 · NF-01 · NF-05 · RB-01 · E-31 · E-32 · E-36 · DTB-26 · DTB-35 · PR #164 (v1.1) · PR #169 (v1.2)
 
 ## Titel
 
@@ -34,7 +34,7 @@ Persistenz, Historie) und **v1.2** (zusätzliche Auslieferung im Live-Snapshot `
 4. **v1.2 — Live-Snapshot:** `GET /v1/assessment/current` liefert beide Felder zusätzlich aus dem aktuellen
    Reading, damit G3 sie **neben der Ampel live** anzeigen kann (ohne die Historie zu pollen). Fail-safe
    konsistent: bei `risk_level=unknown` (stale/fault) werden sie **genullt** wie die Messwerte (NF-01).
-   *(Umgesetzt auf `feat/assessment-current-context-fields`.)*
+   *(Umgesetzt + **gemergt via PR #169** in `main` — mit Konfliktauflösung gegen den parallelen Wire-Change #168.)*
 
 ## Begründung
 
@@ -66,8 +66,9 @@ Persistenz, Historie) und **v1.2** (zusätzliche Auslieferung im Live-Snapshot `
 - **Additiv / rückwärtskompatibel:** kein `/v2/`. v1.1 und v1.2 ändern den eingefrorenen Wire-Kern nicht.
 - **Abstimmung (DTB-26):** exakte G1-JSON-Keys bestätigt; **G3-Sign-off (Nick)** für v1.2 (Auslieferung im
   Live-Snapshot) einzuholen — versandfertige Nachricht liegt vor.
-- **Umsetzung:** v1.1 in `main` (PR #164); v1.2 auf `feat/assessment-current-context-fields` (Schema +
-  `build_assessment_current` + `openapi.yaml`/`API_FROZEN_v1`, Unit- + Endpoint-Tests, Suite grün).
+- **Umsetzung (beide Stufen in `main`):** v1.1 via **PR #164**; v1.2 via **PR #169** (Schema +
+  `build_assessment_current` + `openapi.yaml`/`API_FROZEN_v1`, Unit- + Endpoint-Tests, Suite grün) — beide
+  gemergt und in `origin/main` verifiziert.
 - **Kein neuer Endpoint:** beide Felder reisen auf den bestehenden Nähten mit (G1 `GET /current` → Ingest;
   G2 `GET /v1/readings` + `GET /v1/assessment/current` → G3). `assessment/`/`alarm/`/`forecast/` unberührt.
 
