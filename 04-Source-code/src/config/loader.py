@@ -443,6 +443,16 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
             "prognose.min_forecast_temp_c muss kleiner als max_forecast_temp_c sein "
             f"({schwellen.min_forecast_temp_c!r} >= {schwellen.max_forecast_temp_c!r})"
         )
+    # Cross-Field (NF-01): die Clamp-Untergrenze darf nicht ueber der GELB-
+    # Vorwarnschwelle liegen. Sonst werden alle prognostizierten Werte auf einen
+    # Wert > t_s_grenz_c geclamped -> die 30-min-Vorwarnung (FA-06) feuert nie.
+    if schwellen.min_forecast_temp_c > schwellen.t_s_grenz_c:
+        raise ConfigError(
+            "prognose.min_forecast_temp_c darf nicht groesser als prognose.t_s_grenz_c sein "
+            f"({schwellen.min_forecast_temp_c!r} > {schwellen.t_s_grenz_c!r}) "
+            "-> Clamp-Untergrenze liegt ueber der GELB-Warnschwelle, "
+            "Vorwarnung still deaktiviert (NF-01)"
+        )
     # Ganzzahl- und Bereichspruefung fuer min_points/max_readings_limit.
     # isinstance(int) ist bereits in _baue_sektion erledigt (L-3); hier bleiben nur
     # die sektionsspezifischen semantischen Grenzen.

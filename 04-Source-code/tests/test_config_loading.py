@@ -679,6 +679,19 @@ def test_forecast_min_ungleich_max_scheitert_laut(tmp_path):
         load_thresholds(datei)
 
 
+def test_forecast_min_ueber_t_s_grenz_scheitert_laut(tmp_path):
+    # Cross-Field (NF-01): min_forecast_temp_c > t_s_grenz_c wuerde die GELB-
+    # Vorwarnung still abschalten, da jeder Forecast auf > t_s_grenz_c geclamped wird.
+    daten = _minimal_config()
+    daten["prognose"]["t_s_grenz_c"] = 0.0
+    daten["prognose"]["min_forecast_temp_c"] = 5.0
+    datei = tmp_path / "thresholds.json"
+    datei.write_text(json.dumps(daten), encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        load_thresholds(datei)
+
+
 # -----------------------------------------------------------------------------
 # Vereisungs-Schwellen: Bereichs- und Hierarchie-Validierung (DTB-63 Folgefix,
 # NF-01). Schliesst den Fail-safe-Bypass, ueber den ein authentifizierter Caller
