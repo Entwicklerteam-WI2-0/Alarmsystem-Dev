@@ -163,6 +163,26 @@ class ReadingResponse(_Base):
     source: Source
 
 
+class AuditLogResponse(_Base):
+    """Wire-Schema fuer GET /v1/audit (DB-Spiegel/Live-Ereignis-Log, read-only).
+
+    Spiegelt das interne AuditLogEntry, erzwingt aber eine gueltige id (DB-Eintraege
+    haben immer eine). title="AuditLogEntry" fuer das frozen openapi.yaml-Schema,
+    analog ReadingResponse/AlarmResponse. Rein lesend -- NF-09 (append-only) bleibt
+    durch das fehlende Schreib-Schema und die DB-Grants gewahrt.
+    """
+
+    model_config = ConfigDict(extra="forbid", title="AuditLogEntry")
+
+    id: int
+    ts: datetime
+    event_type: AuditEventType
+    entity_type: str = Field(min_length=1, max_length=32)
+    entity_id: int | None = None
+    actor: str = Field(min_length=1, max_length=128)
+    detail: dict[str, Any] | None = None
+
+
 class ThresholdSet(_Base):
     """Versionierter Satz parametrierbarer Schwellenwerte (NF-05)."""
 
@@ -208,6 +228,15 @@ class AssessmentCurrent(_Base):
     dew_point_c: float | None = None
     delta_t: float | None = None
     humidity_pct: float | None = None
+    # G1-Kontextfelder (Contract v1.2): aktueller Wind/Oberflaechenfeuchte aus dem letzten
+    # Reading, damit G3 sie neben der Ampel anzeigen kann. NICHT bewertungsrelevant; folgen der
+    # Fail-safe-Nullung (bei unknown/stale/fault None, wie die Messwerte).
+    surface_moisture_pct: float | None = None
+    wind_speed_ms: float | None = None
+    # DTB-33/FA-06 (additiv v1, revidiert E-36): 30-min-Prognose der Oberflaechentemperatur
+    # (lineare Regression, bereits berechnet + persistiert). Wie die Roh-Messwerte genullt,
+    # wenn risk_level=unknown (NF-01: keine Prognose auf stale/fault ausliefern).
+    forecast_surface_temp_c: float | None = None
     measured_at: datetime  # G1-Messzeit; auf 200 immer gesetzt
     assessed_at: datetime  # G2-Bewertungszeit
     is_stale: bool

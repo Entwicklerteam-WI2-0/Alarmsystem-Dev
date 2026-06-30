@@ -310,6 +310,11 @@ def build_assessment_current(
             dew_point_c=None,
             delta_t=None,
             humidity_pct=None,
+            # Kontextfelder folgen der Messwert-Nullung (Fail-safe, NF-01): keine veralteten
+            # Wind-/Feuchtewerte am Live-Snapshot, wenn der Zustand unknown ist.
+            surface_moisture_pct=None,
+            wind_speed_ms=None,
+            forecast_surface_temp_c=None,  # NF-01: keine Prognose auf stale/fault
             measured_at=reading.measured_at,
             assessed_at=assessment.ts,
             is_stale=stale,
@@ -331,6 +336,11 @@ def build_assessment_current(
         dew_point_c=assessment.dew_point_c,
         delta_t=assessment.delta_t,
         humidity_pct=assessment.humidity_pct,
+        # Kontextfelder (Contract v1.2) aus dem aktuellen Reading — nur Speicher/Anzeige,
+        # nicht bewertungsrelevant. Auf dem Gut-Pfad ist `reading` das bewertete Reading.
+        surface_moisture_pct=reading.surface_moisture_pct,
+        wind_speed_ms=reading.wind_speed_ms,
+        forecast_surface_temp_c=assessment.forecast_surface_temp_c,
         measured_at=reading.measured_at,
         assessed_at=assessment.ts,
         is_stale=False,

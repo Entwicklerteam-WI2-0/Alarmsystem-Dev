@@ -246,6 +246,40 @@ def test_current_fresh_ok_keeps_assessment(thresholds):
     assert cur.assessed_at == assessment.ts
 
 
+def test_current_serves_forecast_and_nulls_it_on_stale(thresholds):
+    # DTB-33/FA-06 (additiv v1, revidiert E-36): die persistierte 30-min-Prognose wird
+    # im Wire-Response ausgeliefert (OK-Pfad) und bei stale genullt (NF-01: keine
+    # Prognose auf veralteten Daten).
+    now = datetime.now(UTC)
+    reading = _reading(now, surface=2.0, dew=0.0)
+    assessment = Assessment(
+        ts=now,
+        risk_level=RiskLevel.GREEN,
+        surface_temp_c=2.0,
+        dew_point_c=0.0,
+        delta_t=2.0,
+        humidity_pct=80.0,
+        forecast_surface_temp_c=-0.5,
+    )
+
+    fresh = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+    assert fresh.forecast_surface_temp_c == pytest.approx(-0.5)
+
+    old = now - timedelta(seconds=thresholds.datenqualitaet.stale_timeout_s + 60)
+    stale = build_assessment_current(
+        Assessment(
+            ts=old, risk_level=RiskLevel.GREEN, surface_temp_c=2.0, forecast_surface_temp_c=-0.5
+        ),
+        _reading(old, surface=2.0, dew=0.0),
+        now,
+        thresholds.datenqualitaet.stale_timeout_s,
+    )
+    assert stale.risk_level == RiskLevel.UNKNOWN
+    assert stale.forecast_surface_temp_c is None
+
+
 def test_current_stale_forces_unknown_and_nulls_measurements(thresholds):
     now = datetime.now(UTC)
     old = now - timedelta(seconds=thresholds.datenqualitaet.stale_timeout_s + 60)
@@ -303,6 +337,71 @@ def test_current_none_reading_raises(thresholds):
         build_assessment_current(
             assessment, None, datetime.now(UTC), thresholds.datenqualitaet.stale_timeout_s
         )
+
+
+# ---------------------------------------------------------------------------
+# Contract v1.2: Kontextfelder (Wind + Oberflaechenfeuchte) im Live-Snapshot
+# ---------------------------------------------------------------------------
+
+
+def test_current_fresh_ok_exposes_wind_and_moisture(thresholds):
+    # Gut-Pfad: der aktuelle Sensor-Kontext (aus dem letzten Reading) wird im Live-Snapshot
+    # ausgeliefert, damit G3 Wind/Feuchte neben der Ampel zeigen kann (analog /v1/readings).
+    now = datetime.now(UTC)
+    reading = _reading(now, surface=2.0, dew=0.0).model_copy(
+        update={"wind_speed_ms": 3.5, "surface_moisture_pct": 7.0}
+    )
+    assessment = Assessment(
+        ts=now,
+        risk_level=RiskLevel.GREEN,
+        surface_temp_c=2.0,
+        dew_point_c=0.0,
+        delta_t=2.0,
+        humidity_pct=80.0,
+    )
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    assert cur.wind_speed_ms == 3.5
+    assert cur.surface_moisture_pct == 7.0
+
+
+def test_current_stale_nulls_wind_and_moisture(thresholds):
+    # Fail-safe (NF-01): bei Stale -> unknown werden auch die Kontextfelder genullt,
+    # exakt wie die Messwerte (keine veralteten Kontextwerte am Live-Snapshot).
+    now = datetime.now(UTC)
+    old = now - timedelta(seconds=thresholds.datenqualitaet.stale_timeout_s + 60)
+    reading = _reading(old, surface=2.0, dew=0.0).model_copy(
+        update={"wind_speed_ms": 3.5, "surface_moisture_pct": 7.0}
+    )
+    assessment = Assessment(ts=old, risk_level=RiskLevel.GREEN, surface_temp_c=2.0)
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    assert cur.risk_level == RiskLevel.UNKNOWN
+    assert cur.wind_speed_ms is None
+    assert cur.surface_moisture_pct is None
+
+
+def test_current_fault_nulls_wind_and_moisture(thresholds):
+    # Fail-safe (NF-01): Sensor fault -> unknown nullt auch die Kontextfelder.
+    now = datetime.now(UTC)
+    reading = _reading(now, status=SensorStatus.FAULT).model_copy(
+        update={"wind_speed_ms": 3.5, "surface_moisture_pct": 7.0}
+    )
+    assessment = Assessment(ts=now, risk_level=RiskLevel.GREEN, surface_temp_c=2.0)
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    assert cur.risk_level == RiskLevel.UNKNOWN
+    assert cur.wind_speed_ms is None
+    assert cur.surface_moisture_pct is None
 
 
 # ---------------------------------------------------------------------------

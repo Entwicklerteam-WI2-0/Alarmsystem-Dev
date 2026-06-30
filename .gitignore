@@ -20,6 +20,10 @@ AGENTS.md
 # ── Kimi Code: lokal / Sessions ────────────────────────────────
 .kimi-code/
 
+# ── Lokale Laufzeit-Logs (niemals committen) ────────────────
+04-Source-code/_backend_live.log
+04-Source-code/_pytest_forecast.log
+
 # ── OS-Müll ───────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
