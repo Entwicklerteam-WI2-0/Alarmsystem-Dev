@@ -20,6 +20,8 @@ _NOW = datetime(2026, 6, 27, 12, 0, 0, tzinfo=UTC)
 _HORIZON_MIN = 30.0
 _WINDOW_MIN = 30.0
 _MIN_POINTS = 3
+_MIN_TEMP_C = -50.0
+_MAX_TEMP_C = 50.0
 
 
 def _reading(minutes_ago: float, surface: float) -> Reading:
@@ -40,7 +42,13 @@ def test_fallender_trend_projiziert_unter_null():
     # -> in 30 min: 0.0 + (-0.1 * 30) = -3.0 (<= 0 -> GELB-Vorwarnung beim Consumer).
     readings = [_reading(20, 2.0), _reading(10, 1.0), _reading(0, 0.0)]
     forecast = forecast_surface_temp(
-        readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+        readings,
+        _NOW,
+        horizon_min=_HORIZON_MIN,
+        window_min=_WINDOW_MIN,
+        min_points=_MIN_POINTS,
+        min_temp_c=_MIN_TEMP_C,
+        max_temp_c=_MAX_TEMP_C,
     )
     assert forecast is not None
     assert forecast == pytest.approx(-3.0)
@@ -50,7 +58,13 @@ def test_flacher_warmer_trend_bleibt_positiv():
     # Konstante warme Oberflaeche -> Steigung 0 -> Prognose = Niveau (5.0 > 0).
     readings = [_reading(20, 5.0), _reading(10, 5.0), _reading(0, 5.0)]
     forecast = forecast_surface_temp(
-        readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+        readings,
+        _NOW,
+        horizon_min=_HORIZON_MIN,
+        window_min=_WINDOW_MIN,
+        min_points=_MIN_POINTS,
+        min_temp_c=_MIN_TEMP_C,
+        max_temp_c=_MAX_TEMP_C,
     )
     assert forecast == pytest.approx(5.0)
 
@@ -59,7 +73,13 @@ def test_zu_wenige_punkte_keine_prognose():
     readings = [_reading(10, 1.0), _reading(0, 0.0)]  # nur 2 < min_points=3
     assert (
         forecast_surface_temp(
-            readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+            readings,
+            _NOW,
+            horizon_min=_HORIZON_MIN,
+            window_min=_WINDOW_MIN,
+            min_points=_MIN_POINTS,
+            min_temp_c=_MIN_TEMP_C,
+            max_temp_c=_MAX_TEMP_C,
         )
         is None
     )
@@ -70,7 +90,13 @@ def test_alle_gleicher_zeitstempel_keine_prognose():
     readings = [_reading(0, 1.0), _reading(0, 2.0), _reading(0, 3.0)]
     assert (
         forecast_surface_temp(
-            readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+            readings,
+            _NOW,
+            horizon_min=_HORIZON_MIN,
+            window_min=_WINDOW_MIN,
+            min_points=_MIN_POINTS,
+            min_temp_c=_MIN_TEMP_C,
+            max_temp_c=_MAX_TEMP_C,
         )
         is None
     )
@@ -86,7 +112,13 @@ def test_nahezu_gleicher_zeitstempel_ist_entartet():
     ]
     assert (
         forecast_surface_temp(
-            readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+            readings,
+            _NOW,
+            horizon_min=_HORIZON_MIN,
+            window_min=_WINDOW_MIN,
+            min_points=_MIN_POINTS,
+            min_temp_c=_MIN_TEMP_C,
+            max_temp_c=_MAX_TEMP_C,
         )
         is None
     )
@@ -97,7 +129,13 @@ def test_nicht_endliche_werte_werden_gefiltert():
     bad = _reading(15, float("nan"))
     readings = [_reading(20, 2.0), bad, _reading(10, 1.0), _reading(0, 0.0)]
     forecast = forecast_surface_temp(
-        readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+        readings,
+        _NOW,
+        horizon_min=_HORIZON_MIN,
+        window_min=_WINDOW_MIN,
+        min_points=_MIN_POINTS,
+        min_temp_c=_MIN_TEMP_C,
+        max_temp_c=_MAX_TEMP_C,
     )
     assert forecast is not None
     assert math.isfinite(forecast)
@@ -107,7 +145,13 @@ def test_nicht_endliche_werte_werden_gefiltert():
 def test_unsortierte_readings_liefern_gleiches_ergebnis():
     readings = [_reading(0, 0.0), _reading(20, 2.0), _reading(10, 1.0)]  # gemischt
     forecast = forecast_surface_temp(
-        readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+        readings,
+        _NOW,
+        horizon_min=_HORIZON_MIN,
+        window_min=_WINDOW_MIN,
+        min_points=_MIN_POINTS,
+        min_temp_c=_MIN_TEMP_C,
+        max_temp_c=_MAX_TEMP_C,
     )
     assert forecast == pytest.approx(-3.0)
 
@@ -117,7 +161,13 @@ def test_readings_ausserhalb_des_fensters_ignoriert():
     # die 3 Punkte im Fenster bleiben uebrig -> Trend wie gehabt.
     readings = [_reading(40, 99.0), _reading(20, 2.0), _reading(10, 1.0), _reading(0, 0.0)]
     forecast = forecast_surface_temp(
-        readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+        readings,
+        _NOW,
+        horizon_min=_HORIZON_MIN,
+        window_min=_WINDOW_MIN,
+        min_points=_MIN_POINTS,
+        min_temp_c=_MIN_TEMP_C,
+        max_temp_c=_MAX_TEMP_C,
     )
     assert forecast == pytest.approx(-3.0)
 
@@ -129,7 +179,13 @@ def test_zukunfts_reading_clock_skew_wird_ignoriert():
     future = _reading(-2, 99.0)  # 2 min NACH now (measured_at > _NOW)
     readings = [future, _reading(20, 2.0), _reading(10, 1.0), _reading(0, 0.0)]
     forecast = forecast_surface_temp(
-        readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+        readings,
+        _NOW,
+        horizon_min=_HORIZON_MIN,
+        window_min=_WINDOW_MIN,
+        min_points=_MIN_POINTS,
+        min_temp_c=_MIN_TEMP_C,
+        max_temp_c=_MAX_TEMP_C,
     )
     assert forecast == pytest.approx(-3.0)
 
@@ -143,7 +199,13 @@ def test_clock_skew_kann_prognose_auf_none_degradieren():
     readings = [future, _reading(10, 1.0), _reading(0, 0.0)]  # nur 2 gueltige < min_points=3
     assert (
         forecast_surface_temp(
-            readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+            readings,
+            _NOW,
+            horizon_min=_HORIZON_MIN,
+            window_min=_WINDOW_MIN,
+            min_points=_MIN_POINTS,
+            min_temp_c=_MIN_TEMP_C,
+            max_temp_c=_MAX_TEMP_C,
         )
         is None
     )
@@ -152,7 +214,13 @@ def test_clock_skew_kann_prognose_auf_none_degradieren():
 def test_leere_zeitreihe_keine_prognose():
     assert (
         forecast_surface_temp(
-            [], _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+            [],
+            _NOW,
+            horizon_min=_HORIZON_MIN,
+            window_min=_WINDOW_MIN,
+            min_points=_MIN_POINTS,
+            min_temp_c=_MIN_TEMP_C,
+            max_temp_c=_MAX_TEMP_C,
         )
         is None
     )
@@ -165,10 +233,47 @@ def test_overflow_ergibt_keine_prognose():
     readings = [_reading(20, 0.0), _reading(10, huge / 2.0), _reading(0, huge)]
     assert (
         forecast_surface_temp(
-            readings, _NOW, horizon_min=_HORIZON_MIN, window_min=_WINDOW_MIN, min_points=_MIN_POINTS
+            readings,
+            _NOW,
+            horizon_min=_HORIZON_MIN,
+            window_min=_WINDOW_MIN,
+            min_points=_MIN_POINTS,
+            min_temp_c=_MIN_TEMP_C,
+            max_temp_c=_MAX_TEMP_C,
         )
         is None
     )
+
+
+def test_steile_rampe_wird_auf_min_temp_geclamped():
+    # Blind-Spot-Nebenbefund: kuenstlich steile Rampe wuerde ohne physikalischen
+    # Clamp weit unter -50 °C extrapolieren. Der Clamp begrenzt auf -50.0 °C.
+    readings = [_reading(20, -10.0), _reading(10, -25.0), _reading(0, -40.0)]
+    forecast = forecast_surface_temp(
+        readings,
+        _NOW,
+        horizon_min=_HORIZON_MIN,
+        window_min=_WINDOW_MIN,
+        min_points=_MIN_POINTS,
+        min_temp_c=_MIN_TEMP_C,
+        max_temp_c=_MAX_TEMP_C,
+    )
+    assert forecast == pytest.approx(_MIN_TEMP_C)
+
+
+def test_steile_rampe_wird_auf_max_temp_geclamped():
+    # Symmetrischer Oberseiten-Clamp fuer kuenstlich steile Aufwaertsrampen.
+    readings = [_reading(20, 10.0), _reading(10, 25.0), _reading(0, 40.0)]
+    forecast = forecast_surface_temp(
+        readings,
+        _NOW,
+        horizon_min=_HORIZON_MIN,
+        window_min=_WINDOW_MIN,
+        min_points=_MIN_POINTS,
+        min_temp_c=_MIN_TEMP_C,
+        max_temp_c=_MAX_TEMP_C,
+    )
+    assert forecast == pytest.approx(_MAX_TEMP_C)
 
 
 def test_naive_now_wirft():
@@ -180,4 +285,6 @@ def test_naive_now_wirft():
             horizon_min=_HORIZON_MIN,
             window_min=_WINDOW_MIN,
             min_points=_MIN_POINTS,
+            min_temp_c=_MIN_TEMP_C,
+            max_temp_c=_MAX_TEMP_C,
         )

@@ -54,6 +54,12 @@ class PrognoseSchwellen:
     horizon_min: float  # Prognosehorizont in Minuten (FA-06: 30)
     min_points: int  # Mindestanzahl Stuetzstellen fuer eine Regression (>= 2)
     max_readings_limit: int  # Obergrenze fuer gelesene Historien-Readings (DB-Last)
+    # DTB-33-Clamp (Blind-Spot-Nebenbefund): physikalische Begrenzung der extrapolierten
+    # Oberflaechentemperatur. Verhindert, dass eine künstlich steile Rampe (z. B. Testdaten)
+    # zu absurd kalten/heissen Prognosen führt (z. B. -50.2 °C). Echte Sensoren ändern sich
+    # langsam; die Grenzen sind parametrierbar (NF-05) und können von G1 final kalibriert werden.
+    min_forecast_temp_c: float
+    max_forecast_temp_c: float
 
 
 @dataclass(frozen=True)
@@ -420,6 +426,32 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
         raise ConfigError(
             "prognose.horizon_min darf nicht groesser als prognose.trend_window_min sein "
             f"({schwellen.horizon_min!r} > {schwellen.trend_window_min!r})"
+        )
+    # Clamp-Grenzen (Blind-Spot-Nebenbefund): physikalische Unter-/Obergrenze fuer die
+    # extrapolierte Oberflaechentemperatur. Werte ausserhalb [-100, 100] °C sind fuer einen
+    # Rollfeld-Sensor nicht plausibel und würden die Prognose-Vorwarnung verfaelschen.
+    for feld, wert in (
+        ("min_forecast_temp_c", schwellen.min_forecast_temp_c),
+        ("max_forecast_temp_c", schwellen.max_forecast_temp_c),
+    ):
+        if not -100.0 <= wert <= 100.0:
+            raise ConfigError(
+                f"prognose.{feld} muss zwischen -100.0 und 100.0 °C liegen, ist aber {wert!r}"
+            )
+    if schwellen.min_forecast_temp_c >= schwellen.max_forecast_temp_c:
+        raise ConfigError(
+            "prognose.min_forecast_temp_c muss kleiner als max_forecast_temp_c sein "
+            f"({schwellen.min_forecast_temp_c!r} >= {schwellen.max_forecast_temp_c!r})"
+        )
+    # Cross-Field (NF-01): die Clamp-Untergrenze darf nicht ueber der GELB-
+    # Vorwarnschwelle liegen. Sonst werden alle prognostizierten Werte auf einen
+    # Wert > t_s_grenz_c geclamped -> die 30-min-Vorwarnung (FA-06) feuert nie.
+    if schwellen.min_forecast_temp_c > schwellen.t_s_grenz_c:
+        raise ConfigError(
+            "prognose.min_forecast_temp_c darf nicht groesser als prognose.t_s_grenz_c sein "
+            f"({schwellen.min_forecast_temp_c!r} > {schwellen.t_s_grenz_c!r}) "
+            "-> Clamp-Untergrenze liegt ueber der GELB-Warnschwelle, "
+            "Vorwarnung still deaktiviert (NF-01)"
         )
     # Ganzzahl- und Bereichspruefung fuer min_points/max_readings_limit.
     # isinstance(int) ist bereits in _baue_sektion erledigt (L-3); hier bleiben nur
