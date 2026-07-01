@@ -14,11 +14,12 @@ dokumentierten Vorfälle unverändert grün. TDD; Selbst-Review fand + fixte ein
 **Stand:** Code-Fix **in `main` gemergt** (`fix/dtb-69-frostpunkt-konservativ`, 866 Tests grün, core/utils
 100 % Cov, CI grün). **Doku-Branch `docs/adr-e45-frostpunkt`** (ADR E-45 „umgesetzt" + `Schwellenwerte.md §1`
 + Petzold-Log + LSB-Label-Fix „2×LSB→~2,4×LSB") gepusht/PR-bereit.
-**Offen:** (1) Doku-PR mergen. (2) **E-45-Nummer + Index-Zeile mit Lucas** — im zentralen Logbuch besteht eine
-**E-44-Doppelvergabe**. (3) **LSB-Label doppelt**: `docs/adr-e45-frostpunkt` und der separate
-`docs/flatline-epsilon-label` ändern dieselbe `thresholds.json`-Zeile → einen der beiden bereinigen (Konflikt
-sonst beim zweiten Merge). (4) Ganter korrigiert „2×LSB" in *seinem* Log. (5) **DTB-69** Jira schließen
-(Reifpunkt umgesetzt; messtechnische Kalibrierung = 2-Jahres-Ausblick, kein Blocker — Schwellen PROJEKTFINAL).
+**Erledigt (Session-Ende 01.07.):** Alle Doku-PRs **gemergt** (ADR E-45 + Schwellenwerte §1 + Petzold-Log +
+Save-Session), Code-Fix in `main`, CI grün. LSB-Doppelung **bereinigt** (Fix nur über `docs/flatline-epsilon-label`,
+gemergt). ADR-Offset-Tabelle nach Review-MEDIUM entschärft (Oberflächen- vs. Taupunkt-Achse). Lokale Branches aufgeräumt.
+**Offen (Nicht-Git, keine Doku-Pflicht mehr):** (1) **E-45-Nummer + Index-Zeile mit Lucas** — im zentralen
+Logbuch besteht eine **E-44-Doppelvergabe**. (2) Ganter korrigiert „2×LSB" in *seinem* Log. (3) **DTB-69** Jira
+schließen (Reifpunkt umgesetzt; messtechnische Kalibrierung = 2-Jahres-Ausblick, kein Blocker — Schwellen PROJEKTFINAL).
 —architekt/Petzold
 
 ## 2026-06-30 — G1-Kontextfelder Wind+Feuchte: Live-Snapshot (Contract v1.2) gemergt + Doku konsolidiert (architekt/Petzold)
