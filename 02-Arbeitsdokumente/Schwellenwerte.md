@@ -43,6 +43,16 @@
 | p | Luftdruck (Tendenz) | Sensor | hPa |
 
 > Taupunkt T_d = Magnus-Formel (a=17,62; b=243,12 °C). ΔT ≤ 0 ⇒ Oberfläche unter Taupunkt ⇒ Kondensation/Reif.
+>
+> **Reifpunkt-Korrektur unter 0 °C (umgesetzt, ADR E-45).** Der Wasser-Taupunkt gilt für Sättigung über
+> *flüssigem* Wasser. Für reine **Reif**-Deposition unter 0 °C ist die Sättigung über *Eis* maßgeblich; dort
+> liegt der **Reifpunkt `T_f > T_d`**, der reale Feuchte-Abstand `T_s − T_f` ist also kleiner. Damit der
+> Wasser-Taupunkt das Reifrisiko unter null nicht unterschätzt, nutzt die Kaskade bei `T_s ≤ 0 °C` die
+> **konservativere Referenz `max(T_d, T_f)`** (`T_f` aus dem Taupunkt berechnet, Eis-Magnus a=22,46/b=272,62).
+> Das hebt das Risiko nur an, senkt es nie (kein neuer Miss, kein neues GRÜN). Über 0 °C (Klareis/gefrierender
+> Regen aus unterkühltem Wasser) bleibt der Wasser-Taupunkt die richtige Kurve. **Wire-Felder** `dew_point_c`
+> und `delta_t` bleiben der reine Wasser-Taupunkt bzw. `T_s − T_d` (Contract) — nur die Klassifikation ist
+> frost-korrigiert.
 
 ## 2. Entscheidungskategorien Vereisungsrisiko — **die Kernlogik**
 
