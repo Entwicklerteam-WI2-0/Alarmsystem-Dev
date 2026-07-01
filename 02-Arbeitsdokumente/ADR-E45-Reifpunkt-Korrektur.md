@@ -18,13 +18,21 @@ Unter 0 °C liegt der Reifpunkt über dem Wasser-Taupunkt (`T_f > T_d`), weil di
 über Eis unter der über unterkühltem Wasser liegt. Der reale Reif-Abstand `ΔT_frost = T_s − T_f` ist damit
 **kleiner** als das berechnete `T_s − T_d` — der Wasser-Taupunkt **unterschätzte** das Reifrisiko unter null.
 
-**Unabhängig nachgerechnet** (Eis-Magnus a=22,46 / b=272,62 gegen Wasser-Magnus), Offset `T_f − T_d`:
+**Unabhängig nachgerechnet** (Eis-Magnus a=22,46 / b=272,62 gegen Wasser-Magnus). Der Offset `T_f − T_d`
+ist eine Funktion der Feuchte; **indiziert nach der Oberflächentemperatur bei einsetzendem Reif** (Punkt
+`T_s = T_f`) — diese Achse bestimmt die Risikoklassifikation und den −8 °C-Effekt unten:
 
-| Bahn-Temperatur | Offset |
-|---|---|
-| ≈ 0 °C | ~0 K |
-| −5 °C | ~0,65 K |
-| −10 °C | ~1,25 K |
+| Oberfläche `T_s = T_f` | zugeh. Taupunkt `T_d` | Offset `T_f − T_d` |
+|---|---|---|
+| ≈ 0 °C | ≈ 0 °C | ~0 K |
+| −5 °C | ≈ −5,65 °C | ~0,65 K |
+| −10 °C | ≈ −11,26 °C | ~1,25 K |
+
+> **Anderer Bezugspunkt (zur Reproduzierbarkeit):** Indiziert man nach dem **Taupunkt** `T_d` — wie der
+> Unit-Test `frost_point_from_dew_point(T_d)` —, ergibt sich derselbe Zusammenhang verschoben: `T_d=−10 →
+> T_f=−8,876` (Offset **1,12 K**), `T_d=−5 → T_f=−4,42` (**0,58 K**); die 1,0-K-Marke liegt dann bei
+> `T_d ≈ −9 °C`. Beide Achsen beschreiben dieselbe Physik — die Tabelle nutzt die Oberflächen-Achse, weil
+> die Klassifikation an `T_s` hängt.
 
 **Der reale Effekt:** Weil ROT `ΔT ≤ 0` verlangt, feuerte ROT via ΔT faktisch nur für flüssige
 Kondensation/Glatteis, nicht für reinen Reif. Und unterhalb ≈ −8 °C wuchs der Offset über 1,0 K, sodass
