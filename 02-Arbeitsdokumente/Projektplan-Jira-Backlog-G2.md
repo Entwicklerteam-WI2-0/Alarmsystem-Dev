@@ -520,7 +520,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Story · High · M
 - **Owner (Empfehlung):** Petzold oder Backend-Dev
 - **Abhängig von:** P2.1
-- **Beschreibung:** Implementiere Validierungslogik vor Bewertung: Bereichscheck (T_s -40..+60, RH 0..100), Stale-Detection (letzter Messwert >180s), Fehler-Markierung. Fail-safe: bei Stale/Fehler → risiko_level=GELB (nicht GRÜN).
+- **Beschreibung:** Implementiere Validierungslogik vor Bewertung: Bereichscheck (T_s -40..+60, RH 0..100), Stale-Detection (letzter Messwert > Stale-Timeout, **final 120 s**), Fehler-Markierung. Fail-safe: bei Stale/Fehler → **risk_level=unknown (nie GRÜN)**. *(Snapshot 22.06. nannte >180 s / GELB; final = 120 s / unknown, s. E-31/E-34.)*
 - **DoD:**
   - src/ingest/validation.py mit Funktionen check_plausibility(), detect_stale()
   - Stale-Schwelle konfigurierbar (config/thresholds.json: stale_timeout_s = 120; Snapshot nannte 180)
@@ -820,7 +820,7 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 
 #### AE-01/NF-02: Betriebsmodell und Latenz-Zielwert festlegen (Entscheidungslog E-29 + E-30)  ·  [E-02-Contract]  ·  M2 (bis Di 2026-06-24, Teil von P1.3 Team-Sync)
 - **Owner (Empfehlung):** Lucas Voehringer (Architekt, DRI Entscheidungslogbuch)
-- **Beschreibung:** Trifft zwei offene Entscheidungen: (1) AE-01: Lokal (Raspberry Pi) als T0-Betriebsmodell bestaetigen oder verwerfen. Begruendung ins Entscheidungslogbuch (E-29). (2) NF-02: Messintervall (Ziel: <=60s, laut Schwellenwerte.md §3) und max. Latenz Sensor->Anzeige (Ziel: <5s) als verbindliche Zielwerte festlegen. Diese Zielwerte beeinflussen Stale-Timeout-Config (180s = 3x60s), Testprotokoll-Kriterien und Demo-Setup. Team-Sync P1.3 klaert NF-02 mit G1.
+- **Beschreibung:** Trifft zwei offene Entscheidungen: (1) AE-01: Lokal (Raspberry Pi) als T0-Betriebsmodell bestaetigen oder verwerfen. Begruendung ins Entscheidungslogbuch (E-29). (2) NF-02: Messintervall (Ziel: <=60s, laut Schwellenwerte.md §3) und max. Latenz Sensor->Anzeige (Ziel: <5s) als verbindliche Zielwerte festlegen. Diese Zielwerte beeinflussen die Stale-Timeout-Config (**final 120 s**; die Snapshot-Herleitung „180 s = 3×60 s" ist überholt → Contract-Wert **120 s**, E-31), Testprotokoll-Kriterien und Demo-Setup. Team-Sync P1.3 klaert NF-02 mit G1.
 - **DoD:**
   - Entscheidungslog E-29: AE-01 mit Begruendung abgeschlossen (Lokal/Pi oder Cloud + Warum)
   - Entscheidungslog E-30: NF-02 Zielwert (Messintervall=60s, Latenz<5s) dokumentiert

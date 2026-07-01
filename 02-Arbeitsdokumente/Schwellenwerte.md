@@ -75,7 +75,7 @@ Oberfläche → kein Eis); `T_a`/`RH` fließen nur über den Taupunkt `T_d` in `
 
 **Feuchte nicht bestimmbar (Fail-safe, NF-01):** Lässt sich `ΔT` nicht berechnen (z. B. `RH`/`T_a` defekt →
 `T_d` fehlt), gilt **„Feuchte vorhanden" = wahr** (konservativ): bei `T_s ≤ 0,0 °C` ⇒ mindestens **ORANGE**,
-sonst **GELB** — **nie GRÜN**. Fehlt `T_s` selbst, greift der sichere Zustand aus §3 (stale/defekt → ≥ GELB).
+sonst **GELB** — **nie GRÜN**. Fehlt `T_s` selbst bzw. ist das Reading **stale** oder der **Sensor defekt**, greift der Datenqualitäts-Fail-safe aus §3: **`risk_level=unknown`** (nie GRÜN — bewusst unterschieden vom obigen Feuchte-Fall, der bei frischem Reading ORANGE/GELB bleibt).
 
 **Entprellung/Hysterese (ISA-18.2, gegen Chattering):** Hochstufung nach `On-Delay ≥ 60 s` Bedingung erfüllt.
 Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist **und** für `≥ 5 min` stabil.
@@ -98,7 +98,7 @@ Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist 
 
 **Datenstatus-Schwellen (FA „veraltete Daten erkennen" / „defekte Sensoren erkennen"):**
 - **Veraltet (stale):** letzter Messwert älter als der **Stale-Timeout `120 s`** (NF-02 final/Contract; parametrierbar in `config/`) → Status „veraltet";
-  Risiko **nicht** auf GRÜN herabstufen (fail-safe → mindestens GELB / „unbekannt").
+  Risiko **nicht** auf GRÜN herabstufen (fail-safe → **`risk_level=unknown`**, nie GRÜN).
 - **Sensor defekt**, wenn: Wert außerhalb Messbereich · **Flatline** (keine Änderung > 15 min trotz erwartetem
   Rauschen) · unplausibler **Sprung > 5 °C/min** · NaN/Timeout. → Sensor markieren → Redundanz nutzen oder sicheren Zustand.
 
