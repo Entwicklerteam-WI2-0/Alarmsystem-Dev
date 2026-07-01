@@ -116,7 +116,7 @@ def test_anhaltendes_orange_persistiert_alarm_nach_on_delay():
     # Erste ORANGE-Beobachtung: On-Delay startet, noch kein Alarm.
     run_assessment_cycle(service, generator, _orange_reading(_T0, rid=1), _T0)
     # Vorbedingung pinnen (Symmetrie zu den Negativ-Tests): das Reading MUSS ORANGE ergeben.
-    # Wird _THR durch die G1-Finalwerte rekalibriert (laut CLAUDE.md geplant) und ergibt z. B.
+    # Wird _THR nachjustiert (projektfinale Schwellen, parametrierbar NF-05) und ergibt z. B.
     # GELB, scheitert der Test dann sichtbar am RiskLevel statt mit irrefuehrendem 'len==1'.
     aktuell = assessment_repo.get_latest()
     assert aktuell is not None
@@ -157,7 +157,7 @@ def test_anhaltendes_rot_persistiert_critical_alarm():
     # Vorfall-2-naher ROT (aktive Eisbildung). Erste Beobachtung: On-Delay startet, kein Alarm.
     run_assessment_cycle(service, generator, _rot_reading(_T0, rid=1), _T0)
     # Vorbedingung pinnen (Symmetrie zu den Negativ-Tests): das Reading MUSS ROT ergeben,
-    # sonst wird ein Kalibrier-Drift (G1-Finalwerte) als RiskLevel-Fehler sichtbar statt als
+    # sonst wird ein Kalibrier-Drift (Nachjustierung) als RiskLevel-Fehler sichtbar statt als
     # verwirrender Alarm-Zaehlfehler.
     aktuell = assessment_repo.get_latest()
     assert aktuell is not None

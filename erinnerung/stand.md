@@ -2,6 +2,26 @@
 
 > Stand: 2026-07-01 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
 
+## 2026-07-01 — Reifpunkt-Korrektur unter 0 °C (E-45) gemergt + Entscheidungsdoku (architekt/Petzold)
+**Was:** Externes fachliches Gegen-Review flaggte, dass die Bewertung mit dem **Wasser-Taupunkt** das
+**Reifrisiko unter 0 °C unterschätzt** (Reifpunkt `T_f > T_d`, Offset bis ~1,25 K bei −10 °C → Reif-Beginn
+unter ≈ −8 °C fiel fälschlich auf GELB statt ORANGE). Unabhängig nachgerechnet + bestätigt. Nach der
+Sicherheitsfrage von „accept & document" auf **konservativ fixen** umentschieden: `assess_ice_risk` nutzt bei
+`T_s ≤ 0 °C` die Referenz **`max(T_d, T_f)`** (neue reine `frost_point_from_dew_point`, Eis-Magnus). **Strikt
+einseitig** — hebt Risiko nur an, kann keinen neuen Miss / kein neues GRÜN erzeugen (NF-01/K1). **Wire-Contract
+`dew_point_c`/`delta_t` unverändert** (dew-basiert), nur Klassifikation + Erklärtext frost-korrigiert; beide
+dokumentierten Vorfälle unverändert grün. TDD; Selbst-Review fand + fixte einen NaN-Latent-Crash.
+**Stand:** Code-Fix **in `main` gemergt** (`fix/dtb-69-frostpunkt-konservativ`, 866 Tests grün, core/utils
+100 % Cov, CI grün). **Doku-Branch `docs/adr-e45-frostpunkt`** (ADR E-45 „umgesetzt" + `Schwellenwerte.md §1`
++ Petzold-Log + LSB-Label-Fix „2×LSB→~2,4×LSB") gepusht/PR-bereit.
+**Erledigt (Session-Ende 01.07.):** Alle Doku-PRs **gemergt** (ADR E-45 + Schwellenwerte §1 + Petzold-Log +
+Save-Session), Code-Fix in `main`, CI grün. LSB-Doppelung **bereinigt** (Fix nur über `docs/flatline-epsilon-label`,
+gemergt). ADR-Offset-Tabelle nach Review-MEDIUM entschärft (Oberflächen- vs. Taupunkt-Achse). Lokale Branches aufgeräumt.
+**Offen (Nicht-Git, keine Doku-Pflicht mehr):** (1) **E-45-Nummer + Index-Zeile mit Lucas** — im zentralen
+Logbuch besteht eine **E-44-Doppelvergabe**. (2) Ganter korrigiert „2×LSB" in *seinem* Log. (3) **DTB-69** Jira
+schließen (Reifpunkt umgesetzt; messtechnische Kalibrierung = 2-Jahres-Ausblick, kein Blocker — Schwellen PROJEKTFINAL).
+—architekt/Petzold
+
 ## 2026-07-01 — Testprotokoll (P5.3/DTB-30) erstellt + Backend live komplett verifiziert (architekt)
 **Was:** `04-Source-code/docs/TESTPROTOKOLL.md` als Abnahme-Checkliste angelegt (89 Zeilen, **alle ✅**) +
 Desktop-Übergabeordner `Testprotokoll-G2-2026-06-30\` (Protokoll, **Feature-Liste für die technische

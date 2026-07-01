@@ -24,6 +24,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from src.assessment.core import (
+    DRIVING_FACTOR_HYSTERESE,
+    DRIVING_FACTOR_SENSOR_DATA,
     DRIVING_FACTOR_SENSOR_FAULT,
     DRIVING_FACTOR_STALE,
     MAX_EXPLANATION_LEN,
@@ -198,18 +200,29 @@ class AssessmentService:
                 else reading.surface_temp_c - reading.dew_point_c
             )
             # DTB-66 + Hysterese: driving_factor/explanation erklaeren die ANGEZEIGTE
-            # Stufe (`displayed`), nicht die rohe — sonst widerspricht der Text der
-            # Ampel (z.B. Ampel ORANGE gehalten, aber Text "grenzwertig GELB"). Farbe
-            # und Begruendung bleiben konsistent fuer den Operator. Die rohe Stufe steht
-            # ueber risk_level weiterhin forensisch zur Verfuegung.
-            driving_factor, explanation = derive_explanation(
-                reading.surface_temp_c,
-                reading.dew_point_c,
-                self._thresholds,
-                forecast_surface_temp_c,
-                displayed,
-                delta_t,
-            )
+            # Stufe (`displayed`), nicht die rohe. Die rohe Stufe steht ueber risk_level
+            # weiterhin forensisch zur Verfuegung.
+            if displayed != risk:
+                # Anzeige-Hysterese haelt eine andere Stufe als die rohe Bewertung
+                # (Rueckstufung noch nicht stabil bestaetigt, DTB-27). derive_explanation
+                # mit den ROHEN Messwerten wuerde einen zur displayed-Stufe widerspruechlichen
+                # Text rendern (z. B. "5.0 °C ≤ 0.0 °C" bei displayed=ORANGE, roh=GRUEN).
+                # Deshalb ein expliziter Hysterese-Text ohne widerspruechliche Zahlen (Audit-
+                # Haertung 2026-07-01; DTB-66 Operator-Vertrauen). Ampel/Farbe bleiben korrekt.
+                driving_factor = DRIVING_FACTOR_HYSTERESE
+                explanation = (
+                    f"Stufe {displayed.value.upper()} per Anzeige-Hysterese gehalten "
+                    "(Rueckstufung noch nicht stabil bestaetigt)."
+                )
+            else:
+                driving_factor, explanation = derive_explanation(
+                    reading.surface_temp_c,
+                    reading.dew_point_c,
+                    self._thresholds,
+                    forecast_surface_temp_c,
+                    displayed,
+                    delta_t,
+                )
             assessment = Assessment(
                 ts=now,
                 reading_id=reading.id,
@@ -246,8 +259,10 @@ class AssessmentService:
                     detail={"risk_level": str(assessment.risk_level)},
                 )
             )
-        except Exception as exc:  # noqa: BLE001 - Audit ist best-effort; Zyklus nie crashen
-            logger.error("Audit-Eintrag (assessment_made) fehlgeschlagen: %s", exc)
+        except Exception:  # noqa: BLE001 - Audit ist best-effort; Zyklus nie crashen
+            # logger.exception: Traceback mitloggen — bei einem geschluckten Audit-Fehler
+            # (NF-09-Forensik) ist der Stack die einzige serverseitige Spur der Ursache.
+            logger.exception("Audit-Eintrag (assessment_made) fehlgeschlagen")
 
 
 def build_assessment_current(
@@ -291,17 +306,39 @@ def build_assessment_current(
     stale = is_stale(reading, now, stale_timeout_s)
     sensor_status = reading.status
     fault = sensor_status is SensorStatus.FAULT
+    # Serve-Zeit-Kohaerenz (NF-01): das Assessment MUSS das aktuelle Reading bewertet haben.
+    # Bei partiellem DB-Fehler (Reading gespeichert, Assessment-INSERT gescheitert) oder einem
+    # Race kann get_latest() ein ALTES Assessment (evtl. GRUEN) mit einem FRISCHEREN Reading
+    # paaren -> die gespeicherte Bewertung gilt nicht fuer dieses Reading -> Fail-safe unknown.
+    # Nur pruefen, wenn beide ids vorliegen (Produktion: immer; Test-/Legacy-Assets ohne id
+    # sollen den Kohaerenz-Check nicht faelschlich ausloesen).
+    incoherent = (
+        assessment.reading_id is not None
+        and reading.id is not None
+        and assessment.reading_id != reading.id
+    )
 
-    if stale or fault:
-        # Beide Gruende nennen, wenn beide zutreffen (Observability fuer den
-        # Operator) — sensor_status traegt fault zwar strukturiert, explanation
-        # soll den Fail-safe aber vollstaendig erklaeren.
+    if stale or fault or incoherent:
+        # Alle zutreffenden Gruende nennen (Observability fuer den Operator) — sensor_status
+        # traegt fault zwar strukturiert, explanation soll den Fail-safe vollstaendig erklaeren.
         reason = " + ".join(
-            label for label, active in (("stale", stale), ("sensor fault", fault)) if active
+            label
+            for label, active in (
+                ("stale", stale),
+                ("sensor fault", fault),
+                ("assessment/reading mismatch", incoherent),
+            )
+            if active
         )
         # DTB-66: driving_factor spiegelt den gravierendsten Fail-safe-Grund.
-        # Fault hat Vorrang vor Stale (Sensorfehler ist die Ursache, Stale oft Folge).
-        fail_driving_factor = DRIVING_FACTOR_SENSOR_FAULT if fault else DRIVING_FACTOR_STALE
+        # Fault (Sensorfehler = Ursache) > Stale (oft Folge) > Kohaerenz-Bruch (Datenlage).
+        fail_driving_factor = (
+            DRIVING_FACTOR_SENSOR_FAULT
+            if fault
+            else DRIVING_FACTOR_STALE
+            if stale
+            else DRIVING_FACTOR_SENSOR_DATA
+        )
         return AssessmentCurrent(
             risk_level=RiskLevel.UNKNOWN,
             driving_factor=fail_driving_factor,

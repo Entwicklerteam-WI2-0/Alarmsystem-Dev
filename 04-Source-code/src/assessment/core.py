@@ -22,6 +22,7 @@ als berechneten Input. So bleiben Berechnung und Bewertung getrennt testbar.
 
 import math
 
+from src.assessment.utils import frost_point_from_dew_point
 from src.config.loader import Thresholds
 from src.model.enums import RiskLevel
 
@@ -41,6 +42,10 @@ DRIVING_FACTOR_SENSOR_FAULT = "sensor_fault"
 # Ungueltiger (NaN/inf) Mess-/Taupunktwert: assess_ice_risk liefert UNKNOWN, ohne
 # dass Stale/Fault griff -> eigener Faktor fuer Observability (NF-01-Geist, DTB-66).
 DRIVING_FACTOR_SENSOR_DATA = "sensor_data"
+# Anzeige-Hysterese haelt eine andere Stufe als die rohe Bewertung (displayed != roh, DTB-27):
+# eigener Faktor, damit der Serve-Text die gehaltene Stufe erklaeren kann, ohne die rohen
+# Messwerte in eine widerspruechliche Ungleichung zu rendern (Audit-Haertung #4).
+DRIVING_FACTOR_HYSTERESE = "anzeige_hysterese"
 
 # Fail-fast beim Import: jeder geschlossene driving_factor-Wert MUSS in den
 # Wire-Contract passen (<= 64 Zeichen, AssessmentCurrent). service.py setzt die
@@ -56,12 +61,33 @@ _DRIVING_FACTOR_VALUES = (
     DRIVING_FACTOR_STALE,
     DRIVING_FACTOR_SENSOR_FAULT,
     DRIVING_FACTOR_SENSOR_DATA,
+    DRIVING_FACTOR_HYSTERESE,
 )
 assert all(len(factor) <= MAX_DRIVING_FACTOR_LEN for factor in _DRIVING_FACTOR_VALUES), (
     "DRIVING_FACTOR_*-Konstante ueberschreitet die Wire-Contract-Grenze "
     f"(<= {MAX_DRIVING_FACTOR_LEN} Zeichen): "
     + ", ".join(f"{f!r}={len(f)}" for f in _DRIVING_FACTOR_VALUES)
 )
+
+
+def _humidity_reference_c(
+    surface_temp_c: float, dew_point_c: float, thresholds: Thresholds
+) -> float:
+    """Konservative Feuchte-Referenz fuer den ΔT der Kaskade (E-45).
+
+    Unter dem Gefrierpunkt (T_s <= t_s_gefrierpunkt_c) ist fuer Reif die
+    Saettigung ueber EIS massgeblich -> der Reifpunkt T_f (>= Wasser-Taupunkt T_d)
+    ist die richtige Referenz. `max(T_d, T_f)` garantiert, dass die abgeleitete
+    ΔT = T_s - Referenz nie GROESSER ist als T_s - T_d: die Korrektur hebt das
+    Risiko nur an, senkt es nie (kein neuer Miss, kein neues GRUEN moeglich).
+
+    Oberhalb des Gefrierpunkts (keine Reif-Deposition; fluessige Kondensation /
+    gefrierender Regen -> Klareis) bleibt der Wasser-Taupunkt die korrekte Kurve.
+    `dew_point_c` muss endlich sein (der Aufrufer garantiert das).
+    """
+    if surface_temp_c <= thresholds.vereisung.t_s_gefrierpunkt_c:
+        return max(dew_point_c, frost_point_from_dew_point(dew_point_c))
+    return dew_point_c
 
 
 def assess_ice_risk(
@@ -91,12 +117,14 @@ def assess_ice_risk(
     if dew_point_c is not None and not math.isfinite(dew_point_c):
         return RiskLevel.UNKNOWN
 
-    # Feuchte-Vorhandensein: ΔT = T_s - T_d. Fehlt T_d -> konservativ wahr.
+    # Feuchte-Vorhandensein: ΔT = T_s - Feuchte-Referenz. Fehlt T_d -> konservativ wahr.
+    # Unter 0 °C ist die Referenz der Reifpunkt statt des Wasser-Taupunkts (E-45),
+    # sonst der Taupunkt selbst -> konservativer (nie weniger Risiko).
     if dew_point_c is None:
         humid = True
         delta_t: float | None = None
     else:
-        delta_t = surface_temp_c - dew_point_c
+        delta_t = surface_temp_c - _humidity_reference_c(surface_temp_c, dew_point_c, thresholds)
         humid = delta_t <= v.delta_t_feucht_k
 
     # 1. ROT: gefrorene/feuchte Oberfläche unter/unmittelbar am Taupunkt.
@@ -165,6 +193,15 @@ def derive_explanation(
     """
     v = thresholds.vereisung
     p = thresholds.prognose
+
+    # ΔT im Text auf DERSELBEN Feuchte-Referenz wie die Klassifikation (E-45):
+    # unter 0 °C der Reifpunkt-Abstand, sonst der Taupunkt-Abstand. Sonst widerspraeche
+    # der angezeigte Wert der Stufe (z. B. ORANGE trotz Wasser-ΔT > 1,0). Das Wire-Feld
+    # `delta_t` (service.py) bleibt separat der reine Wasser-Taupunkt-Abstand (Contract).
+    # isfinite-Guard: bei NaN/inf-Taupunkt (assess_ice_risk -> UNKNOWN) wuerde
+    # frost_point_from_dew_point einen ValueError werfen -> hier nicht recomputen.
+    if dew_point_c is not None and math.isfinite(dew_point_c):
+        delta_t = surface_temp_c - _humidity_reference_c(surface_temp_c, dew_point_c, thresholds)
 
     if risk_level is RiskLevel.RED:
         dt_str = f"{delta_t:.1f} K" if delta_t is not None else "–"

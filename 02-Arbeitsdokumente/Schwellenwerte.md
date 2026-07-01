@@ -3,8 +3,24 @@
 > Konkrete, projektspezifische **Schwellenwerte** für die Vereisungsbewertung sowie Mess-/Betriebs-
 > parameter je **funktionaler (FA)** und **nicht-funktionaler (NFA)** Anforderung.
 > Zweck: **Kalibrier-/Konfigurationsvorgabe** für die Sensorik (Gruppe 1) und die Bewertungslogik
-> (Gruppe 2). Alle Werte sind **Startwerte und parametrierbar (NF-05)** — am Testdatensatz (v. a. den
+> (Gruppe 2). Alle Werte sind **parametrierbar (NF-05)** — am Testdatensatz (v. a. den
 > zwei dokumentierten Vorfällen) nachzujustieren und im Entscheidungslogbuch zu begründen.
+
+> **⚠️ STATUS PROJEKTFINAL (Stand 2026-07-01) — für Abgabe/Demo maßgeblich.**
+> Die messtechnisch validierten Finalwerte durch Gruppe 1 (Sensorik) sind für diesen Prototyp
+> **nicht mehr zu erwarten**: ein Sensor ist defekt, ein weiterer ließ sich vom Studierenden-Team
+> nicht zuverlässig kalibrieren. Die hier eingetragenen Werte werden daher **projektfinal übernommen** —
+> aus den Sensor-Datenblättern (DS18B20 · BME280 · STEMMA Soil) abgeleitet und an **Standort-Realdaten
+> (ANR ≈ Coburg)** plausibilisiert. Sie bleiben **vollständig parametrierbar (NF-05)** und ohne
+> Code-Änderung nachjustierbar. Die endgültige messtechnische Kalibrierung ist Teil der auf **~2 Jahre**
+> angelegten Weiterentwicklung (Physik/Biologie/Ingenieurwesen) → **Ausblick, kein offener Blocker**.
+>
+> **Sensor-Ist-Zustand im Prototyp:** `surface_temp_c` (T_s, DS18B20) **intakt** — die primäre
+> Entscheidungsgröße trägt. `air_temp_c` liefert **unzuverlässige** Werte · `humidity_pct` + `pressure_hpa`
+> (Kombisensor BME280) sind **stale** · `wind_speed_ms` ist **stale** (Feldkalibrierung nicht durchführbar).
+> **Konsequenz (NF-01, gewollt):** Bei stale/unbestimmbarer Feuchte gibt das System `risk_level=unknown`
+> aus — **nie GRÜN**. Die Live-Demo nutzt daher die **G1-Sim** mit Standort-Realdaten; die finale
+> Behandlung der Ausfälle (Sim vs. feste Referenzwerte) ist noch offen (Architekten-Entscheidung).
 
 ## 0. Leitprinzip (aus den zwei dokumentierten Vorfällen)
 
@@ -27,6 +43,16 @@
 | p | Luftdruck (Tendenz) | Sensor | hPa |
 
 > Taupunkt T_d = Magnus-Formel (a=17,62; b=243,12 °C). ΔT ≤ 0 ⇒ Oberfläche unter Taupunkt ⇒ Kondensation/Reif.
+>
+> **Reifpunkt-Korrektur unter 0 °C (umgesetzt, ADR E-45).** Der Wasser-Taupunkt gilt für Sättigung über
+> *flüssigem* Wasser. Für reine **Reif**-Deposition unter 0 °C ist die Sättigung über *Eis* maßgeblich; dort
+> liegt der **Reifpunkt `T_f > T_d`**, der reale Feuchte-Abstand `T_s − T_f` ist also kleiner. Damit der
+> Wasser-Taupunkt das Reifrisiko unter null nicht unterschätzt, nutzt die Kaskade bei `T_s ≤ 0 °C` die
+> **konservativere Referenz `max(T_d, T_f)`** (`T_f` aus dem Taupunkt berechnet, Eis-Magnus a=22,46/b=272,62).
+> Das hebt das Risiko nur an, senkt es nie (kein neuer Miss, kein neues GRÜN). Über 0 °C (Klareis/gefrierender
+> Regen aus unterkühltem Wasser) bleibt der Wasser-Taupunkt die richtige Kurve. **Wire-Felder** `dew_point_c`
+> und `delta_t` bleiben der reine Wasser-Taupunkt bzw. `T_s − T_d` (Contract) — nur die Klassifikation ist
+> frost-korrigiert.
 
 ## 2. Entscheidungskategorien Vereisungsrisiko — **die Kernlogik**
 
@@ -59,7 +85,7 @@ Oberfläche → kein Eis); `T_a`/`RH` fließen nur über den Taupunkt `T_d` in `
 
 **Feuchte nicht bestimmbar (Fail-safe, NF-01):** Lässt sich `ΔT` nicht berechnen (z. B. `RH`/`T_a` defekt →
 `T_d` fehlt), gilt **„Feuchte vorhanden" = wahr** (konservativ): bei `T_s ≤ 0,0 °C` ⇒ mindestens **ORANGE**,
-sonst **GELB** — **nie GRÜN**. Fehlt `T_s` selbst, greift der sichere Zustand aus §3 (stale/defekt → ≥ GELB).
+sonst **GELB** — **nie GRÜN**. Fehlt `T_s` selbst bzw. ist das Reading **stale** oder der **Sensor defekt**, greift der Datenqualitäts-Fail-safe aus §3: **`risk_level=unknown`** (nie GRÜN — bewusst unterschieden vom obigen Feuchte-Fall, der bei frischem Reading ORANGE/GELB bleibt).
 
 **Entprellung/Hysterese (ISA-18.2, gegen Chattering):** Hochstufung nach `On-Delay ≥ 60 s` Bedingung erfüllt.
 Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist **und** für `≥ 5 min` stabil.
@@ -82,7 +108,7 @@ Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist 
 
 **Datenstatus-Schwellen (FA „veraltete Daten erkennen" / „defekte Sensoren erkennen"):**
 - **Veraltet (stale):** letzter Messwert älter als der **Stale-Timeout `120 s`** (NF-02 final/Contract; parametrierbar in `config/`) → Status „veraltet";
-  Risiko **nicht** auf GRÜN herabstufen (fail-safe → mindestens GELB / „unbekannt").
+  Risiko **nicht** auf GRÜN herabstufen (fail-safe → **`risk_level=unknown`**, nie GRÜN).
 - **Sensor defekt**, wenn: Wert außerhalb Messbereich · **Flatline** (keine Änderung > 15 min trotz erwartetem
   Rauschen) · unplausibler **Sprung > 5 °C/min** · NaN/Timeout. → Sensor markieren → Redundanz nutzen oder sicheren Zustand.
 
@@ -134,6 +160,8 @@ Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist 
 
 ---
 
-> **Übergabe an Sensorik (Gruppe 1):** §3 ist die Kalibriervorgabe — entscheidend ist die
-> **Oberflächentemperatur mit ±0,3 °C um 0 °C** (Eispunkt-Kalibrierung) sowie die Platzierung an einer
-> repräsentativen, fahrzeug-robusten Stelle. Feuchte/Druck liefert idealerweise **ein** Kombisensor (BME280/SHT31).
+> **Kalibriervorgabe §3 — im Prototyp aus Datenblatt übernommen:** Die Genauigkeits-Ziele (v. a.
+> **Oberflächentemperatur ±0,3 °C um 0 °C**, Eispunkt-Kalibrierung) bleiben die fachliche Sollvorgabe,
+> konnten im Prototyp aber **nicht mehr feldkalibriert** werden (Sensor defekt / nicht kalibrierbar) →
+> Werte aus den Datenblättern (DS18B20 · BME280/SHT31 · STEMMA Soil) übernommen. Die eigentliche
+> messtechnische Kalibrierung bleibt Aufgabe der 2-Jahres-Weiterentwicklung (Ausblick).

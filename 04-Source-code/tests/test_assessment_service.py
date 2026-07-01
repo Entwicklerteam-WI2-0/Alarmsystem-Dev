@@ -246,6 +246,33 @@ def test_current_fresh_ok_keeps_assessment(thresholds):
     assert cur.assessed_at == assessment.ts
 
 
+def test_current_incoherent_reading_id_forces_unknown(thresholds):
+    """Serve-Zeit-Kohaerenz (NF-01, Audit-Haertung 2026-07-01): passt das gespeicherte
+    Assessment nicht zum aktuellen Reading (verschiedene reading_id, z. B. partieller
+    DB-Fehler: Reading gespeichert, Assessment-INSERT gescheitert), wird das alte (evtl.
+    GRUENE) Assessment NICHT ausgeliefert -> unknown, Messwerte genullt."""
+    now = datetime.now(UTC)
+    reading = _reading(now, surface=2.0, dew=0.0, rid=2)  # frisch, ok, id=2
+    assessment = Assessment(
+        ts=now,
+        reading_id=1,  # bewertet ein ANDERES (aelteres) Reading
+        risk_level=RiskLevel.GREEN,
+        surface_temp_c=2.0,
+        dew_point_c=0.0,
+        delta_t=2.0,
+        humidity_pct=80.0,
+    )
+
+    cur = build_assessment_current(
+        assessment, reading, now, thresholds.datenqualitaet.stale_timeout_s
+    )
+
+    assert cur.risk_level is RiskLevel.UNKNOWN
+    assert cur.surface_temp_c is None
+    assert cur.is_stale is False  # nicht stale, nur inkohaerent
+    assert "mismatch" in cur.explanation
+
+
 def test_current_serves_forecast_and_nulls_it_on_stale(thresholds):
     # DTB-33/FA-06 (additiv v1, revidiert E-36): die persistierte 30-min-Prognose wird
     # im Wire-Response ausgeliefert (OK-Pfad) und bei stale genullt (NF-01: keine

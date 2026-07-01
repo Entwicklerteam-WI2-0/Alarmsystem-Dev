@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -50,7 +51,11 @@ from src.api.exceptions import (
     RuntimeNotReadyError,
 )
 from src.api.responses import (
+    BAD_REQUEST_CODE,
+    METHOD_NOT_ALLOWED_CODE,
     NO_STORE_HEADERS,
+    NOT_FOUND_CODE,
+    error_response,
     service_unavailable,
     unauthorized,
 )
@@ -244,10 +249,14 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
         try:
             # poller.poll() ist blockierend (httpx.get) -> in einen Thread auslagern,
             # damit der Event-Loop frei bleibt.
-            # now VOR dem Poll: haelt assessed_at nahe an measured_at (Audit-Konsistenz)
-            # und definiert das 30-min-Prognosefenster ab Zyklusbeginn.
-            now = datetime.now(UTC)
             reading = await asyncio.to_thread(runtime.poller.poll)
+            # now NACH dem Poll (Audit-Haertung 2026-07-01): der Poll blockiert bis ~10 s.
+            # now VOR dem Poll wuerde ein grenzwertig-stales Reading (z. B. measured_at 115 s alt
+            # bei Timeout 120 s) assess-zeitlich noch als frisch werten -> ein GRUEN-Assessment
+            # landet im DB-/Audit-Stand, obwohl die Serve-Zeit es (frisches now) korrekt als
+            # stale/unknown ausliefert. now nach dem Poll = reale Bewertungszeit; assessed_at
+            # bleibt konsistent und das Prognosefenster schliesst measured_at (<= now) korrekt ein.
+            now = datetime.now(UTC)
             # Monotonie erzwingen (Hysterese-Vorbedingung): eine NTP-Rueckwaertskorrektur der
             # Wall-Clock darf die On-Delay-Akkumulation nicht zuruecksetzen (sonst einmaliger
             # Under-Alarm). Nicht-fallende Zeit an die Engines weiterreichen; Clock-Skew fuer
@@ -262,11 +271,11 @@ async def run_scheduler(runtime: Runtime, interval_s: float) -> None:
             last_now = now
             # DTB-33 (FA-06): 30-min-T_s-Prognose aus der Historie -> GELB-Vorwarnung.
             # Bruecke liest die Zeitreihe; Fail-safe: None bei fehlendem Reading/DB-Fehler.
-            # Clock-Skew-Implikation: `now` wird VOR dem Poll gesetzt. Laeuft die G1-Uhr G2 vor,
-            # liegt das soeben gepollte measured_at > now und faellt aus dem Trendfenster
-            # (trend.py verwirft `> now`). Das ist fail-safe (None senkt nie ab), kann aber bei
-            # duenner Datenlage die Prognose still degradieren. Bewusst NICHT `now = max(now,
-            # measured_at)`: das braeche die oben erzwungene Monotonie-Invariante der Hysterese.
+            # Clock-Skew-Implikation: `now` wird NACH dem Poll gesetzt (s. o.) -> das soeben
+            # gepollte measured_at liegt normal <= now und bleibt im Trendfenster. Laeuft die
+            # G1-Uhr G2 dennoch vor (measured_at > now), verwirft trend.py `> now` fail-safe
+            # (None senkt nie ab). Bewusst NICHT `now = max(now, measured_at)`: das braeche die
+            # oben erzwungene Monotonie-Invariante der Hysterese.
             # Prognose-Isolation (NF-01): die 30-min-Vorwarnung ist eine NICHT-kritische
             # Hilfsfunktion. compute_forecast_for_cycle ist bereits fail-safe (None bei
             # RepositoryError/fehlendem Reading), aber ein hier nicht erwarteter Fehler
@@ -522,6 +531,24 @@ async def _request_validation_error_handler(
         content=Error(code="BAD_REQUEST", message=message).model_dump(),
         headers=NO_STORE_HEADERS,
     )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception_handler(request: Request, exc: StarletteHTTPException) -> Response:
+    """Routing-404/405 auf der /v1-Naht contract-konform als `Error {code, message}` (Contract D)
+    statt FastAPIs Default-`{detail}`. Nicht-/v1-Pfade (SPA-Fallback/Frontend) behalten das
+    Starlette-Default-Verhalten -> das SPA-Client-Routing bleibt unberuehrt.
+    """
+    if request.url.path.startswith("/v1"):
+        if exc.status_code == 404:
+            return error_response(404, NOT_FOUND_CODE, "Ressource nicht gefunden.")
+        if exc.status_code == 405:
+            return error_response(
+                405, METHOD_NOT_ALLOWED_CODE, "Methode fuer diese Ressource nicht erlaubt."
+            )
+        # Andere HTTPExceptions auf /v1 (selten): generisch, ohne interne Details (Contract D).
+        return error_response(exc.status_code, BAD_REQUEST_CODE, "Anfrage nicht verarbeitbar.")
+    return await http_exception_handler(request, exc)
 
 
 @app.get(

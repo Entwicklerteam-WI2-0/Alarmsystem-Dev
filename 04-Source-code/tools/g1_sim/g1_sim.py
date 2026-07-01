@@ -32,6 +32,11 @@ _DEFAULT_STATE: dict = {
     "air_temp_c": 16.0,
     "humidity_pct": 40.0,
     "pressure_hpa": 1013.0,
+    # G1-Kontextfelder (Contract v1.1, ADR-E44): kalibrierte Oberflaechenfeuchte + Wind.
+    # Optional/nullable, nicht bewertungsrelevant -- nur Speicher/Anzeige. Der Sim reicht
+    # sie in current() durch (analog pressure_hpa), damit das Frontend sie anzeigt statt "-".
+    "surface_moisture_pct": 20.0,
+    "wind_speed_ms": 2.0,
     "status": "ok",
     "age_s": 0,
     "health_down": False,
@@ -128,6 +133,11 @@ def current() -> dict:
         "sensor_id": state["sensor_id"],
         "measured_at": measured.isoformat().replace("+00:00", "Z"),
         "pressure_hpa": state.get("pressure_hpa"),
+        # G1-Kontextfelder (Contract v1.1, ADR-E44) mitliefern -- optional/nullable,
+        # G2 nimmt sie als reinen Kontext (nicht bewertungsrelevant). Ohne diese Zeilen
+        # blieben sie im Frontend leer ("-"), obwohl Modell/Contract sie kennen.
+        "surface_moisture_pct": state.get("surface_moisture_pct"),
+        "wind_speed_ms": state.get("wind_speed_ms"),
         "status": state["status"],
     }
     for field in ("surface_temp_c", "air_temp_c", "humidity_pct"):

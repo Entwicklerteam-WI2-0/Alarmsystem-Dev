@@ -5,7 +5,7 @@
 > **NAHT-UMSTELLUNG (E-31, Pull):** Die G1→G2-Ingest-Richtung ist **Pull**, kein Push mehr. G1 stellt `GET /current` (EIN Snapshot aller aktuellen Messwerte + EIN gemeinsamer `measured_at`, UTC) und `GET /health` bereit; G2 baut einen **Poller/HTTP-Client** (Intervall ≤ 60 s), der validiert + persistiert. **Kein** von G2 gehosteter `POST /readings`-Endpoint mehr. Die G2→G3-Serving-Endpoints (`GET /assessment/current`, `GET /readings`, `GET /alarms`) **bleiben** unverändert.
 > **3-FAKTOR-BEWERTUNG (E-32):** Niederschlag ist **komplett gestrichen** (Customer-Scope) — als Bewertungsfaktor UND als Datenfeld `precip_type`. Bewertet wird über **Oberflächentemp `T_s` + Taupunkt-Abstand `ΔT` + Oberflächenfeuchte (via `ΔT`)**.
 > **FEUCHTE-FIX (E-33):** „Feuchte vorhanden" := `ΔT (T_s − T_d) ≤ 1,0 °C` — an die **Oberfläche** gebunden. Der frühere Luft-RH-Trigger (`RH ≥ 90 %`) ist **komplett entfernt**, weil Luftfeuchte nichts über die Oberfläche aussagt (Vorfall 1: 92 % Luftfeuchte bei trockener Oberfläche → ΔT > 1,0 → **GELB**, nicht ORANGE). `RH` (= **Luftfeuchte**) fließt nur **indirekt** über den Taupunkt `T_d` (Magnus) in `ΔT` ein; `humidity_pct` im G1-`GET /current`-Snapshot ist Luftfeuchte und reiner T_d-Input — **kein** separater Oberflächenfeuchte-Wert nötig.
-> **DUMMY-SCHWELLEN:** Alle Schwellenwerte bleiben Platzhalter bis G1 liefert — ausnahmslos über `config/` parametrierbar, NIE hardcoden.
+> **SCHWELLEN PROJEKTFINAL (Update 2026-07-01):** Die Schwellen sind für den Prototyp final — G1-Finalwerte nicht mehr zu erwarten (Sensor defekt/nicht kalibrierbar), aus Datenblatt/Standort plausibilisiert; weiter ausnahmslos über `config/` parametrierbar, NIE hardcoden. (Die „ausstehend/Blocker"-Vermerke unten sind historischer Snapshot-Stand 22.06.)
 > **Owner = Empfehlung** (skill-bewusst), kein harter Assignee. Tasks gehören in den Backlog; Owner-Hinweis je Task unten.
 > **⚠️ STACK-KORREKTUR (nach 2026-06-22 · E-29/E-31/E-35):** Dieses Dokument ist ein Snapshot vom 22.06. Der ursprüngliche T0-Stack **SQLite + HTTP-POST** ist **überholt**. Verbindlich: **DB = MySQL/MariaDB** (GL-Vorgabe E-29) über **rohes PyMySQL** + handgeschriebenes `schema.sql` (kein ORM/Alembic, native, kein Docker — E-35); **Ingest = Pull-Poller** gegen G1 `GET /current` (E-31), kein `POST /readings`. SQLite-Nennungen unten sind als **MySQL/MariaDB** zu lesen; rein historische Audit-Begründungen (E-08-Snapshot) bleiben als Zeitdokument stehen.
 
@@ -520,10 +520,10 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 - **Typ / Prio / Schätzung:** Story · High · M
 - **Owner (Empfehlung):** Petzold oder Backend-Dev
 - **Abhängig von:** P2.1
-- **Beschreibung:** Implementiere Validierungslogik vor Bewertung: Bereichscheck (T_s -40..+60, RH 0..100), Stale-Detection (letzter Messwert >180s), Fehler-Markierung. Fail-safe: bei Stale/Fehler → risiko_level=GELB (nicht GRÜN).
+- **Beschreibung:** Implementiere Validierungslogik vor Bewertung: Bereichscheck (T_s -40..+60, RH 0..100), Stale-Detection (letzter Messwert > Stale-Timeout, **final 120 s**), Fehler-Markierung. Fail-safe: bei Stale/Fehler → **risk_level=unknown (nie GRÜN)**. *(Snapshot 22.06. nannte >180 s / GELB; final = 120 s / unknown, s. E-31/E-34.)*
 - **DoD:**
   - src/ingest/validation.py mit Funktionen check_plausibility(), detect_stale()
-  - Stale-Schwelle konfigurierbar (config/thresholds.json: stale_timeout_s = 180)
+  - Stale-Schwelle konfigurierbar (config/thresholds.json: stale_timeout_s = 120; Snapshot nannte 180)
   - Unit-Tests: test_plausibility_out_of_range(), test_stale_detection()
 
 #### P3.2: Sensor-Defekt-Erkennung (Flatline/Sprung/Timeout)
@@ -820,11 +820,11 @@ _M2 ist KRITISCH GEFÄHRDET. Realistische Machbarkeit unter 50%. Der kritische P
 
 #### AE-01/NF-02: Betriebsmodell und Latenz-Zielwert festlegen (Entscheidungslog E-29 + E-30)  ·  [E-02-Contract]  ·  M2 (bis Di 2026-06-24, Teil von P1.3 Team-Sync)
 - **Owner (Empfehlung):** Lucas Voehringer (Architekt, DRI Entscheidungslogbuch)
-- **Beschreibung:** Trifft zwei offene Entscheidungen: (1) AE-01: Lokal (Raspberry Pi) als T0-Betriebsmodell bestaetigen oder verwerfen. Begruendung ins Entscheidungslogbuch (E-29). (2) NF-02: Messintervall (Ziel: <=60s, laut Schwellenwerte.md §3) und max. Latenz Sensor->Anzeige (Ziel: <5s) als verbindliche Zielwerte festlegen. Diese Zielwerte beeinflussen Stale-Timeout-Config (180s = 3x60s), Testprotokoll-Kriterien und Demo-Setup. Team-Sync P1.3 klaert NF-02 mit G1.
+- **Beschreibung:** Trifft zwei offene Entscheidungen: (1) AE-01: Lokal (Raspberry Pi) als T0-Betriebsmodell bestaetigen oder verwerfen. Begruendung ins Entscheidungslogbuch (E-29). (2) NF-02: Messintervall (Ziel: <=60s, laut Schwellenwerte.md §3) und max. Latenz Sensor->Anzeige (Ziel: <5s) als verbindliche Zielwerte festlegen. Diese Zielwerte beeinflussen die Stale-Timeout-Config (**final 120 s**; die Snapshot-Herleitung „180 s = 3×60 s" ist überholt → Contract-Wert **120 s**, E-31), Testprotokoll-Kriterien und Demo-Setup. Team-Sync P1.3 klaert NF-02 mit G1.
 - **DoD:**
   - Entscheidungslog E-29: AE-01 mit Begruendung abgeschlossen (Lokal/Pi oder Cloud + Warum)
   - Entscheidungslog E-30: NF-02 Zielwert (Messintervall=60s, Latenz<5s) dokumentiert
-  - config/thresholds.json: stale_timeout_s=180 als abgeleiteter Wert aus NF-02 kommentiert
+  - config/thresholds.json: stale_timeout_s=120 final (Contract/NF-02; Snapshot nannte 180)
   - Team-Sync-Protokoll bestaetigt NF-02-Zielwert mit G1
 
 #### Individual-Reflexionen: Entscheidungs-Owner-Zuweisung (40% Pruefungsleistung)  ·  [E-06-Integration]  ·  M3 (Zuweisung JETZT, Abgabe Ende Woche 3)

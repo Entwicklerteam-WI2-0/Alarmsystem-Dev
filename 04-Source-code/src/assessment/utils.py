@@ -11,6 +11,13 @@ import math
 MAGNUS_A = 17.62
 MAGNUS_B = 243.12
 
+# Magnus-Koeffizienten fuer die Saettigung ueber EIS (Sonntag/WMO): fuer den
+# Reifpunkt T_f unter 0 °C (E-45). Der Saettigungsdampfdruck ueber Eis liegt unter
+# dem ueber unterkuehltem Wasser -> der Reifpunkt liegt UEBER dem Wasser-Taupunkt
+# (T_f >= T_d fuer T_d <= 0), der Feuchte-Abstand ΔT_Reif ist also kleiner.
+MAGNUS_A_ICE = 22.46
+MAGNUS_B_ICE = 272.62
+
 # Relative Feuchte ist physikalisch in (0, 100] %: bei 0 % ist der Taupunkt
 # undefiniert (ln(0) -> -inf), ueber 100 % uebersaettigt und nicht plausibel.
 MIN_HUMIDITY_PCT = 0.0
@@ -72,3 +79,40 @@ def calculate_dew_point(air_temp_c: float, humidity_pct: float) -> float:
         MAGNUS_B + air_temp_c
     )
     return (MAGNUS_B * gamma) / (MAGNUS_A - gamma)
+
+
+def frost_point_from_dew_point(dew_point_c: float) -> float:
+    """Berechnet den Reifpunkt T_f (°C) aus dem Wasser-Taupunkt T_d (E-45).
+
+    T_d und T_f gehoeren zum GLEICHEN Dampfdruck e, nur bezueglich anderer
+    Saettigungskurven (Wasser bzw. Eis). Aus der Wasserkurve laesst sich der
+    dimensionslose Term gamma = ln(e/e0) direkt aus T_d gewinnen und in die
+    Eiskurve invertieren -- ohne T_a/RH erneut zu brauchen:
+
+        gamma = a_w * T_d / (b_w + T_d)          # aus e_water(T_d)
+        T_f   = gamma * b_i / (a_i - gamma)      # Inversion von e_ice(T_f)=e
+
+    Unter 0 °C gilt T_f >= T_d (Saettigung ueber Eis < ueber Wasser), bei 0 °C
+    fallen beide Kurven zusammen (T_f = T_d = 0). Der Aufrufer nutzt daher unter
+    dem Gefrierpunkt max(T_d, T_f) als konservative Feuchte-Referenz (nie weniger
+    Risiko als der Wasser-Taupunkt).
+
+    Args:
+        dew_point_c: Wasser-Taupunkt T_d in °C (endlich).
+
+    Returns:
+        Reifpunkt T_f in °C.
+
+    Raises:
+        ValueError: wenn dew_point_c nicht endlich ist (NaN/inf) -- kein stilles
+            Ersatzergebnis (Fail-safe NF-01, konsistent mit calculate_dew_point).
+
+    Hinweis: Fuer jeden von calculate_dew_point erzeugten (endlichen, > -b_w)
+    Taupunkt ist gamma < a_w < a_i, der Nenner (a_i - gamma) also stets positiv
+    -- kein Pol im real erreichbaren Wertebereich.
+    """
+    if not math.isfinite(dew_point_c):
+        raise ValueError(f"dew_point_c muss endlich sein, erhalten: {dew_point_c}")
+
+    gamma = (MAGNUS_A * dew_point_c) / (MAGNUS_B + dew_point_c)
+    return (gamma * MAGNUS_B_ICE) / (MAGNUS_A_ICE - gamma)

@@ -176,7 +176,7 @@ Definiert in **`02-Arbeitsdokumente/Schwellenwerte.md §2`**:
 
 > **3-Faktor-Bewertung (E-32):** Die Logik nutzt **drei** Faktoren — Oberflächentemperatur `T_s`,
 > Taupunkt-Abstand `ΔT` und Luftfeuchte `RH`. **Niederschlag ist als Faktor gestrichen** (Customer-Scope).
-> Schwellen (0 °C / 1,0 °C) sind **Dummy-Startwerte**, parametrierbar (NF-05) — finale Werte von G1.
+> Schwellen (0 °C / 1,0 °C) sind **projektfinal**, parametrierbar (NF-05) — G1-Finalwerte nicht mehr zu erwarten (Sensor defekt/nicht kalibrierbar), aus Datenblatt + Standort-Realdaten (ANR ≈ Coburg) plausibilisiert.
 >
 > **Feuchte = Oberflächennähe zum Taupunkt (E-33):** „Feuchte vorhanden" := `ΔT (T_s − T_d) ≤ 1,0 °C`,
 > also an die **Oberfläche** gebunden (Nähe zum Taupunkt = reale Kondensations-/Reifgefahr). Der frühere
@@ -224,7 +224,7 @@ Der Check ist in pre-commit und der GitHub-Action `lint-config` verdrahtet.
 - Mess-Schwellen je Größe (T_s ±0,3 °C, RH ±3 %, etc.) — Vorgabe für Sensorik (G1)
 - Entprellung/Hysterese gegen Chattering
 - Parameter je FA/NF
-- **Startwerte (alles parametrierbar)** — keine Hardcodes
+- **Projektfinal (alles parametrierbar, NF-05)** — keine Hardcodes; G1-Finalwerte nicht mehr zu erwarten → aus Datenblatt/Standort plausibilisiert (Ausblick: 2-Jahres-Kalibrierung)
 
 ### Backend-Architektur & Code-Struktur
 **Datei:** `02-Arbeitsdokumente/Backend-Konzept.md`  
@@ -425,7 +425,7 @@ tests/
 ### Engpässe
 1. **API/Datenmodell-Naht (P1)** — verzögert G1 + G3 gleichzeitig
 2. **Bewertungslogik (P2.4)** — Kernmodul, hohe Test-Anforderung
-3. **Sensorik-Kalibrierung (G1)** — ohne ±0,3 °C um 0 °C funktioniert nichts
+3. **Sensorik-Kalibrierung (G1)** — im Prototyp nicht mehr feldkalibrierbar (Sensor defekt); Werte aus Datenblatt/Standort übernommen, Fail-safe fängt reale Ausfälle ab (Ausblick: 2-Jahres-Kalibrierung)
 
 ### Mitigation
 - **P1 auf stärkste Köpfe legen** (Architekt + 1–2 Backend-Devs)
