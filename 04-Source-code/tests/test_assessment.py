@@ -10,6 +10,7 @@ Hardcodes verwendet.
 import pytest
 
 from src.assessment import assess_ice_risk
+from src.assessment.core import derive_explanation
 from src.config.loader import load_thresholds
 from src.model.enums import RiskLevel
 
@@ -223,3 +224,16 @@ def test_reifkorrektur_erzeugt_keinen_fehlalarm_bei_trockener_kaelte(thresholds)
     T_s=-10, T_d=-25: auch ΔT_Reif ≫ 1,0 -> nicht feucht -> GELB.
     """
     assert assess_ice_risk(-10.0, -25.0, thresholds) == RiskLevel.YELLOW
+
+
+def test_derive_explanation_mit_nan_taupunkt_crasht_nicht(thresholds):
+    """Selbst-Review E-45: die Reifpunkt-Referenz im Erklaertext darf bei einem
+    NICHT-endlichen (NaN/inf) Taupunkt nicht crashen. assess_ice_risk liefert
+    dann UNKNOWN; derive_explanation muss robust sensor_data zurueckgeben, nicht
+    ueber frost_point_from_dew_point(NaN) einen ValueError werfen.
+    """
+    factor, expl = derive_explanation(
+        -1.0, float("nan"), thresholds, None, RiskLevel.UNKNOWN, float("nan")
+    )
+    assert factor == "sensor_data"
+    assert expl is not None

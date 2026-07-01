@@ -193,7 +193,9 @@ def derive_explanation(
     # unter 0 °C der Reifpunkt-Abstand, sonst der Taupunkt-Abstand. Sonst widerspraeche
     # der angezeigte Wert der Stufe (z. B. ORANGE trotz Wasser-ΔT > 1,0). Das Wire-Feld
     # `delta_t` (service.py) bleibt separat der reine Wasser-Taupunkt-Abstand (Contract).
-    if dew_point_c is not None:
+    # isfinite-Guard: bei NaN/inf-Taupunkt (assess_ice_risk -> UNKNOWN) wuerde
+    # frost_point_from_dew_point einen ValueError werfen -> hier nicht recomputen.
+    if dew_point_c is not None and math.isfinite(dew_point_c):
         delta_t = surface_temp_c - _humidity_reference_c(surface_temp_c, dew_point_c, thresholds)
 
     if risk_level is RiskLevel.RED:
