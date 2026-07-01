@@ -199,18 +199,29 @@ class AssessmentService:
                 else reading.surface_temp_c - reading.dew_point_c
             )
             # DTB-66 + Hysterese: driving_factor/explanation erklaeren die ANGEZEIGTE
-            # Stufe (`displayed`), nicht die rohe — sonst widerspricht der Text der
-            # Ampel (z.B. Ampel ORANGE gehalten, aber Text "grenzwertig GELB"). Farbe
-            # und Begruendung bleiben konsistent fuer den Operator. Die rohe Stufe steht
-            # ueber risk_level weiterhin forensisch zur Verfuegung.
-            driving_factor, explanation = derive_explanation(
-                reading.surface_temp_c,
-                reading.dew_point_c,
-                self._thresholds,
-                forecast_surface_temp_c,
-                displayed,
-                delta_t,
-            )
+            # Stufe (`displayed`), nicht die rohe. Die rohe Stufe steht ueber risk_level
+            # weiterhin forensisch zur Verfuegung.
+            if displayed != risk:
+                # Anzeige-Hysterese haelt eine andere Stufe als die rohe Bewertung
+                # (Rueckstufung noch nicht stabil bestaetigt, DTB-27). derive_explanation
+                # mit den ROHEN Messwerten wuerde einen zur displayed-Stufe widerspruechlichen
+                # Text rendern (z. B. "5.0 °C ≤ 0.0 °C" bei displayed=ORANGE, roh=GRUEN).
+                # Deshalb ein expliziter Hysterese-Text ohne widerspruechliche Zahlen (Audit-
+                # Haertung 2026-07-01; DTB-66 Operator-Vertrauen). Ampel/Farbe bleiben korrekt.
+                driving_factor = "anzeige_hysterese"
+                explanation = (
+                    f"Stufe {displayed.value.upper()} per Anzeige-Hysterese gehalten "
+                    "(Rueckstufung noch nicht stabil bestaetigt)."
+                )
+            else:
+                driving_factor, explanation = derive_explanation(
+                    reading.surface_temp_c,
+                    reading.dew_point_c,
+                    self._thresholds,
+                    forecast_surface_temp_c,
+                    displayed,
+                    delta_t,
+                )
             assessment = Assessment(
                 ts=now,
                 reading_id=reading.id,
