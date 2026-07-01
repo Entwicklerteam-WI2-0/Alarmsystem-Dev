@@ -96,9 +96,9 @@ def test_delta_t_deadband_rot_haelt_dann_orange():
     # Wasser-Taupunkt-Abstand -> die T_d-Werte sind entsprechend gewaehlt.
     engine = _engine()
     _bewerte(engine, -1.0, -1.0, _T0)  # ROT (ΔT_Reif≈-0,12 ≤ 0)
-    # T_d=-1.5: roh ORANGE (ΔT_Reif≈0,32), aber gegen verschobene Kondensation (0,5) noch ROT -> halten.
+    # T_d=-1.5: ΔT_Reif≈0,32 -> roh ORANGE, verschobene Kondensation 0,5 haelt ROT.
     assert _bewerte(engine, -1.0, -1.5, _T0 + timedelta(seconds=30)) is RiskLevel.RED
-    # T_d=-2.0: ΔT_Reif≈0,76 > verschobene Kondensation 0,5 -> Deadband frei -> Timer; nach 300 s -> ORANGE.
+    # T_d=-2.0: ΔT_Reif≈0,76 > Deadband-Kondensation 0,5 -> frei -> Timer -> ORANGE (300 s).
     _bewerte(engine, -1.0, -2.0, _T0 + timedelta(seconds=40))  # Timer
     assert _bewerte(engine, -1.0, -2.0, _T0 + timedelta(seconds=340)) is RiskLevel.ORANGE
 
