@@ -261,6 +261,110 @@ curl -s -w "\n[%{http_code}]\n" http://127.0.0.1:8000/v1/health   # -> {"status"
 
 ---
 
+## 11. Retention & SD-Karten-Schutz (Dauerbetrieb) — DTB-57
+
+> **Warum:** Der Scheduler schreibt im Dauerbetrieb alle 30 s eine `reading`-Zeile
+> (~2.880/Tag/Sensor). Diese Dauerschreiblast nutzt **SD-Karten** ab. Zwei unabhängige
+> Hebel — beide empfohlen, der erste ist Pflicht im echten Dauerbetrieb.
+
+### 11a) MariaDB-Datenverzeichnis von der SD-Karte auf SSD/USB
+
+Das `datadir` (Standard `/var/lib/mysql`) gehört bei Dauerbetrieb auf ein **stabiles Medium**
+(externe SSD/USB-Stick), nicht auf die SD-Karte.
+
+```bash
+sudo systemctl stop mariadb
+sudo rsync -aHAX /var/lib/mysql/ /mnt/ssd/mysql/      # Datenbestand 1:1 umziehen
+sudo chown -R mysql:mysql /mnt/ssd/mysql             # Eigentümer mysql, sonst Start scheitert
+# datadir umbiegen: in /etc/mysql/mariadb.conf.d/50-server.cnf
+#   datadir = /mnt/ssd/mysql
+sudo nano /etc/mysql/mariadb.conf.d/50-server.cnf
+sudo systemctl start mariadb
+systemctl status mariadb --no-pager                  # active (running)?
+```
+
+> ⚠️ **Caveats:** (1) SSD/USB muss **automatisch beim Boot gemountet** sein (`/etc/fstab`),
+> sonst findet MariaDB nach einem Reboot ihr `datadir` nicht. (2) Auf manchen Images schränkt
+> **AppArmor** den MariaDB-Pfad ein → ggf. AppArmor-Profil/Alias anpassen oder (Test) deaktivieren.
+> (3) Erst nach erfolgreichem Start und Verbindungs-Check (Schritt 7) das alte `/var/lib/mysql` löschen.
+
+### 11b) Retention: alte `reading`-Zeilen automatisch löschen
+
+Das Wartungsskript `tools/purge_readings.py` löscht **nur** `reading`-Zeilen, die älter als
+N Tage sind. **`audit_log` bleibt völlig unangetastet** (NF-09 append-only). `assessment`-
+Snapshots bleiben inhaltlich erhalten; nur `assessment.reading_id` wird per `ON DELETE SET NULL`
+auf NULL gesetzt (gewollt — der Snapshot ist self-contained/audit-fest, DTB-12). Sicherungen: Default ist **Dry-Run** (zählt nur), echtes Löschen braucht
+`--apply` **und** `--confirm <DB-Name>`, gelöscht wird in Batches (kein langer Lock).
+
+```bash
+# Trockenlauf (zeigt nur, wie viele Zeilen älter als 30 Tage sind — löscht nichts):
+.venv/bin/python -m tools.purge_readings --days 30
+# Echtes Löschen (Ziel-DB-Name muss bestätigt werden):
+.venv/bin/python -m tools.purge_readings --days 30 --apply --confirm alarmsystem
+```
+
+**Dedizierter Wartungs-User (Least-Privilege):** Der App-User `alarm` ist bewusst
+append-only (kein DELETE, NF-09) — er **darf und soll** das nicht löschen können. Für die
+Retention deshalb einen eigenen User mit DELETE **nur auf `reading`** anlegen (als DB-Admin):
+
+```sql
+CREATE USER IF NOT EXISTS 'alarm_maint'@'127.0.0.1' IDENTIFIED BY 'WARTUNGS_PASSWORT';
+GRANT SELECT, DELETE ON `alarmsystem`.`reading` TO 'alarm_maint'@'127.0.0.1';
+-- SELECT für den Dry-Run-COUNT, DELETE nur auf reading. KEIN Recht auf audit_log/assessment.
+```
+
+**Automatisierung per systemd-Timer (wöchentlich):** Eine eigene Env-Datei mit den
+Wartungs-Credentials. ⚠️ **Bewusst AUSSERHALB des Repos** (z. B. `/etc/alarmsystem/maint.env`),
+damit sie gar nicht erst versehentlich ins Git geraten kann — nur für root les-/schreibbar:
+```bash
+sudo install -d -m 750 /etc/alarmsystem
+sudo tee /etc/alarmsystem/maint.env >/dev/null <<'EOF'
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_NAME=alarmsystem
+DB_USER=alarm_maint
+DB_PASSWORD=WARTUNGS_PASSWORT
+EOF
+sudo chmod 600 /etc/alarmsystem/maint.env     # nur root darf das Passwort lesen
+```
+`/etc/systemd/system/alarm-purge.service`:
+```ini
+[Unit]
+Description=Retention: alte reading-Zeilen löschen (DTB-57)
+After=mariadb.service
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/Alarmsystem-Dev/04-Source-code
+EnvironmentFile=/etc/alarmsystem/maint.env
+ExecStart=/home/pi/Alarmsystem-Dev/04-Source-code/.venv/bin/python -m tools.purge_readings --days 30 --apply --confirm alarmsystem
+```
+`/etc/systemd/system/alarm-purge.timer`:
+```ini
+[Unit]
+Description=Wöchentliche reading-Retention (DTB-57)
+
+[Timer]
+OnCalendar=Sun 04:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now alarm-purge.timer
+systemctl list-timers alarm-purge.timer --no-pager     # nächste Ausführung prüfen
+sudo systemctl start alarm-purge.service               # Einmal-Testlauf (optional)
+journalctl -u alarm-purge.service --no-pager           # Ergebnis (gelöschte Zeilen)
+```
+
+> **Aufbewahrungsdauer (`--days`) frei wählbar** — 30 Tage ist nur ein sinnvoller Default.
+> Vor dem ersten scharfen Lauf immer erst den **Dry-Run** ansehen.
+
+---
+
 ## Sicherheits-Regeln (kurz)
 
 - **DB nur lokal** (`127.0.0.1`) — MariaDB nicht auf `0.0.0.0` öffnen. (NF-07)
@@ -300,6 +404,8 @@ curl -s -w "\n[%{http_code}]\n" http://127.0.0.1:8000/v1/health   # -> {"status"
 | Rechte einspielen | `sed "s/'alarm'@'[^']*'/'alarm'@'127.0.0.1'/g" migrations/grants.sql \| sudo mariadb --force alarmsystem` |
 | Rechte prüfen | `sudo mariadb -e "SHOW GRANTS FOR 'alarm'@'127.0.0.1';"` |
 | DB-Backup (Dauerbetrieb) | `mysqldump alarmsystem > backup_$(date +%F).sql` |
+| Retention Dry-Run (zählt) | `.venv/bin/python -m tools.purge_readings --days 30` |
+| Retention scharf (löscht) | `.venv/bin/python -m tools.purge_readings --days 30 --apply --confirm alarmsystem` |
 | Backend starten | `.venv/bin/python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --env-file .env` |
 | Health-Check | `curl http://127.0.0.1:8000/v1/health` |
 

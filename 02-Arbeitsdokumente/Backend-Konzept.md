@@ -144,6 +144,9 @@ Betriebspunkt (Fehlalarm ↔ Auslassung, K1) **parametrierbar**, Default sicherh
 - **Langsamere Tests** ggü. SQLite-in-memory → Bewertungslogik bleibt DB-frei testbar; Persistenz-Tests
   laufen gegen den Container.
 - **Ressourcen/SD-Karte auf dem Pi** bei Dauerschreiblast (Sensordaten) → Retention/Rotation einplanen.
+  *(Umgesetzt DTB-57: Wartungsskript `04-Source-code/tools/purge_readings.py` löscht alte `reading`-Zeilen
+  nach N Tagen, Dry-Run/Limit/Confirm-Guard; `audit_log` bleibt append-only. Betrieb + datadir-auf-SSD:
+  `Pi-Setup.md` §11.)*
 
 **Schwerwiegende technische Gegenargumente gegen MySQL?** Für die erwartete Last eines Regional-Flughafen-
 Prototyps (moderate Sensordatenrate): **keine** — MySQL/MariaDB ist dafür ausreichend dimensioniert. Die
