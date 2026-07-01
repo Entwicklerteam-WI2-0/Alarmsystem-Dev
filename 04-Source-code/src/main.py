@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -50,7 +51,11 @@ from src.api.exceptions import (
     RuntimeNotReadyError,
 )
 from src.api.responses import (
+    BAD_REQUEST_CODE,
+    METHOD_NOT_ALLOWED_CODE,
     NO_STORE_HEADERS,
+    NOT_FOUND_CODE,
+    error_response,
     service_unavailable,
     unauthorized,
 )
@@ -522,6 +527,24 @@ async def _request_validation_error_handler(
         content=Error(code="BAD_REQUEST", message=message).model_dump(),
         headers=NO_STORE_HEADERS,
     )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_exception_handler(request: Request, exc: StarletteHTTPException) -> Response:
+    """Routing-404/405 auf der /v1-Naht contract-konform als `Error {code, message}` (Contract D)
+    statt FastAPIs Default-`{detail}`. Nicht-/v1-Pfade (SPA-Fallback/Frontend) behalten das
+    Starlette-Default-Verhalten -> das SPA-Client-Routing bleibt unberuehrt.
+    """
+    if request.url.path.startswith("/v1"):
+        if exc.status_code == 404:
+            return error_response(404, NOT_FOUND_CODE, "Ressource nicht gefunden.")
+        if exc.status_code == 405:
+            return error_response(
+                405, METHOD_NOT_ALLOWED_CODE, "Methode fuer diese Ressource nicht erlaubt."
+            )
+        # Andere HTTPExceptions auf /v1 (selten): generisch, ohne interne Details (Contract D).
+        return error_response(exc.status_code, BAD_REQUEST_CODE, "Anfrage nicht verarbeitbar.")
+    return await http_exception_handler(request, exc)
 
 
 @app.get(
