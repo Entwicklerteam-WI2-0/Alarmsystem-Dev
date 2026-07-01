@@ -1,6 +1,25 @@
 # Aktueller Stand
 
-> Stand: 2026-06-30 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+> Stand: 2026-07-01 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+
+## 2026-07-01 — Reifpunkt-Korrektur unter 0 °C (E-45) gemergt + Entscheidungsdoku (architekt/Petzold)
+**Was:** Externes fachliches Gegen-Review flaggte, dass die Bewertung mit dem **Wasser-Taupunkt** das
+**Reifrisiko unter 0 °C unterschätzt** (Reifpunkt `T_f > T_d`, Offset bis ~1,25 K bei −10 °C → Reif-Beginn
+unter ≈ −8 °C fiel fälschlich auf GELB statt ORANGE). Unabhängig nachgerechnet + bestätigt. Nach der
+Sicherheitsfrage von „accept & document" auf **konservativ fixen** umentschieden: `assess_ice_risk` nutzt bei
+`T_s ≤ 0 °C` die Referenz **`max(T_d, T_f)`** (neue reine `frost_point_from_dew_point`, Eis-Magnus). **Strikt
+einseitig** — hebt Risiko nur an, kann keinen neuen Miss / kein neues GRÜN erzeugen (NF-01/K1). **Wire-Contract
+`dew_point_c`/`delta_t` unverändert** (dew-basiert), nur Klassifikation + Erklärtext frost-korrigiert; beide
+dokumentierten Vorfälle unverändert grün. TDD; Selbst-Review fand + fixte einen NaN-Latent-Crash.
+**Stand:** Code-Fix **in `main` gemergt** (`fix/dtb-69-frostpunkt-konservativ`, 866 Tests grün, core/utils
+100 % Cov, CI grün). **Doku-Branch `docs/adr-e45-frostpunkt`** (ADR E-45 „umgesetzt" + `Schwellenwerte.md §1`
++ Petzold-Log + LSB-Label-Fix „2×LSB→~2,4×LSB") gepusht/PR-bereit.
+**Offen:** (1) Doku-PR mergen. (2) **E-45-Nummer + Index-Zeile mit Lucas** — im zentralen Logbuch besteht eine
+**E-44-Doppelvergabe**. (3) **LSB-Label doppelt**: `docs/adr-e45-frostpunkt` und der separate
+`docs/flatline-epsilon-label` ändern dieselbe `thresholds.json`-Zeile → einen der beiden bereinigen (Konflikt
+sonst beim zweiten Merge). (4) Ganter korrigiert „2×LSB" in *seinem* Log. (5) **DTB-69** Jira schließen
+(Reifpunkt umgesetzt; messtechnische Kalibrierung = 2-Jahres-Ausblick, kein Blocker — Schwellen PROJEKTFINAL).
+—architekt/Petzold
 
 ## 2026-06-30 — G1-Kontextfelder Wind+Feuchte: Live-Snapshot (Contract v1.2) gemergt + Doku konsolidiert (architekt/Petzold)
 **Was:** `GET /v1/assessment/current` liefert jetzt additiv `wind_speed_ms` + `surface_moisture_pct` aus dem
