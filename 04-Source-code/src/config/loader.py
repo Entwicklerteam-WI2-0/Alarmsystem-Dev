@@ -32,8 +32,8 @@ _MAX_ZEIT_S = 86_400.0
 _MAX_UNDERSHOOT_C = 10.0
 
 # Plausibler Bereich für eine Oberflächentemperatur-Schwelle (°C). Generös bemessen
-# (NF-05: finale Werte von G1), fängt aber grobe Fehlkonfigurationen ab, die die Prognose-
-# Vorwarnung still abschalten würden (FA-06).
+# (NF-05: projektfinale Werte, parametrierbar), fängt aber grobe Fehlkonfigurationen ab,
+# die die Prognose-Vorwarnung still abschalten würden (FA-06).
 _MIN_PLAUSIBLE_SURFACE_TEMP_C = -50.0
 _MAX_PLAUSIBLE_SURFACE_TEMP_C = 50.0
 
@@ -449,8 +449,8 @@ def _validate_prognose(schwellen: PrognoseSchwellen) -> None:
 def _validate_datenqualitaet(schwellen: DatenqualitaetSchwellen) -> None:
     """Prueft, dass Datenqualitaet-Schwellen keine ungueltigen Grenzwerte enthalten.
 
-    Die Obergrenzen sind bewusst grosszuegig gewaehlt (NF-05: finale Werte kommen
-    von G1), verhindern aber offensichtliche Fehlkonfigurationen, die Stale-
+    Die Obergrenzen sind bewusst grosszuegig gewaehlt (NF-05: projektfinale Werte,
+    parametrierbar), verhindern aber offensichtliche Fehlkonfigurationen, die Stale-
     oder Sprung-Erkennung praktisch abschalten wuerden (NF-01).
     """
     _require_positive(schwellen.stale_timeout_s, "datenqualitaet.stale_timeout_s", upper=86_400)
@@ -475,7 +475,7 @@ def _validate_datenqualitaet(schwellen: DatenqualitaetSchwellen) -> None:
 def _validate_plausibilitaet(schwellen: PlausibilitaetSchwellen) -> None:
     """Prueft, dass Plausibilitaets-Grenzen sinnvoll sind (min < max + Absolutgrenzen).
 
-    Die konkreten Werte kommen von G1 (Sensorik); hier wird nur verhindert,
+    Die konkreten Werte sind projektfinal + parametrierbar (NF-05); hier wird nur verhindert,
     dass aus Versehen Min/Max vertauscht werden oder physikalisch unsinnige
     Werte konfiguriert werden und die Validierung dadurch permanent alles
     verwirft (NF-01).

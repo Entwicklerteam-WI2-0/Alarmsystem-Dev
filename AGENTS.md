@@ -97,23 +97,24 @@ Repo `Alarmsystem-Dev` (Remote `Entwicklerteam-WI2-0/Alarmsystem-Dev`, Branch `m
 > *Randbedingungsmetriken* → *Schwellenwerte*; *Architektur-Stack-Konzept* (zu breit) → *Backend-Konzept* (G2-scoped).
 > Ursprüngliche PDFs liegen nicht mehr vor; maßgeblich sind die `.txt`-Extrakte.
 
-> [!WARNING]
-> **DUMMY-SCHWELLENWERTE — Nachlieferung durch G1 ausstehend**
+> [!IMPORTANT]
+> **SCHWELLENWERTE PROJEKTFINAL (Stand 2026-07-01)**
 >
 > Die in `Schwellenwerte.md` eingetragenen numerischen Grenzwerte (Temperaturen, Taupunkt-Abstände,
-> Feuchte-Grenzen usw.) sind **vorläufige Platzhalterwerte**, die auf Basis der Hintergrundgeschichte
-> eigenständig abgeschätzt wurden. Sie wurden **nicht messtechnisch validiert** und sind **nicht
-> abgestimmt** mit Gruppe 1 (Sensorik & Daten).
+> Feuchte-Grenzen usw.) sind für diesen Prototyp **projektfinal**. Messtechnisch validierte
+> G1-Finalwerte sind **nicht mehr zu erwarten** — ein Sensor ist defekt, ein weiterer ließ sich vom
+> Studierenden-Team nicht zuverlässig kalibrieren.
 >
-> **Was noch aussteht:** Gruppe 1 liefert die echten, sensorspezifisch kalibrierten Schwellenwerte
-> nach. Diese ersetzen die Dummies vollständig.
+> **Herkunft der Werte:** aus den Sensor-Datenblättern (DS18B20 · BME280 · STEMMA Soil) abgeleitet und
+> an Standort-Realdaten (ANR ≈ Coburg) plausibilisiert. Die endgültige messtechnische Kalibrierung ist
+> Teil der ~2-Jahres-Weiterentwicklung (Ausblick), **kein offener Blocker**.
 >
-> **Konsequenz für Feature-Entwicklung (PFLICHT):**
+> **Konsequenz für Feature-Entwicklung (PFLICHT bleibt):**
 > - Schwellenwerte dürfen **niemals hardgecoded** werden.
-> - Alle Grenzwerte **ausnahmslos** über `config/` parametrierbar halten.
-> - Code, Tests und Konfigurationen müssen den **Austausch durch G1-Finalwerte ohne Refactoring** ermöglichen.
-> - Bis zur Finallieferung von G1: Dummies nur als **Testfixtures/Entwicklungsstände** behandeln,
->   nicht als fachlich korrekte Werte.
+> - Alle Grenzwerte **ausnahmslos** über `config/` parametrierbar halten (NF-05).
+> - Code, Tests und Konfigurationen müssen eine spätere **Nachkalibrierung ohne Refactoring** ermöglichen.
+> - Sensor-Ist-Zustand: `surface_temp_c` intakt; `air_temp_c` unzuverlässig; `humidity_pct`/`pressure_hpa`/
+>   `wind_speed_ms` stale → Fail-safe (NF-01) greift korrekt (nie GRÜN); Live-Demo via G1-Sim.
 
 ### API-/Datenmodell-Vertrag (Mandatory Read)
 
@@ -219,8 +220,8 @@ Stack final (FastAPI + PyMySQL + MariaDB, E-35). Befehle:
 - **Hybride Methodik:** G1/G2 Wasserfall, G3 Scrum; Schnittstellen früh definieren.
 - **Sicherheitskritikalität:** jede Entscheidung gegen Fehlalarme/nicht erkannte Vereisung abwägen.
 - **Vereisungslogik/Schwellenwerte ausschließlich aus `Schwellenwerte.md`** — nichts dazuerfinden; Defaults parametrierbar.
-  **⚠️ Schwellen in `Schwellenwerte.md` sind DUMMIES** — finale Werte kommen von G1 (Sensorik), noch ausstehend.
-  Beim Feature-Bau: **keine Hardcodierung**, alle Schwellen über `config/` austauschbar halten.
+  **⚠️ Schwellen in `Schwellenwerte.md` sind PROJEKTFINAL** — G1-Finalwerte nicht mehr zu erwarten (Sensor defekt/nicht kalibrierbar; aus Datenblatt/Standort plausibilisiert).
+  Beim Feature-Bau: **keine Hardcodierung**, alle Schwellen über `config/` parametrierbar halten (spätere Nachkalibrierung ohne Refactoring).
 - Funktionale Vorgehensweise: **vom Kernpfad (T0) ausgehen**, Features als T1–T3 aufsetzen (s. `Backend-Konzept.md` / `Tasks+Projektplan.md`).
 - Abweichungen vom Plan als **[DEVIATION]** markieren und begründen.
 
@@ -269,10 +270,10 @@ UI-/Alarm-/Integrationskonzept (G3), Entscheidungslogbuch (laufend), Testprotoko
 - **Anforderungs-/Konzeptdokumente beachten:** `Usecase-quick.md`, `Schwellenwerte.md`, `Backend-Konzept.md`
   (§9 API-Vertrag), `Tasks+Projektplan.md`, `teamstruktur-final.md` (gemeinsame IDs FA/NF/RB/AE/K, Tasks P#.#).
 - **Belegbasiert arbeiten:** keine erfundenen Schwellenwerte/Quellen; Unsicheres kennzeichnen; bei Bedarf nachfragen.
-- **⚠️ DUMMY-SCHWELLEN beachten:** Alle Zahlenwerte in `Schwellenwerte.md` sind aktuell **Platzhalterwerte**.
-  Die verbindlichen Grenzwerte werden noch von **Gruppe 1 (Sensorik & Daten)** nachgeliefert.
+- **⚠️ SCHWELLEN PROJEKTFINAL:** Alle Zahlenwerte in `Schwellenwerte.md` sind für den Prototyp **final**
+  (G1-Finalwerte nicht mehr zu erwarten — Sensor defekt/nicht kalibrierbar; aus Datenblatt/Standort plausibilisiert).
   Beim Implementieren von Features und Tests gilt: **Schwellen nie hardcoden — immer über `config/`
-  parametrierbar**, damit G1-Finalwerte ohne Code-Änderungen einspielbar sind.
+  parametrierbar**, damit eine spätere Nachkalibrierung ohne Code-Änderungen möglich ist.
 - **Session-Recap:** Claude Code → `/ck:resume`; Kimi → aktuellste `recap_YYYY-MM-DD.md` unter `C:\Users\LucasVöhringer\.kimi\.recap\`.
 - **Deutsch verwenden.** Sicherheitskritisches Ingenieursprojekt, kein normales Webprojekt.
 - Abweichungen als **[DEVIATION]** markieren und begründen.

@@ -3,8 +3,24 @@
 > Konkrete, projektspezifische **Schwellenwerte** für die Vereisungsbewertung sowie Mess-/Betriebs-
 > parameter je **funktionaler (FA)** und **nicht-funktionaler (NFA)** Anforderung.
 > Zweck: **Kalibrier-/Konfigurationsvorgabe** für die Sensorik (Gruppe 1) und die Bewertungslogik
-> (Gruppe 2). Alle Werte sind **Startwerte und parametrierbar (NF-05)** — am Testdatensatz (v. a. den
+> (Gruppe 2). Alle Werte sind **parametrierbar (NF-05)** — am Testdatensatz (v. a. den
 > zwei dokumentierten Vorfällen) nachzujustieren und im Entscheidungslogbuch zu begründen.
+
+> **⚠️ STATUS PROJEKTFINAL (Stand 2026-07-01) — für Abgabe/Demo maßgeblich.**
+> Die messtechnisch validierten Finalwerte durch Gruppe 1 (Sensorik) sind für diesen Prototyp
+> **nicht mehr zu erwarten**: ein Sensor ist defekt, ein weiterer ließ sich vom Studierenden-Team
+> nicht zuverlässig kalibrieren. Die hier eingetragenen Werte werden daher **projektfinal übernommen** —
+> aus den Sensor-Datenblättern (DS18B20 · BME280 · STEMMA Soil) abgeleitet und an **Standort-Realdaten
+> (ANR ≈ Coburg)** plausibilisiert. Sie bleiben **vollständig parametrierbar (NF-05)** und ohne
+> Code-Änderung nachjustierbar. Die endgültige messtechnische Kalibrierung ist Teil der auf **~2 Jahre**
+> angelegten Weiterentwicklung (Physik/Biologie/Ingenieurwesen) → **Ausblick, kein offener Blocker**.
+>
+> **Sensor-Ist-Zustand im Prototyp:** `surface_temp_c` (T_s, DS18B20) **intakt** — die primäre
+> Entscheidungsgröße trägt. `air_temp_c` liefert **unzuverlässige** Werte · `humidity_pct` + `pressure_hpa`
+> (Kombisensor BME280) sind **stale** · `wind_speed_ms` ist **stale** (Feldkalibrierung nicht durchführbar).
+> **Konsequenz (NF-01, gewollt):** Bei stale/unbestimmbarer Feuchte gibt das System `risk_level=unknown`
+> aus — **nie GRÜN**. Die Live-Demo nutzt daher die **G1-Sim** mit Standort-Realdaten; die finale
+> Behandlung der Ausfälle (Sim vs. feste Referenzwerte) ist noch offen (Architekten-Entscheidung).
 
 ## 0. Leitprinzip (aus den zwei dokumentierten Vorfällen)
 
@@ -134,6 +150,8 @@ Rückstufung erst, wenn die untere Schwelle um `0,5 °C` **unterschritten** ist 
 
 ---
 
-> **Übergabe an Sensorik (Gruppe 1):** §3 ist die Kalibriervorgabe — entscheidend ist die
-> **Oberflächentemperatur mit ±0,3 °C um 0 °C** (Eispunkt-Kalibrierung) sowie die Platzierung an einer
-> repräsentativen, fahrzeug-robusten Stelle. Feuchte/Druck liefert idealerweise **ein** Kombisensor (BME280/SHT31).
+> **Kalibriervorgabe §3 — im Prototyp aus Datenblatt übernommen:** Die Genauigkeits-Ziele (v. a.
+> **Oberflächentemperatur ±0,3 °C um 0 °C**, Eispunkt-Kalibrierung) bleiben die fachliche Sollvorgabe,
+> konnten im Prototyp aber **nicht mehr feldkalibriert** werden (Sensor defekt / nicht kalibrierbar) →
+> Werte aus den Datenblättern (DS18B20 · BME280/SHT31 · STEMMA Soil) übernommen. Die eigentliche
+> messtechnische Kalibrierung bleibt Aufgabe der 2-Jahres-Weiterentwicklung (Ausblick).

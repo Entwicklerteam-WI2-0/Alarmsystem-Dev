@@ -3,8 +3,8 @@
 Scannt die fachlichen Schwellen-Module auf numerische Literale in Vergleichen
 (z. B. `t_s > 1.0`, `delta_t <= 1.0`). Vereisungs-/Prognose-Schwellen MÜSSEN über
 `config/` geladen werden (DTB-15 `src/config/loader.py`) und dürfen nicht im Code
-stehen — sonst lassen sich die noch ausstehenden G1-Finalwerte nicht ohne
-Code-Änderung austauschen.
+stehen — sonst lassen sich die projektfinalen Schwellen nicht ohne
+Code-Änderung nachjustieren (Parametrierbarkeit, NF-05).
 
 Erkennung über den **AST** (`ast.Compare` mit Zahl-Literal-Operand sowie indirekte
 Vergleichs-Calls `operator.gt`/`math.isclose`) statt über Regex auf Textzeilen. Das
