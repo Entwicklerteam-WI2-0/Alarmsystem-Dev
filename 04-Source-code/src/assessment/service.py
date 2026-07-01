@@ -24,6 +24,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from src.assessment.core import (
+    DRIVING_FACTOR_HYSTERESE,
     DRIVING_FACTOR_SENSOR_DATA,
     DRIVING_FACTOR_SENSOR_FAULT,
     DRIVING_FACTOR_STALE,
@@ -208,7 +209,7 @@ class AssessmentService:
                 # Text rendern (z. B. "5.0 °C ≤ 0.0 °C" bei displayed=ORANGE, roh=GRUEN).
                 # Deshalb ein expliziter Hysterese-Text ohne widerspruechliche Zahlen (Audit-
                 # Haertung 2026-07-01; DTB-66 Operator-Vertrauen). Ampel/Farbe bleiben korrekt.
-                driving_factor = "anzeige_hysterese"
+                driving_factor = DRIVING_FACTOR_HYSTERESE
                 explanation = (
                     f"Stufe {displayed.value.upper()} per Anzeige-Hysterese gehalten "
                     "(Rueckstufung noch nicht stabil bestaetigt)."
