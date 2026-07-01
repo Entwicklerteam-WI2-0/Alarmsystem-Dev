@@ -86,6 +86,7 @@ fi
 # den Simulator als Waiseprozess auf :9101 zuruecklassen.
 BACKEND_PID=""
 SIM_PID=""
+FEED_PID=""
 
 log "Starte G1-Simulator auf :$SIM_PORT  (State: $SIM_STATE)"
 # g1_sim.py muss existieren (fehlendes Unterverzeichnis z.B. nach unvollstaendigem Clone
@@ -97,8 +98,9 @@ SIM_PID=$!
 # Backend + Sim beim Beenden (Strg+C / exit / Crash) sauber stoppen.
 # ${VAR:-} schuetzt gegen den Fall, dass die Trap feuert, bevor eine PID gesetzt ist.
 cleanup() {
-    log "Stoppe G2-Backend (PID ${BACKEND_PID:-unset}) und G1-Simulator (PID ${SIM_PID:-unset})."
+    log "Stoppe Backend (PID ${BACKEND_PID:-unset}), Feed (PID ${FEED_PID:-unset}), Sim (PID ${SIM_PID:-unset})."
     [[ -n "${BACKEND_PID:-}" ]] && kill "$BACKEND_PID" 2>/dev/null || true
+    [[ -n "${FEED_PID:-}" ]] && kill "$FEED_PID" 2>/dev/null || true
     [[ -n "${SIM_PID:-}" ]] && kill "$SIM_PID" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
@@ -109,6 +111,15 @@ log "G2-Backend startet auf :$BACKEND_PORT  (DB_HOST=${DB_HOST:-?}, G1=$G1_BASE_
 log "Pruefen:           curl http://127.0.0.1:$BACKEND_PORT/v1/assessment/current"
 log "Szenario wechseln: $SIM_STATE editieren (Sim liest pro Request neu; Sprung-Guard beachten)."
 cd "$SRC_ROOT"
+
+# Living-Feed starten: haelt g1_state.json lebendig (Dither > flatline_epsilon), sonst
+# kippt der Flatline-Fail-safe (NF-01) den statischen Sim-Feed nach 15 min auf unknown.
+# Szenario live umschalten: tools/g1_sim/scenario.txt schreiben (green|yellow|orange|
+# red|stale|fault|down). Cross-platform derselbe Feed wie unter Windows (Variante A).
+log "Starte Living-Feed (g1_feed --mode live, Szenario: $SIM_DIR/scenario.txt)"
+"$VENV_PY" -m tools.demo.g1_feed --mode live --state "$SIM_STATE" --scenario "$SIM_DIR/scenario.txt" &
+FEED_PID=$!
+
 # WICHTIG: KEIN exec -- exec wuerde die bash-Shell durch uvicorn ersetzen und die
 # EXIT-Trap zerstoeren. Bei uvicorn-Crash/SIGTERM wuerde g1_sim.py als Waiseprozess
 # auf :9101 bleiben. Stattdessen: im Hintergrund starten, PID merken, warten -- so

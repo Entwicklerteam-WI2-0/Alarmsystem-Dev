@@ -128,6 +128,20 @@ Steht dort dagegen `threshold_set nicht lesbar` (WARNING), ist das ein echtes Ze
 - **GELB** — `T_s ≤ 1 °C` **oder** 30-min-Prognose droht Gefrieren.
 - **GRÜN** — sonst (nur bei bekanntem Taupunkt; sonst Fail-safe → mind. GELB).
 
+### 3b) Bequemer: der rampende Living-Feed (umgeht den Sprung-Guard)
+
+Statt `g1_state.json` von Hand zu editieren (und wegen des Sprung-Guards DB+Backend zurückzusetzen)
+kann der **Living-Feed** `tools/demo/g1_feed.py` die Ampelkaskade **sanft** durchfahren — er rampt
+≤ 1 °C/Tick (kein Sprung-Guard-Trip) und dithert (kein Flatline-Fail-safe). Szenario live über
+`scenario.txt` (`green|yellow|orange|red|stale|fault|down`) oder Auto-Tagesgang `--profile winter`:
+
+```powershell
+python -m tools.demo.g1_feed --mode live --scenario tools/g1_sim/scenario.txt
+```
+
+Für eine **vollständige, self-checkende Feature-Vorführung** (alle Features in ~10–12 min, `PASS`/`FAIL`
+je Schritt) siehe [`demo-showcase.md`](demo-showcase.md).
+
 ---
 
 ## 4. Stolperfallen (wichtig fürs Testen)

@@ -66,6 +66,10 @@ Erwartete G2-Reaktion (gegen aktuelle `config/thresholds.json`):
 > **Sprung-Guard beachten:** G2 verwirft Readings mit > 5 °C/min Sprung als Sensordefekt. Für einen
 > sauberen GRÜN↔ROT-Wechsel G2 jeweils frisch starten (oder die Temperatur in kleinen Schritten ändern).
 
+> **Bequemer:** Der Living-Feed [`../demo/g1_feed.py`](../demo/g1_feed.py) rampt automatisch in kleinen
+> Schritten (kein Sprung-Guard-Trip) und dithert (kein Flatline-Fail-safe) — Szenario über `scenario.txt`
+> oder `--profile winter`. Vollständige, self-checkende Feature-Vorführung: [`../../docs/demo-showcase.md`](../../docs/demo-showcase.md).
+
 ## MariaDB-Hinweise (für euer lokales Setup)
 
 Vollständig in `docs/dev-db-setup.md`. Zwei Stolpersteine:
