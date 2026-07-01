@@ -92,13 +92,15 @@ def test_herabstufung_flicker_setzt_stabilitaet_zurueck():
 
 
 def test_delta_t_deadband_rot_haelt_dann_orange():
+    # Unter 0 °C ist der massgebliche ΔT der Reifpunkt-Abstand (E-45), nicht der
+    # Wasser-Taupunkt-Abstand -> die T_d-Werte sind entsprechend gewaehlt.
     engine = _engine()
-    _bewerte(engine, -1.0, -1.0, _T0)  # ROT (ΔT=0)
-    # ΔT=0.4: roh ORANGE, aber gegen verschobene Kondensation (0.5) noch ROT -> halten.
-    assert _bewerte(engine, -1.0, -1.4, _T0 + timedelta(seconds=30)) is RiskLevel.RED
-    # ΔT=0.6: Deadband frei -> Timer; nach 300 s -> ORANGE.
-    _bewerte(engine, -1.0, -1.6, _T0 + timedelta(seconds=40))  # Timer
-    assert _bewerte(engine, -1.0, -1.6, _T0 + timedelta(seconds=340)) is RiskLevel.ORANGE
+    _bewerte(engine, -1.0, -1.0, _T0)  # ROT (ΔT_Reif≈-0,12 ≤ 0)
+    # T_d=-1.5: roh ORANGE (ΔT_Reif≈0,32), aber gegen verschobene Kondensation (0,5) noch ROT -> halten.
+    assert _bewerte(engine, -1.0, -1.5, _T0 + timedelta(seconds=30)) is RiskLevel.RED
+    # T_d=-2.0: ΔT_Reif≈0,76 > verschobene Kondensation 0,5 -> Deadband frei -> Timer; nach 300 s -> ORANGE.
+    _bewerte(engine, -1.0, -2.0, _T0 + timedelta(seconds=40))  # Timer
+    assert _bewerte(engine, -1.0, -2.0, _T0 + timedelta(seconds=340)) is RiskLevel.ORANGE
 
 
 def test_mehrstufiger_abstieg_landet_auf_konservativer_stufe():
