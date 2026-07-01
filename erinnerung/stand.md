@@ -1,6 +1,20 @@
 # Aktueller Stand
 
-> Stand: 2026-06-30 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+> Stand: 2026-07-01 · Pflege: primär Lucas (Architekt); Team pflegt zusätzlich ein (s. `erinnerung/README.md`). Beim Sitzungsstart von `uni:start` gelesen.
+
+## 2026-07-01 — Testprotokoll (P5.3/DTB-30) erstellt + Backend live komplett verifiziert (architekt)
+**Was:** `04-Source-code/docs/TESTPROTOKOLL.md` als Abnahme-Checkliste angelegt (89 Zeilen, **alle ✅**) +
+Desktop-Übergabeordner `Testprotokoll-G2-2026-06-30\` (Protokoll, **Feature-Liste für die technische
+Komplettvorstellung**, README, Coverage-/Test-Belege). **Voller Live-E2E-Durchlauf** gegen den echten Stack
+(portable MariaDB 11.4.7 + G1-Sim + Backend): alle 4 Ampelstufen, **beide dokumentierten Vorfälle**, Alarm +
+On-Delay 60 s, Ack 200 / Double-Ack 409, Audit-Trail (inkl. `reading_ingested` → F11-Fix live bestätigt),
+Fail-safe NF-01 (STALE/FAULT/G1-DOWN → unknown bzw. 503, nie GRÜN), alle `/v1`-Endpunkte — Belege **LV1–LV20**
+in §3a. **Coverage:** `assessment/` **100 %**, gesamt `src/` **97 %** (mit DB); **892 passed / 0 skipped**.
+Status-Modell: jede bestandene Zeile = **✅ + Nachweisart** (LIVE/auto/STOA-RB/🔒), kein irreführendes „n/a"/„⏳".
+**Offen:** (1) **Unterschriften** Test-Team (Arezo/Amelie) + Architekt. (2) **Jira DTB-30** → erledigt.
+(3) Testprotokoll ist **uncommitted** — optional auf Feature-Branch committen + PR (Freigabe Lucas).
+(4) MariaDB-Testinstanz läuft noch (PID 12808).
+—architekt
 
 ## 2026-06-30 — G1-Kontextfelder Wind+Feuchte: Live-Snapshot (Contract v1.2) gemergt + Doku konsolidiert (architekt/Petzold)
 **Was:** `GET /v1/assessment/current` liefert jetzt additiv `wind_speed_ms` + `surface_moisture_pct` aus dem

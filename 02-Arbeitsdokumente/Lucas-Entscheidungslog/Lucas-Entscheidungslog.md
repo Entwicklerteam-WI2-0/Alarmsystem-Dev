@@ -253,3 +253,34 @@
 - **Alternativen (erwogen/verworfen):** *Status auf `ok` klemmen* (Reviewer-Vorschlag) — verworfen (falsche Fail-safe-Richtung + nimmt Negativtest-Fähigkeit). *Hart abweisen (HTTP 500)* — verworfen (hand-editiertes Dev-Tool soll nicht crashen). *Robustheit ja:* fehlendes/unlesbares/invalides JSON (`OSError`/`JSONDecodeError`), nicht-numerisches/negatives `age_s` → Default/Klemmung **mit** Warnung (Robustheit, kein Sanitisieren von Nutzdaten).
 - **Bewusster Tradeoff / Konvergenz:** Auf einem Dev-Tool nicht endlos Befund-für-Befund nachziehen — echte Robustheits-Findings (OSError, age_s) angenommen, das Status-Klemmen begründet abgelehnt. Ab „grün, keine Blocker" lohnt Mergen mehr als die nächste LOW-Runde.
 - **Ergebnis/Status:** `tools/g1_sim/` (Sim + README + Beispiel-State) auf `feat/g1-sim-tool` → PR #144, ruff clean. STOA-Real-Test live: GRÜN/ROT-Ampel (Magnus-Taupunkt), CRITICAL-Alarm, Ack 200 / Double-Ack 409, Audit-Trail, **Fail-safe NF-01** (stale/fault/G1-down → `unknown`, nie GRÜN, + Recovery), SSE-Heartbeat; beide dokumentierten Vorfälle grün; 785 Tests grün. Querverweis: NF-01, Journal/Save-Session 28.06.
+
+## 2026-06-30 — Testprotokoll (P5.3/DTB-30): Zwei-Ebenen-Nachweis + „✅ + Nachweisart"-Status statt n/a/⏳
+- **Kontext/Task:** P5.3 · DTB-30 (Abnahme-Checkliste / Pflichtdokument „Testprotokoll", Prüfungsleistung Woche 3).
+  Quellen: `Prüfungsleistung Anforderungen.txt`, `Tasks+Projektplan.md` P5.3, FA/NF/RB (`Usecase-quick.md`),
+  `Schwellenwerte.md`, eingefrorener Contract. Erstellt `04-Source-code/docs/TESTPROTOKOLL.md`.
+- **Entscheidung:**
+  1. **Zwei getrennte Belegebenen** je Testfall: (a) automatisierter Beleg (konkrete `pytest`-Funktion) +
+     (b) Live-Status (manueller E2E-Durchlauf am laufenden Server), nebeneinander, anforderungsbezogen.
+  2. **Vollständiger Live-E2E-Durchlauf** gegen den echten Stack (portable MariaDB + G1-Sim + Backend), nicht nur
+     Tests: alle 4 Ampelstufen, beide Vorfälle, Alarm/Ack/Audit, Fail-safe, alle `/v1`-Endpunkte (LV1–LV20, §3a).
+  3. **Status-Spalte: jede bestandene Zeile trägt `✅`**; der Zusatz nennt die **Nachweisart** (`LIVE` / `auto`
+     (automatisierter Test ohne sinnvolles Live-Pendant) / `STOA-RB` / `🔒` RB-01-Negativnachweis).
+  4. **Live-Durchführung über Python-Orchestrator** mit DB-Reset je Szenario (Sprung-Guard) und
+     **locale-agnostischer** Prozesssteuerung (dt. `netstat` zeigt „ABHÖREN", nicht „LISTENING").
+- **Begründung:** Ein Test mit grünem automatisiertem Beleg **ist bestanden** → die Status-Spalte eines
+  *Protokolls* muss das als ✅ zeigen. „n/a"/„⏳" für reine Unit-/Guard-Tests las sich wie „nicht erledigt" und war
+  **irreführend** (User-Einwand, zu Recht). Trennung *Ergebnis* (Pass/Fail) vs. *Methode* (live/auto): Ergebnis = ✅
+  überall, Methode = Klammerzusatz. Der **Live-Durchlauf** liefert die vom Prüfer erwartete Evidenz „laufendes
+  System tut, was es soll", die ein grüner Unit-Test allein nicht zeigt.
+- **Alternativen (erwogen/verworfen):**
+  - *Nur Live zählt als erledigt, Rest ⏳/n/a:* verworfen — stellt die Mehrheit bestandener (Unit-)Zeilen fälschlich
+    als offen dar; ein Magnus-`ValueError`-Guard hat kein sinnvolles Live-Pendant.
+  - *Nur automatisierte Tests, kein Live-Protokoll:* verworfen — Zeitplan verlangt „Systemtests → Testprotokolle";
+    Prüfer wollen das Verhalten des **integrierten** Systems sehen, nicht nur grüne pytest-Zahlen.
+  - *Manueller Multi-Terminal-Live-Test:* verworfen zugunsten eines reproduzierbaren Orchestrator-Skripts.
+- **Bewusster Tradeoff:** Zwei Zeilen bleiben bewusst nur automatisiert (SSE-Frame-Reihenfolge: Heartbeat per
+  STOA belegt; Prognose mit fallendem Trend: bräuchte injizierte Zeitreihe) — offen im Protokoll vermerkt statt
+  mit Schein-Live kaschiert.
+- **Ergebnis/Status:** `docs/TESTPROTOKOLL.md` (89 Zeilen, alle ✅; §3a Live-Protokoll LV1–LV20; §5 Fehlerliste);
+  Coverage live `assessment/` 100 %, gesamt 97 % (mit DB), 892 passed/0 skipped. Uncommitted; offen: Unterschriften
+  + Jira DTB-30 + optional Commit/PR. Querverweis: NF-01, RB-01, E-43, STOA 28.06.
