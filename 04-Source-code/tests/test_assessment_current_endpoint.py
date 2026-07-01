@@ -43,6 +43,28 @@ def _clear_overrides():
     app.dependency_overrides.clear()
 
 
+def test_v1_unknown_path_returns_contract_error():
+    """#6b (Audit-Haertung): 404 auf unbekanntem /v1-Pfad traegt Error{code,message},
+    nicht FastAPIs {detail} (Contract D)."""
+    resp = client.get("/v1/gibtsnicht")
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body.get("code") == "NOT_FOUND"
+    assert "message" in body
+    assert "detail" not in body
+
+
+def test_v1_wrong_method_returns_contract_error():
+    """#6b (Audit-Haertung): falsche Methode auf /v1-Pfad (POST auf GET-only /v1/health)
+    traegt Error{code,message}, nicht {detail} (Contract D)."""
+    resp = client.post("/v1/health")
+    assert resp.status_code == 405
+    body = resp.json()
+    assert body.get("code") == "METHOD_NOT_ALLOWED"
+    assert "message" in body
+    assert "detail" not in body
+
+
 def _reading(
     measured_at: datetime,
     *,

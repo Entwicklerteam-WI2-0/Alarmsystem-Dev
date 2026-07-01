@@ -18,6 +18,7 @@ from src.model.schemas import Error
 SERVICE_UNAVAILABLE_CODE = "SERVICE_UNAVAILABLE"  # 503: G2 (noch) nicht lieferfaehig
 BAD_REQUEST_CODE = "BAD_REQUEST"  # 400: Request-/Pfad-/Geschaeftsregel-Fehler (z. B. id < 1)
 NOT_FOUND_CODE = "NOT_FOUND"  # 404: Ressource existiert nicht
+METHOD_NOT_ALLOWED_CODE = "METHOD_NOT_ALLOWED"  # 405: Methode fuer die Ressource nicht erlaubt
 ALARM_ALREADY_ACKNOWLEDGED_CODE = "ALARM_ALREADY_ACKNOWLEDGED"  # 409: Double-Ack (NF-09)
 VALIDATION_ERROR_CODE = "VALIDATION_ERROR"  # 422: Body-Schema-Validierung (ack)
 # Contract-Fehlercodes fuer die schreibende Naht (DTB-63): 401 (Auth) / 422 (Body).

@@ -41,6 +41,10 @@ DRIVING_FACTOR_SENSOR_FAULT = "sensor_fault"
 # Ungueltiger (NaN/inf) Mess-/Taupunktwert: assess_ice_risk liefert UNKNOWN, ohne
 # dass Stale/Fault griff -> eigener Faktor fuer Observability (NF-01-Geist, DTB-66).
 DRIVING_FACTOR_SENSOR_DATA = "sensor_data"
+# Anzeige-Hysterese haelt eine andere Stufe als die rohe Bewertung (displayed != roh, DTB-27):
+# eigener Faktor, damit der Serve-Text die gehaltene Stufe erklaeren kann, ohne die rohen
+# Messwerte in eine widerspruechliche Ungleichung zu rendern (Audit-Haertung #4).
+DRIVING_FACTOR_HYSTERESE = "anzeige_hysterese"
 
 # Fail-fast beim Import: jeder geschlossene driving_factor-Wert MUSS in den
 # Wire-Contract passen (<= 64 Zeichen, AssessmentCurrent). service.py setzt die
@@ -56,6 +60,7 @@ _DRIVING_FACTOR_VALUES = (
     DRIVING_FACTOR_STALE,
     DRIVING_FACTOR_SENSOR_FAULT,
     DRIVING_FACTOR_SENSOR_DATA,
+    DRIVING_FACTOR_HYSTERESE,
 )
 assert all(len(factor) <= MAX_DRIVING_FACTOR_LEN for factor in _DRIVING_FACTOR_VALUES), (
     "DRIVING_FACTOR_*-Konstante ueberschreitet die Wire-Contract-Grenze "

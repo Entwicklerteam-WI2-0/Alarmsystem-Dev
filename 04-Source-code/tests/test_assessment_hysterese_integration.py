@@ -191,7 +191,14 @@ def test_build_assessment_current_fallback_auf_risk_level_bei_displayed_none(thr
 
 
 def test_explanation_erklaert_angezeigte_stufe_nicht_rohe():
-    """Bei gehaltenem ORANGE (roh GELB) erklaert der Text ORANGE, nicht GELB."""
+    """Bei gehaltenem ORANGE (roh GELB) erklaert der Text die ANGEZEIGTE Stufe, ohne Widerspruch.
+
+    Audit-Haertung #4 (2026-07-01): Frueher rief service derive_explanation mit der displayed-
+    Stufe UND den ROHEN Messwerten auf -> der ORANGE-Text rendete "Oberflaeche 0.3 °C ≤ 0.0 °C"
+    (0.3 ≤ 0.0 ist falsch = interner Widerspruch, den der alte Test nicht bemerkte). Jetzt bei
+    displayed != roh ein expliziter Hysterese-Text: nennt die Stufe ORANGE ohne die
+    widerspruechlichen Rohwerte.
+    """
     service = _service()
 
     # ORANGE etablieren
@@ -202,11 +209,13 @@ def test_explanation_erklaert_angezeigte_stufe_nicht_rohe():
     assessment = service.assess_reading(_reading(poll2, surface=0.3, dew=-1.5), poll2)
 
     assert assessment.displayed_risk_level is RiskLevel.ORANGE
-    # Erklärung muss ORANGE-Thematik enthalten ("Vereisung wahrscheinlich"),
-    # nicht GELB ("Grenzwertiger Bereich") — sonst Widerspruch Farbe vs. Text.
     assert assessment.explanation is not None
-    assert "Vereisung wahrscheinlich" in assessment.explanation
+    # Text nennt die angezeigte Stufe (ORANGE) + den Grund (Hysterese) ...
+    assert "ORANGE" in assessment.explanation
+    assert "Hysterese" in assessment.explanation
+    # ... aber KEINEN GELB-Text und KEINE widerspruechliche rohe Ungleichung ("0.3 ≤ 0.0").
     assert "grenzwertig" not in assessment.explanation.lower()
+    assert "0.3" not in assessment.explanation
 
 
 # ---------------------------------------------------------------------------
