@@ -78,8 +78,9 @@ Eiskurve aus dem Taupunkt). Oberhalb des Gefrierpunkts bleibt der Wasser-Taupunk
 - **Selbst-Review-Fund (WP5):** NaN-Taupunkt hätte im Erklärtext-Pfad `frost_point_from_dew_point(NaN)` und
   damit einen Crash ausgelöst → `isfinite`-Guard + Regressionstest ergänzt.
 - **Micro (mitgenommen):** `flatline_epsilon_c = 0,15` war als „2×LSB" beschriftet; korrekt ist `~2,4×LSB`
-  (2×LSB = 0,125). Label in `config/thresholds.json` präzisiert; die gleiche Formulierung im persönlichen
-  `Ganter-Entscheidungslog` (DTB-20) korrigiert der Autor selbst.
+  (2×LSB = 0,125). Die `config/thresholds.json`-Label-Korrektur landet über den **separaten PR
+  `docs/flatline-epsilon-label`** (nicht in diesem Doku-PR, um eine Doppeländerung derselben Zeile zu
+  vermeiden); die gleiche Formulierung im persönlichen `Ganter-Entscheidungslog` (DTB-20) korrigiert der Autor selbst.
 
 ## Bezug & Querverweise
 
