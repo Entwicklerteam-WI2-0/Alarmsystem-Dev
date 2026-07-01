@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 1. **`erinnerung/stand.md`** — aktueller Gesamtstand + offene Punkte (zuerst).
 2. **Live-Jira (Projekt `DTB`)** + offene GitHub-PRs — was real offen/erledigt ist.
 3. **Anforderungen `02-Arbeitsdokumente/Usecase-quick.md`** (FA/NF/RB) — u. a. **RB-01** (kein Aktor) und **Alarm-Clearing = REIN MANUELL** (ein Mensch beendet den Alarm; **kein** Auto-Clear, kein `cleared_at`-Automatismus).
-4. **Bewertungslogik `02-Arbeitsdokumente/Schwellenwerte.md`** (4 Stufen; Dummy-Werte → parametrierbar, NIE hardcoden).
+4. **Bewertungslogik `02-Arbeitsdokumente/Schwellenwerte.md`** (4 Stufen; Werte projektfinal → parametrierbar, NIE hardcoden).
 5. **Architektur/Naht `02-Arbeitsdokumente/Backend-Konzept.md`** (§9 = G1→G2-Contract).
 6. **Entscheidungen** `02-Arbeitsdokumente/Entscheidungslog-Lucas-Systemarchitektur.md` (zentral, E-xx) + `02-Arbeitsdokumente/Lucas-Entscheidungslog/Lucas-Entscheidungslog.md` (persönlich).
 
@@ -77,12 +77,12 @@ Vor `push`/PR/`force-push`/destruktiven Git-Aktionen: **vorher Genehmigung einho
 - `Usecase-quick.md` — Anforderungen: funktional **FA-01–12**, nicht-funktional **NF-01–11**, harte Randbedingung
   **RB-01**, offene Entscheidungen **AE-01/AE-02**, Konfliktanalyse **K1–K9** (§4)
 - `Schwellenwerte.md` — **Vereisungslogik + konkrete Schwellenwerte** (4 Stufen 🟢🟡🟠🔴) und Kalibriervorgaben je FA/NFA
-  > ⚠️ **DUMMY-WERTE:** Die aktuell eingetragenen Schwellen sind **vorläufige Platzhalterwerte**,
-  > die eigenständig abgeschätzt wurden. Die **verbindlichen, messtechnisch validierten Schwellenwerte**
-  > werden noch von **Gruppe 1 (Sensorik & Daten)** nachgeliefert und ersetzen diese Dummies vollständig.
-  > **Beim Bau von Features, Tests und Konfigurationen darf KEINE harte Verdrahtung dieser Dummies
-  > erfolgen — alle Schwellen müssen parametrierbar bleiben (→ `config/`), damit der Austausch
-  > durch die G1-Finalwerte ohne Code-Änderung möglich ist.**
+  > ⚠️ **PROJEKTFINAL (Stand 2026-07-01):** Die eingetragenen Schwellen sind für diesen Prototyp
+  > **final**. Messtechnisch validierte G1-Finalwerte sind **nicht mehr zu erwarten** (ein Sensor defekt,
+  > einer nicht kalibrierbar) — die Werte wurden aus den Sensor-Datenblättern abgeleitet und an
+  > Standort-Realdaten (ANR ≈ Coburg) plausibilisiert; endgültige Kalibrierung = 2-Jahres-Ausblick.
+  > **Sie bleiben parametrierbar (NF-05): KEINE harte Verdrahtung — alle Schwellen über `config/`,
+  > damit eine spätere Nachkalibrierung ohne Code-Änderung möglich ist.**
 - `Backend-Konzept.md` — **Architektur der Backend-Gruppe** (Module, Datenmodell, Tech-Stack-Optionen, Code-Struktur). **§9 enthält den verbindlichen G1→G2 API-Vertrag** — siehe „API-/Datenmodell-Vertrag" unten.
 - `Tasks+Projektplan.md` — Phasen **P0–P6**, Meilensteine M1–M3, Kanban-Tasks (Owner/DoD/Größe)
 - `Team-Organisation+Regeln.md` — Rollen/DRI, Zusammenarbeits-Map, Teamregeln
@@ -199,7 +199,8 @@ Anforderungen, technische Umsetzung, Teamorganisation, Reflexion.
   begründet ins Entscheidungslogbuch (Optionen in `Backend-Konzept.md` §6; Empfehlung T0: FastAPI + SQLite + HTTP).
 - Funktionale Vorgehensweise: **vom Kernpfad (T0) ausgehen**, Features als T1–T3 aufsetzen (s. `Backend-Konzept.md` / `Tasks+Projektplan.md`).
 - **Vereisungslogik/Schwellenwerte** ausschließlich aus `Schwellenwerte.md` — nichts dazuerfinden; Defaults parametrierbar.
-  > ⚠️ **ACHTUNG DUMMY-SCHWELLEN:** Die Werte in `Schwellenwerte.md` sind aktuell **Platzhalterwerte (Dummies)**.
-  > Finale, messtechnisch validierte Schwellen kommen von **Gruppe 1 (Sensorik)** — noch ausstehend.
+  > ⚠️ **SCHWELLEN PROJEKTFINAL:** Die Werte in `Schwellenwerte.md` sind für den Prototyp **final**
+  > (G1-Finalwerte nicht mehr zu erwarten — Sensor defekt/nicht kalibrierbar; aus Datenblatt/Standort
+  > plausibilisiert; Kalibrierung = 2-Jahres-Ausblick).
   > **Pflicht beim Feature-Bau:** Schwellen NIE hardcoden; ausnahmslos über `config/` parametrierbar
-  > halten, damit der Austausch durch G1-Finalwerte ohne Refactoring möglich ist.
+  > halten, damit eine spätere Nachkalibrierung ohne Refactoring möglich ist.

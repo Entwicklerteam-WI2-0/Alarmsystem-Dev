@@ -14,7 +14,7 @@ Backend-Repo der Gruppe 2 (FastAPI · MySQL/MariaDB · rohes PyMySQL, kein ORM).
 - `src/forecast/` — 30-min-Prognose (T3)
 - `migrations/` — `schema.sql` (handgeschriebenes DDL; kein Alembic, E-35) + `grants.sql` (App-User-Rechte, append-only NF-09)
 - `tests/` — Unit-/Integrationstests
-- `config/` — Default-Schwellenwerte (Dummy, parametrierbar)
+- `config/` — Schwellenwerte (projektfinal, parametrierbar NF-05)
 
 ## Setup (lokal, Windows)
     cd 04-Source-code
