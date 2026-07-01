@@ -271,10 +271,10 @@ def read_readings(
         # Debug-Log fuer die Diagnose wiederkehrender Client-400 (z. B. G3 sendet
         # naive/Non-UTC-Zeitstempel) — die Ursache steht sonst nirgends serverseitig.
         logger.debug("readings: ungueltige Query-Parameter: %s", exc)
-        return JSONResponse(
-            status_code=400,
-            content=Error(code="BAD_REQUEST", message=str(exc)).model_dump(),
-        )
+        # error_response() setzt Cache-Control: no-store (Contract/NF-01) — ein bares
+        # JSONResponse hier wuerde den Header verlieren (FastAPI merged den injizierten
+        # `response` nicht, wenn ein Response-Objekt direkt zurueckgegeben wird).
+        return error_response(400, BAD_REQUEST_CODE, str(exc))
     except RepositoryError as exc:
         # DB-Ausfall -> 503 (Fail-safe, NF-01-Geist). Die gewrappte Ursache am
         # API-Rand loggen (analog assessment/current), sonst bleibt ein DB-Ausfall

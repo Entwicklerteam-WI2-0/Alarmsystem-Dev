@@ -122,8 +122,10 @@ class Poller:
             return
         try:
             self._audit_repo.append(entry)
-        except RepositoryError as exc:
-            logger.error("Audit-Eintrag (%s) fehlgeschlagen: %s", entry.event_type.value, exc)
+        except RepositoryError:
+            # logger.exception: Traceback mitloggen (NF-09-Forensik) — der geschluckte
+            # Audit-Fehler hat sonst keine serverseitige Ursachenspur.
+            logger.exception("Audit-Eintrag (%s) fehlgeschlagen", entry.event_type.value)
 
     def poll(self) -> Reading | None:
         """Holt Snapshot von G1, validiert ihn und speichert ein Reading.
