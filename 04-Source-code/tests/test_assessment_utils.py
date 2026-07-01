@@ -9,7 +9,7 @@ import math
 
 import pytest
 
-from src.assessment.utils import calculate_dew_point
+from src.assessment.utils import calculate_dew_point, frost_point_from_dew_point
 
 
 def test_taupunkt_gleich_lufttemperatur_bei_saettigung_20c() -> None:
@@ -138,3 +138,32 @@ def test_taupunkt_unterhalb_magnus_pol_wirft_valueerror(below_pole_temp: float) 
     # Sensor-Rohwert (Integer-Underflow), der bis hierher durchschlagen koennte.
     with pytest.raises(ValueError):
         calculate_dew_point(below_pole_temp, 70.0)
+
+
+# ---------------------------------------------------------------------------
+# Reifpunkt aus Taupunkt (Eis-Magnus, E-45 / DTB-69)
+# ---------------------------------------------------------------------------
+
+
+def test_reifpunkt_hoeher_als_taupunkt_unter_null() -> None:
+    # Unter 0 °C liegt der Reifpunkt (Saettigung ueber Eis) UEBER dem Wasser-Taupunkt
+    # -> konservative Richtung (kleinerer Feuchte-Abstand).
+    assert frost_point_from_dew_point(-10.0) > -10.0
+
+
+def test_reifpunkt_referenz_minus_10() -> None:
+    # Unabhaengig nachgerechnet (Eis-Magnus a=22,46 / b=272,62): T_d=-10 -> T_f≈-8,876
+    # (Offset ~1,12 K). Enge Toleranz, damit ein Konstantenfehler nicht maskiert wird.
+    assert frost_point_from_dew_point(-10.0) == pytest.approx(-8.876, abs=1e-2)
+
+
+def test_reifpunkt_bei_null_gleich_null() -> None:
+    # Bei 0 °C fallen Eis- und Wasserkurve zusammen -> kein Offset (Stetigkeit).
+    assert frost_point_from_dew_point(0.0) == pytest.approx(0.0, abs=1e-9)
+
+
+@pytest.mark.parametrize("invalid", [math.nan, math.inf, -math.inf])
+def test_reifpunkt_nicht_endlich_wirft_valueerror(invalid: float) -> None:
+    # NaN/inf darf kein stilles Ergebnis liefern (Fail-safe NF-01, wie calculate_dew_point).
+    with pytest.raises(ValueError):
+        frost_point_from_dew_point(invalid)
