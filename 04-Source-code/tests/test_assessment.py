@@ -185,3 +185,41 @@ def test_defekte_prognose_unterdrueckt_kein_orange(thresholds):
         assess_ice_risk(-1.0, -1.5, thresholds, forecast_surface_temp_c=float("nan"))
         == RiskLevel.ORANGE
     )
+
+
+# ---------------------------------------------------------------------------
+# Reifpunkt-Korrektur unter 0 °C — konservativ (E-45 / DTB-69)
+#
+# Unter 0 °C ist fuer Reif die Saettigung ueber EIS massgeblich: der Reifpunkt
+# T_f liegt ueber dem Wasser-Taupunkt T_d, also ist der reale Feuchte-Abstand
+# ΔT_Reif = T_s - T_f kleiner als T_s - T_d. Die Kaskade nutzt deshalb bei
+# T_s <= 0 °C die konservativere Referenz max(T_d, T_f). Das hebt das Risiko
+# nur an, senkt es nie -> kann keinen neuen Miss und kein neues GRUEN erzeugen.
+# ---------------------------------------------------------------------------
+
+
+def test_reif_bei_sehr_kalter_oberflaeche_ist_orange_statt_gelb(thresholds):
+    """Kaelte-Reif-Luecke: Reif-Beginn unter ~ -8 °C darf nicht auf GELB fallen.
+
+    T_s=-10, T_d=-11,65: Wasser-ΔT=1,65 (>1,0 -> alt faelschlich GELB). Der
+    Reifpunkt T_f≈-10,36 (> T_d) ergibt ΔT_Reif≈0,36 ≤ 1,0 -> Feuchte vorhanden
+    -> ORANGE. Schliesst den systematischen Under-Alarm unter 0 °C (E-45).
+    """
+    assert assess_ice_risk(-10.0, -11.65, thresholds) == RiskLevel.ORANGE
+
+
+def test_reif_onset_wird_konservativ_rot(thresholds):
+    """Aktive Reif-Deposition: Oberflaeche am/unter dem Reifpunkt -> ROT.
+
+    T_s=-10, T_d=-11,0: Wasser-ΔT=1,0 (alt: ORANGE). Der Reifpunkt T_f≈-9,77
+    liegt UEBER T_s -> ΔT_Reif≈-0,23 ≤ 0 (Kondensation/Reif) -> ROT (E-45).
+    """
+    assert assess_ice_risk(-10.0, -11.0, thresholds) == RiskLevel.RED
+
+
+def test_reifkorrektur_erzeugt_keinen_fehlalarm_bei_trockener_kaelte(thresholds):
+    """Konservativ-Invariante (Gegenprobe): trockene Kaelte mit grossem Abstand
+    bleibt GELB -- die Korrektur hebt nur, wo real Feuchte da ist, kein Fehlalarm.
+    T_s=-10, T_d=-25: auch ΔT_Reif ≫ 1,0 -> nicht feucht -> GELB.
+    """
+    assert assess_ice_risk(-10.0, -25.0, thresholds) == RiskLevel.YELLOW
