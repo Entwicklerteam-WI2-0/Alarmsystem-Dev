@@ -69,7 +69,7 @@ flowchart TB
     ING["Ingest / Poller<br/>src/ingest/poller.py<br/>── GET /current + /health alle 30 s"]
     VAL["Validierung & Plausibilität<br/>Stale > 120 s · Flatline · Sprung-Guard<br/>── NF-01 Fail-safe"]
     READ[("reading")]
-    ASSESS["Bewertung<br/>src/assessment/core.py<br/>── 4-Stufen 🟢🟡🟠🔴<br/>aus T_s · T_d · ΔT · RH<br/>Schwellenwerte.md §2")]
+    ASSESS["Bewertung<br/>src/assessment/core.py<br/>── 4-Stufen 🟢🟡🟠🔴<br/>aus T_s · T_d · ΔT · RH<br/>Schwellenwerte.md §2"]
     FORE["Prognose 30 min<br/>src/forecast/trend.py"]
     ALARM["Alarm-Generierung<br/>src/alarm/<br/>── Severity · Hysterese"]
     ASR[("assessment")]
